@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,11 +22,6 @@ jobs:
         with:
           name: mddocx-dist
           path: dist/*
-      - name: Publish package to GitHub Packages
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m twine upload --repository-url https://pip.pkg.github.com/${{ github.repository_owner }} dist/*
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

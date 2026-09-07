@@ -19,6 +19,12 @@ dependencies = [
   "prompt-toolkit>=3.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/TasinAhmed2508/mddocx"
+Repository = "https://github.com/TasinAhmed2508/mddocx"
+Issues = "https://github.com/TasinAhmed2508/mddocx/issues"
+Changelog = "https://github.com/TasinAhmed2508/mddocx/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 math = ["latex2mathml>=3.81.0"]
 frontmatter = ["PyYAML>=6.0"]

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mddocx"
+version = "1.2.0"
+description = "Deterministic Markdown to native, editable Microsoft Word DOCX compiler"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "markdown-it-py>=3.0",
+  "python-docx>=1.1",
+  "lxml>=5.0",
+  "Pillow>=10.0",
+  "Pygments>=2.17",
+  "PyYAML>=6.0",
+  "openpyxl>=3.1",
+  "prompt-toolkit>=3.0",
+]
+
+[project.optional-dependencies]
+math = ["latex2mathml>=3.81.0"]
+frontmatter = ["PyYAML>=6.0"]
+images = ["Pillow>=10.0", "CairoSVG>=2.7", "defusedxml>=0.7"]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "build>=1.2", "twine>=5.0"]
+
+[project.scripts]
+mddocx = "mddocx.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["visual: LibreOffice page-render regression tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,14 @@
+version: 1
+output: build/report.docx
+sources:
+  - chapters/*.md
+variables:
+  release: 0.9.0
+render:
+  title: mddocx Native Charts Acceptance
+  author: OpenAI QA
+  title_page: true
+  toc: true
+  heading_numbering: true
+  caption_numbering: section
+  page_x_of_y: true

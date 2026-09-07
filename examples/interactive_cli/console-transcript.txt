@@ -1,0 +1,108 @@
++--------------------------------------------------+
+|              mddocx 1.1.0 Console                |
+|        Markdown -> Native Editable Word          |
++--------------------------------------------------+
+Workspace: /mnt/data/mddocx_v1.1_acceptance
+Project  : mddocx.yml
+Markdown : 1 file(s)
+DOCX     : 0 file(s)
+Images   : 0 asset(s)
+Data     : 0 CSV/JSON file(s)
+
+mddocx [mddocx_v1.1_acceptance]> /mnt/data/mddocx_v1.1_acceptance
+mddocx [mddocx_v1.1_acceptance]> Workspace files
+  Markdown .............. 1
+    report.md
+  DOCX .................. 0
+  Images ................ 0
+  Data .................. 0
+mddocx [mddocx_v1.1_acceptance]> Building project: /mnt/data/mddocx_v1.1_acceptance/mddocx.yml
+BUILT /mnt/data/mddocx_v1.1_acceptance/build/project.docx
+Dependencies: 2
+Completed in 0.15 s
+mddocx [mddocx_v1.1_acceptance]> mddocx inspection: PASS
+Package parts: 21
+Paragraphs: 28  Headings: 4
+Tables: 1  Overflow candidates: 0
+Equations: 1  N-ary: 0  Empty n-ary operands: 0
+Radicals: 0  Missing radical degree nodes: 0
+Matrices: 0
+Native list paragraphs: 4  Task checkboxes: 4
+Footnote refs/definitions: 0/0  Endnotes: 0/0
+Drawings/media: 1/0  Native charts/workbooks: 1/1
+Hyperlinks: 0  Internal: 0  Dangling internal: 0  Bookmarks: 5
+REF targets dangling: 0  Duplicate bookmark names: 0
+Comments refs/definitions: 0/0
+Fields: 6  SEQ: 1  REF: 1  Images missing alt: 0
+Sections: 1  Landscape: 0
+Broken relationships: 0  Duplicate relationship IDs: 0
+Duplicate drawing IDs: 0  Duplicate note IDs: 0
+Chart/workbook relationship issues: 0
+Suspicious placeholder characters: 0
+mddocx [mddocx_v1.1_acceptance]> mddocx accessibility audit: PASS
+Images: 1  Missing alt text: 0
+Semantic tables: 1  Missing header rows: 0
+Headings: 4  Heading-level jumps: 0
+Empty hyperlinks: 0
+Document title metadata: yes
+mddocx [mddocx_v1.1_acceptance]> Rendering report.md
+  [..] Compiling Markdown into native Word structures
+  [OK] DOCX generated
+  [OK] Equations: 1  Tables: 1  Lists: 0
+  [OK] Drawings: 1  Charts: 1
+Completed in 0.13 s
+Output size: 41.4 KB
+Structural issues: 0  Warnings: 0
+Output: /mnt/data/mddocx_v1.1_acceptance/direct.docx
+mddocx [mddocx_v1.1_acceptance]> mddocx inspection: PASS
+Package parts: 20
+Paragraphs: 21  Headings: 4
+Tables: 1  Overflow candidates: 0
+Equations: 1  N-ary: 0  Empty n-ary operands: 0
+Radicals: 0  Missing radical degree nodes: 0
+Matrices: 0
+Native list paragraphs: 0  Task checkboxes: 4
+Footnote refs/definitions: 0/0  Endnotes: 0/0
+Drawings/media: 1/0  Native charts/workbooks: 1/1
+Hyperlinks: 0  Internal: 0  Dangling internal: 0  Bookmarks: 5
+REF targets dangling: 0  Duplicate bookmark names: 0
+Comments refs/definitions: 0/0
+Fields: 2  SEQ: 1  REF: 1  Images missing alt: 0
+Sections: 1  Landscape: 0
+Broken relationships: 0  Duplicate relationship IDs: 0
+Duplicate drawing IDs: 0  Duplicate note IDs: 0
+Chart/workbook relationship issues: 0
+Suspicious placeholder characters: 0
+mddocx [mddocx_v1.1_acceptance]> mddocx doctor: PASS
+mddocx: 1.1.0
+Python: 3.13.5
+Platform: Linux 6.18.35 (x86_64)
+Temporary directory writable: yes
+Dependencies:
+  markdown-it-py: 4.2.0
+  python-docx: 1.2.0
+  lxml: 6.1.1
+  Pillow: 12.3.0
+  Pygments: 2.20.0
+  CairoSVG: 2.8.2
+  PyYAML: 6.0.3
+  latex2mathml: missing
+  openpyxl: 3.1.5
+  prompt-toolkit: 3.0.52
+External QA tools:
+  libreoffice: /usr/bin/libreoffice
+  soffice: /usr/bin/soffice
+  pdftoppm: /usr/bin/pdftoppm
+Visual DOCX regression ready: yes
+
+Workspace
+  Project ............... ready
+  Sources ............... 1
+  Includes .............. 0
+  Dependencies .......... 2
+mddocx [mddocx_v1.1_acceptance]> Recently generated documents
+   1. report.md -> direct.docx
+      2026-08-09T10:09:40.343334+00:00  [render]
+   2. mddocx.yml -> project.docx
+      2026-08-09T10:09:40.162477+00:00  [build]
+mddocx [mddocx_v1.1_acceptance]> Goodbye.

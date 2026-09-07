@@ -1,0 +1,40 @@
+version: 1
+output: build/project-v0.8.docx
+sources:
+  - chapters/*.md
+variables:
+  product: mddocx
+  release: 0.8.0
+  audience: engineering teams
+metadata:
+  subject: Multi-file project build acceptance
+render:
+  title: mddocx Project Build Mode
+  subtitle: Multi-file document compiler acceptance report
+  author: OpenAI QA Fixture
+  organization: mddocx
+  title_page: true
+  abstract: This document validates deterministic multi-file project compilation, secure includes, project variables, cross-chapter references, citations, native Word structures, and incremental rebuild behavior.
+  keywords:
+    - Markdown
+    - DOCX
+    - project builds
+    - incremental compilation
+  theme: academic
+  toc: true
+  page_numbers: true
+  page_x_of_y: true
+  heading_numbering: true
+  heading_numbering_depth: 3
+  equation_numbering: section
+  caption_numbering: section
+  code_line_numbers: true
+  code_language_labels: true
+  bibliography: references.bib
+  citation_style: author-year
+  auto_bibliography: true
+project:
+  max_include_depth: 32
+  undefined_variables: error
+watch:
+  interval: 0.5

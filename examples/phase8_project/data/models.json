@@ -1,5 +1,0 @@
-[
-  {"Model":"Alpha","Accuracy":91,"Latency":22},
-  {"Model":"Beta","Accuracy":94,"Latency":17},
-  {"Model":"Gamma","Accuracy":92,"Latency":19}
-]

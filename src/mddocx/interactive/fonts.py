@@ -16,16 +16,30 @@ def font_directories() -> tuple[Path, ...]:
         if local:
             candidates.append(Path(local) / "Microsoft" / "Windows" / "Fonts")
     elif sys.platform == "darwin":
-        candidates.extend([Path("/System/Library/Fonts"), Path("/Library/Fonts"), Path.home() / "Library" / "Fonts"])
+        candidates.extend(
+            [
+                Path("/System/Library/Fonts"),
+                Path("/Library/Fonts"),
+                Path.home() / "Library" / "Fonts",
+            ]
+        )
     else:
-        candidates.extend([Path("/usr/share/fonts"), Path("/usr/local/share/fonts"), Path.home() / ".fonts", Path.home() / ".local" / "share" / "fonts"])
+        candidates.extend(
+            [
+                Path("/usr/share/fonts"),
+                Path("/usr/local/share/fonts"),
+                Path.home() / ".fonts",
+                Path.home() / ".local" / "share" / "fonts",
+            ]
+        )
     seen: set[Path] = set()
     result: list[Path] = []
     for path in candidates:
         path = path.expanduser()
         if path in seen or not path.is_dir():
             continue
-        seen.add(path); result.append(path)
+        seen.add(path)
+        result.append(path)
     return tuple(result)
 
 
@@ -41,7 +55,8 @@ def discover_fonts(limit: int = 5000) -> tuple[Path, ...]:
                     continue
                 key = str(path.resolve()).casefold()
                 if key not in seen:
-                    seen.add(key); found.append(path.resolve())
+                    seen.add(key)
+                    found.append(path.resolve())
         except OSError:
             continue
     return tuple(sorted(found, key=lambda p: p.name.casefold()))
@@ -50,6 +65,7 @@ def discover_fonts(limit: int = 5000) -> tuple[Path, ...]:
 def font_display_name(path: Path) -> str:
     try:
         from PIL import ImageFont
+
         font = ImageFont.truetype(str(path), 12)
         family, style = font.getname()
         return f"{family} {style}".strip()

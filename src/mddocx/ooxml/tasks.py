@@ -4,7 +4,9 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 
-def append_checkbox(paragraph, checked: bool, control_id: int, font: str = "Segoe UI Symbol") -> None:
+def append_checkbox(
+    paragraph, checked: bool, control_id: int, font: str = "Segoe UI Symbol"
+) -> None:
     """Append a native Word checkbox content control (SDT) to *paragraph*.
 
     Word 2010+ represents checkbox controls with ``w14:checkbox``.  The visible

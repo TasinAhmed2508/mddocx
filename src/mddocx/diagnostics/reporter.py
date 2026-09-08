@@ -14,10 +14,14 @@ class DiagnosticReporter:
         if diagnostic.severity == "error":
             raise MddocxError(diagnostic)
 
-    def warn(self, code: str, message: str, source_file: str | None = None, line: int | None = None) -> None:
+    def warn(
+        self, code: str, message: str, source_file: str | None = None, line: int | None = None
+    ) -> None:
         self.diagnostics.append(Diagnostic("warning", code, message, source_file, line))
 
-    def info(self, code: str, message: str, source_file: str | None = None, line: int | None = None) -> None:
+    def info(
+        self, code: str, message: str, source_file: str | None = None, line: int | None = None
+    ) -> None:
         self.diagnostics.append(Diagnostic("info", code, message, source_file, line))
 
     def summary(self) -> dict[str, int]:
@@ -28,7 +32,9 @@ class DiagnosticReporter:
         return counts
 
     def to_json(self, indent: int | None = 2) -> str:
-        return json.dumps([d.to_dict() for d in self.diagnostics], ensure_ascii=False, indent=indent)
+        return json.dumps(
+            [d.to_dict() for d in self.diagnostics], ensure_ascii=False, indent=indent
+        )
 
     def to_sarif(self, indent: int | None = 2, tool_version: str = "0.8.0") -> str:
         results = []

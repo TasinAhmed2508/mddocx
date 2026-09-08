@@ -1,8 +1,7 @@
 # Compatibility Matrix
 
-This matrix distinguishes **implemented/automatically tested** behavior from **targeted host
-compatibility**. The test suite validates OOXML/package structure and reopens generated documents
-with `python-docx`; it does not claim pixel-level visual certification on every Word release.
+This matrix distinguishes implemented behavior from behavior covered by the current tracked
+regression suite. Structural checks do not claim pixel-level certification on every Word release.
 
 ## Runtime
 
@@ -16,15 +15,15 @@ with `python-docx`; it does not claim pixel-level visual certification on every 
 
 | Feature | Status |
 |---|---|
-| H1–H6, paragraphs, emphasis, strike, code | Tested |
-| links and blockquotes | Tested |
-| ordered/unordered/nested lists | Tested |
-| Markdown tables | Tested |
-| inline/display math | Tested |
-| PNG/JPEG | Tested |
-| WebP/SVG | Tested when `mddocx[images]` is installed |
-| page/section break directives | Tested |
-| YAML front matter | Tested |
+| H1–H6, paragraphs, emphasis, strike, code | Implemented; broad regression coverage pending |
+| links and blockquotes | Implemented; broad regression coverage pending |
+| ordered/unordered/nested lists | Implemented; broad regression coverage pending |
+| Markdown tables | Implemented; broad regression coverage pending |
+| inline/display math | Tested for the AI-math corpus documented in `AI_MATH_COMPATIBILITY.md` |
+| PNG/JPEG | Implemented; broad regression coverage pending |
+| WebP/SVG | Implemented with `mddocx[images]`; broad regression coverage pending |
+| page/section break directives | Implemented; broad regression coverage pending |
+| YAML front matter | Implemented; broad regression coverage pending |
 | arbitrary embedded HTML | Not supported by design |
 | arbitrary TeX macro execution | Not supported by design |
 

@@ -26,7 +26,11 @@ class BibliographyEntry:
         if len(self.authors) == 1:
             return surname
         if len(self.authors) == 2:
-            second = self.authors[1].split(",", 1)[0].strip() if "," in self.authors[1] else self.authors[1].split()[-1]
+            second = (
+                self.authors[1].split(",", 1)[0].strip()
+                if "," in self.authors[1]
+                else self.authors[1].split()[-1]
+            )
             return f"{surname} & {second}"
         return f"{surname} et al."
 
@@ -48,7 +52,13 @@ class BibliographyDatabase:
 
     @classmethod
     def _from_csl_json(cls, data) -> "BibliographyDatabase":
-        items = data if isinstance(data, list) else list(data.values()) if isinstance(data, dict) else []
+        items = (
+            data
+            if isinstance(data, list)
+            else list(data.values())
+            if isinstance(data, dict)
+            else []
+        )
         entries = {}
         for item in items:
             key = str(item.get("id") or item.get("citation-key") or "").strip()
@@ -60,7 +70,16 @@ class BibliographyDatabase:
                 authors.append(f"{family}, {given}".strip(", "))
             issued = item.get("issued", {}).get("date-parts", [["n.d."]])
             year = str(issued[0][0]) if issued and issued[0] else "n.d."
-            entries[key] = BibliographyEntry(key, str(item.get("title", "")), authors, year, str(item.get("container-title", "")), str(item.get("publisher", "")), str(item.get("DOI", "")), str(item.get("URL", "")))
+            entries[key] = BibliographyEntry(
+                key,
+                str(item.get("title", "")),
+                authors,
+                year,
+                str(item.get("container-title", "")),
+                str(item.get("publisher", "")),
+                str(item.get("DOI", "")),
+                str(item.get("URL", "")),
+            )
         return cls(entries)
 
     @classmethod
@@ -86,24 +105,46 @@ class BibliographyDatabase:
                 elif ch == '"':
                     in_quote = not in_quote
                 elif not in_quote:
-                    if ch == "{": depth += 1
-                    elif ch == "}": depth -= 1
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
                 i += 1
-            body = text[body_start:i-1] if depth == 0 else text[body_start:]
+            body = text[body_start : i - 1] if depth == 0 else text[body_start:]
             key = m.group(2).strip()
             fields: dict[str, str] = {}
-            fm_re = re.compile(r"(\w[\w-]*)\s*=\s*(?:\{((?:[^{}]|\{[^{}]*\})*)\}|\"([^\"]*)\"|([^,\n]+))\s*,?", re.S)
+            fm_re = re.compile(
+                r"(\w[\w-]*)\s*=\s*(?:\{((?:[^{}]|\{[^{}]*\})*)\}|\"([^\"]*)\"|([^,\n]+))\s*,?",
+                re.S,
+            )
             for fm in fm_re.finditer(body):
-                fields[fm.group(1).lower()] = (fm.group(2) or fm.group(3) or fm.group(4) or "").strip().replace("\n", " ")
-            authors = [a.strip() for a in re.split(r"\s+and\s+", fields.get("author", ""), flags=re.I) if a.strip()]
-            entries[key] = BibliographyEntry(key=key, title=fields.get("title", "").strip("{}"), authors=authors, year=fields.get("year", "n.d."), journal=fields.get("journal", fields.get("booktitle", "")), publisher=fields.get("publisher", ""), doi=fields.get("doi", ""), url=fields.get("url", ""))
+                fields[fm.group(1).lower()] = (
+                    (fm.group(2) or fm.group(3) or fm.group(4) or "").strip().replace("\n", " ")
+                )
+            authors = [
+                a.strip()
+                for a in re.split(r"\s+and\s+", fields.get("author", ""), flags=re.I)
+                if a.strip()
+            ]
+            entries[key] = BibliographyEntry(
+                key=key,
+                title=fields.get("title", "").strip("{}"),
+                authors=authors,
+                year=fields.get("year", "n.d."),
+                journal=fields.get("journal", fields.get("booktitle", "")),
+                publisher=fields.get("publisher", ""),
+                doi=fields.get("doi", ""),
+                url=fields.get("url", ""),
+            )
             pos = i if i > absolute_start else absolute_start + 1
         return cls(entries)
 
     def cite(self, keys: list[str], style: str = "author-year", suffix: str | None = None) -> str:
         found = [self.entries.get(k) for k in keys]
         if style in {"ieee", "numeric"}:
-            values = [str(list(self.entries).index(k) + 1) if k in self.entries else "?" for k in keys]
+            values = [
+                str(list(self.entries).index(k) + 1) if k in self.entries else "?" for k in keys
+            ]
             text = "[" + ", ".join(values) + "]"
         else:
             pieces = [f"{e.author_short}, {e.year}" if e else k for k, e in zip(keys, found)]
@@ -122,9 +163,16 @@ class BibliographyDatabase:
     @staticmethod
     def _format_entry(e: BibliographyEntry) -> str:
         authors = "; ".join(e.authors) if e.authors else e.key
-        parts = [f"{authors} ({e.year}).", e.title + ("." if e.title and not e.title.endswith(".") else "")]
-        if e.journal: parts.append(e.journal + ".")
-        elif e.publisher: parts.append(e.publisher + ".")
-        if e.doi: parts.append("https://doi.org/" + e.doi)
-        elif e.url: parts.append(e.url)
+        parts = [
+            f"{authors} ({e.year}).",
+            e.title + ("." if e.title and not e.title.endswith(".") else ""),
+        ]
+        if e.journal:
+            parts.append(e.journal + ".")
+        elif e.publisher:
+            parts.append(e.publisher + ".")
+        if e.doi:
+            parts.append("https://doi.org/" + e.doi)
+        elif e.url:
+            parts.append(e.url)
         return " ".join(p for p in parts if p).strip()

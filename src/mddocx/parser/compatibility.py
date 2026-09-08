@@ -1,9 +1,102 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 import re
 
 INLINE_SENTINEL = "MDDOCXMATH"
+
+
+@dataclass(frozen=True, slots=True)
+class MathSyntaxIssue:
+    line: int
+    message: str
+
+
+def find_math_syntax_issues(markdown: str) -> list[MathSyntaxIssue]:
+    """Find high-confidence unterminated AI/MathJax math delimiters.
+
+    The check deliberately ignores ordinary fenced code and ambiguous lone
+    dollar signs. Its purpose is to explain why an explicit display delimiter,
+    ``\\(...\\)`` pair, or math-labelled fence was preserved as source text.
+    """
+    lines = markdown.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    issues: list[MathSyntaxIssue] = []
+    fence: tuple[str, int, bool, int] | None = None
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence is not None:
+            char, size, is_math, opened_at = fence
+            closes = bool(
+                match
+                and match.group(1)[0] == char
+                and len(match.group(1)) >= size
+                and not match.group(2).strip()
+            )
+            if closes:
+                fence = None
+            elif i == len(lines) - 1 and is_math:
+                issues.append(
+                    MathSyntaxIssue(opened_at, "Unterminated math-labelled fenced block.")
+                )
+            i += 1
+            continue
+        if match:
+            marker, raw_info = match.groups()
+            info = raw_info.strip().split(None, 1)[0].lower() if raw_info.strip() else ""
+            fence = (
+                marker[0],
+                len(marker),
+                info in {"math", "latex", "tex", "mddocx-math"},
+                i + 1,
+            )
+            i += 1
+            continue
+
+        stripped = line.strip()
+        if stripped in {"$$", r"\["}:
+            close_re = (
+                re.compile(r"^\$\$\s*(?:\{[^{}]+\})?$")
+                if stripped == "$$"
+                else re.compile(r"^\\\]\s*(?:\{[^{}]+\})?$")
+            )
+            closing = next(
+                (j for j in range(i + 1, len(lines)) if close_re.match(lines[j].strip())),
+                None,
+            )
+            if closing is None:
+                issues.append(
+                    MathSyntaxIssue(i + 1, f"Unterminated display-math delimiter {stripped!r}.")
+                )
+                i += 1
+            else:
+                i = closing + 1
+            continue
+        if stripped.startswith("$$") and not re.match(r"^\$\$.+?\$\$\s*(?:\{[^{}]+\})?$", stripped):
+            issues.append(
+                MathSyntaxIssue(i + 1, "Unterminated same-line display-math delimiter '$$'.")
+            )
+        start = 0
+        while True:
+            opened = line.find(r"\(", start)
+            if opened < 0:
+                break
+            if not _is_escaped(line, opened):
+                closed = _find_unescaped(line, r"\)", opened + 2)
+                if closed < 0:
+                    issues.append(
+                        MathSyntaxIssue(i + 1, "Unterminated inline-math delimiter '\\('.")
+                    )
+                    break
+                start = closed + 2
+            else:
+                start = opened + 2
+        i += 1
+    if fence is not None and fence[2] and not any(item.line == fence[3] for item in issues):
+        issues.append(MathSyntaxIssue(fence[3], "Unterminated math-labelled fenced block."))
+    return issues
 
 
 def _enc(value: str) -> str:
@@ -16,25 +109,87 @@ def decode_inline_math(value: str) -> str:
 
 
 def normalize_math_syntax(markdown: str) -> str:
+    """Shield supported AI/MathJax math before CommonMark parsing.
+
+    Chat applications commonly mix ``$$``/``$`` with ``\\[``/``\\(``, and
+    sometimes put TeX in a ``math`` or ``latex`` fence.  This scanner is
+    deliberately fence-aware: examples inside ordinary code blocks must remain
+    code, while math-labelled fences become native equation blocks.
+
+    The transformation preserves the number of source lines for block math so
+    markdown-it source maps remain useful.
+    """
     markdown = markdown.replace("\r\n", "\n").replace("\r", "\n")
     lines = markdown.split("\n")
     out: list[str] = []
     i = 0
+    fence_char: str | None = None
+    fence_size = 0
+    math_fence = False
     while i < len(lines):
-        stripped = lines[i].strip()
+        line = lines[i]
+        stripped = line.strip()
+
+        fence = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence_char is not None:
+            is_close = bool(
+                fence
+                and fence.group(1)[0] == fence_char
+                and len(fence.group(1)) >= fence_size
+                and not fence.group(2).strip()
+            )
+            out.append("```" if is_close and math_fence else line)
+            if is_close:
+                fence_char = None
+                fence_size = 0
+                math_fence = False
+            i += 1
+            continue
+        if fence:
+            marker, raw_info = fence.groups()
+            info = raw_info.strip().split(None, 1)[0].lower() if raw_info.strip() else ""
+            if info in {"math", "latex", "tex", "mddocx-math"}:
+                out.append(f"{line[: len(line) - len(line.lstrip())]}```mddocx-math")
+                fence_char = marker[0]
+                fence_size = len(marker)
+                math_fence = True
+            else:
+                out.append(line)
+                fence_char = marker[0]
+                fence_size = len(marker)
+                math_fence = False
+            i += 1
+            continue
+
         one = re.match(r"^\$\$(.+?)\$\$\s*(\{[^{}]+\})?$", stripped)
         if one:
             out.extend(["```mddocx-math", one.group(1).strip(), "```"])
-            if one.group(2): out.append(one.group(2))
+            if one.group(2):
+                out.append(one.group(2))
             i += 1
             continue
         if stripped in {"$$", r"\["}:
             is_dollar = stripped == "$$"
+            close_re = (
+                re.compile(r"^\$\$\s*(\{[^{}]+\})?$")
+                if is_dollar
+                else re.compile(r"^\\\]\s*(\{[^{}]+\})?$")
+            )
+            closing = next(
+                (j for j in range(i + 1, len(lines)) if close_re.match(lines[j].strip())),
+                None,
+            )
+            if closing is None:
+                # Preserve malformed input instead of swallowing the rest of the
+                # document into an unterminated synthetic equation fence.
+                out.append(line)
+                i += 1
+                continue
             i += 1
             body: list[str] = []
             attrs = None
-            while i < len(lines):
-                close_match = re.match(r"^\$\$\s*(\{[^{}]+\})?$", lines[i].strip()) if is_dollar else re.match(r"^\\\]\s*(\{[^{}]+\})?$", lines[i].strip())
+            while i <= closing:
+                close_match = close_re.match(lines[i].strip())
                 if close_match:
                     attrs = close_match.group(1)
                     i += 1
@@ -42,20 +197,101 @@ def normalize_math_syntax(markdown: str) -> str:
                 body.append(lines[i])
                 i += 1
             out.extend(["```mddocx-math", "\n".join(body), "```"])
-            if attrs: out.append(attrs)
+            if attrs:
+                out.append(attrs)
             continue
-        out.append(lines[i])
+        out.append(_shield_inline_math(line))
         i += 1
 
-    text = "\n".join(out)
-    text = re.sub(
-        r"\\\((.+?)\\\)",
-        lambda m: f"{INLINE_SENTINEL}{_enc(m.group(1))}ENDMATH",
-        text,
-        flags=re.S,
-    )
-    return text
+    return "\n".join(out)
 
+
+def _shield_inline_math(line: str) -> str:
+    """Protect inline math on one Markdown line while respecting code spans."""
+    out: list[str] = []
+    i = 0
+    code_ticks = 0
+    while i < len(line):
+        if line[i] == "`":
+            end = i
+            while end < len(line) and line[end] == "`":
+                end += 1
+            run = end - i
+            if code_ticks == 0:
+                code_ticks = run
+            elif run == code_ticks:
+                code_ticks = 0
+            out.append(line[i:end])
+            i = end
+            continue
+        if code_ticks:
+            out.append(line[i])
+            i += 1
+            continue
+
+        if line.startswith(r"\(", i) and not _is_escaped(line, i):
+            end = _find_unescaped(line, r"\)", i + 2)
+            if end >= 0:
+                source = line[i + 2 : end]
+                out.append(f"{INLINE_SENTINEL}{_enc(source)}ENDMATH")
+                i = end + 2
+                continue
+
+        if line[i] == "$" and not _is_escaped(line, i) and not line.startswith("$$", i):
+            end = _find_inline_dollar_close(line, i + 1)
+            if end >= 0:
+                source = line[i + 1 : end]
+                if line[i + 1].isdigit() and not re.search(r"[\\^_+=*/(){}<>]", source):
+                    out.append("$")
+                    i += 1
+                    continue
+                out.append(f"{INLINE_SENTINEL}{_enc(source)}ENDMATH")
+                i = end + 1
+                continue
+
+        out.append(line[i])
+        i += 1
+    return "".join(out)
+
+
+def _is_escaped(text: str, offset: int) -> bool:
+    slashes = 0
+    offset -= 1
+    while offset >= 0 and text[offset] == "\\":
+        slashes += 1
+        offset -= 1
+    return slashes % 2 == 1
+
+
+def _find_unescaped(text: str, needle: str, start: int) -> int:
+    pos = text.find(needle, start)
+    while pos >= 0:
+        if not _is_escaped(text, pos):
+            return pos
+        pos = text.find(needle, pos + len(needle))
+    return -1
+
+
+def _find_inline_dollar_close(text: str, start: int) -> int:
+    if start >= len(text) or text[start].isspace():
+        return -1
+    pos = start
+    while True:
+        pos = text.find("$", pos)
+        if pos < 0:
+            return -1
+        if _is_escaped(text, pos) or (pos + 1 < len(text) and text[pos + 1] == "$"):
+            pos += 1
+            continue
+        if pos == start or text[pos - 1].isspace():
+            pos += 1
+            continue
+        # A closing delimiter immediately followed by a letter or digit is most
+        # often a currency range (``$5 to $10``), not inline mathematics.
+        if pos + 1 < len(text) and text[pos + 1].isalnum():
+            pos += 1
+            continue
+        return pos
 
 
 def normalize_definition_lists(markdown: str) -> str:
@@ -82,6 +318,7 @@ def normalize_definition_lists(markdown: str) -> str:
         i += 1
     return "\n".join(out)
 
+
 def normalize_bibliography_directives(markdown: str) -> str:
     """Normalize fenced bibliography directives into a parser sentinel."""
     return re.sub(
@@ -90,6 +327,7 @@ def normalize_bibliography_directives(markdown: str) -> str:
         markdown,
     )
 
+
 def split_text_math(text: str) -> list[tuple[str, str]]:
     """Return [('text'|'math', value)] while respecting escaped dollar signs."""
     sentinel_re = re.compile(rf"{INLINE_SENTINEL}([A-Za-z0-9_-]+)ENDMATH")
@@ -97,7 +335,7 @@ def split_text_math(text: str) -> list[tuple[str, str]]:
     pos = 0
     for m in sentinel_re.finditer(text):
         if m.start() > pos:
-            segments.extend(_split_dollars(text[pos:m.start()]))
+            segments.extend(_split_dollars(text[pos : m.start()]))
         segments.append(("math", decode_inline_math(m.group(1))))
         pos = m.end()
     if pos < len(text):
@@ -106,36 +344,21 @@ def split_text_math(text: str) -> list[tuple[str, str]]:
 
 
 def _split_dollars(text: str) -> list[tuple[str, str]]:
+    # Reuse the same delimiter rules used before Markdown parsing.  Inline
+    # content is also parsed independently for footnotes and extensions, and a
+    # second permissive dollar parser here used to turn currency ranges into
+    # enormous false-positive equations.
+    shielded = _shield_inline_math(text)
+    sentinel_re = re.compile(rf"{INLINE_SENTINEL}([A-Za-z0-9_-]+)ENDMATH")
     result: list[tuple[str, str]] = []
-    buf: list[str] = []
-    math: list[str] = []
-    in_math = False
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch == "\\" and i + 1 < len(text) and text[i + 1] == "$":
-            (math if in_math else buf).append("$")
-            i += 2
-            continue
-        if ch == "$":
-            if in_math:
-                result.append(("math", "".join(math)))
-                math = []
-                in_math = False
-            else:
-                if buf:
-                    result.append(("text", "".join(buf)))
-                    buf = []
-                in_math = True
-            i += 1
-            continue
-        (math if in_math else buf).append(ch)
-        i += 1
-    if in_math:
-        buf.append("$")
-        buf.extend(math)
-    if buf:
-        result.append(("text", "".join(buf)))
+    pos = 0
+    for match in sentinel_re.finditer(shielded):
+        if match.start() > pos:
+            result.append(("text", shielded[pos : match.start()].replace(r"\$", "$")))
+        result.append(("math", decode_inline_math(match.group(1))))
+        pos = match.end()
+    if pos < len(shielded):
+        result.append(("text", shielded[pos:].replace(r"\$", "$")))
     return result
 
 
@@ -209,10 +432,10 @@ def normalize_simple_tables(markdown: str) -> str:
                         break
                 if closing is not None:
                     starts = [s for s, _ in header_spans]
-                    header = _merge_simple_table_lines(lines[i + 1:header_sep], starts)
+                    header = _merge_simple_table_lines(lines[i + 1 : header_sep], starts)
                     rows = [
                         _simple_table_cells(line, starts)
-                        for line in lines[header_sep + 1:closing]
+                        for line in lines[header_sep + 1 : closing]
                         if line.strip()
                     ]
                     if out and out[-1].strip():
@@ -238,16 +461,18 @@ def normalize_simple_tables(markdown: str) -> str:
                 closing = None
                 for j in range(header_sep + 1, len(lines)):
                     candidate = _simple_table_spans(lines[j])
-                    if (candidate and len(candidate) == len(spans)) or re.fullmatch(r"\s*-{10,}\s*", lines[j] or ""):
+                    if (candidate and len(candidate) == len(spans)) or re.fullmatch(
+                        r"\s*-{10,}\s*", lines[j] or ""
+                    ):
                         closing = j
                         break
                     if lines[j].lstrip().startswith("#"):
                         break
                 if closing is not None:
-                    header = _merge_simple_table_lines(lines[i + 1:header_sep], starts)
+                    header = _merge_simple_table_lines(lines[i + 1 : header_sep], starts)
                     rows = [
                         _simple_table_cells(line, starts)
-                        for line in lines[header_sep + 1:closing]
+                        for line in lines[header_sep + 1 : closing]
                         if line.strip()
                     ]
                     if out and out[-1].strip():
@@ -355,17 +580,19 @@ def split_footnote_references(text: str) -> list[tuple[str, str]]:
     """Split plain inline text into text/reference segments."""
     protected: dict[str, str] = {}
     sentinel_re = re.compile(rf"{FOOTNOTE_ESCAPE_SENTINEL}([A-Za-z0-9_-]+)ENDNOTE")
+
     def keep_literal(match):
         key = f"\x00FNESC{len(protected)}\x00"
         protected[key] = f"[^{decode_inline_math(match.group(1))}]"
         return key
+
     text = sentinel_re.sub(keep_literal, text)
     pattern = re.compile(r"\[\^([^\]\s]+)\]")
     result: list[tuple[str, str]] = []
     pos = 0
     for match in pattern.finditer(text):
         if match.start() > pos:
-            result.append(("text", text[pos:match.start()]))
+            result.append(("text", text[pos : match.start()]))
         result.append(("footnote", match.group(1)))
         pos = match.end()
     if pos < len(text):
@@ -378,6 +605,7 @@ def split_footnote_references(text: str) -> list[tuple[str, str]]:
                 value = value.replace(key, literal)
         restored.append((kind, value))
     return restored
+
 
 FOOTNOTE_ESCAPE_SENTINEL = "MDDOCXESCFOOTNOTE"
 
@@ -394,6 +622,7 @@ def _restore_escaped_footnotes(text: str) -> str:
     pattern = re.compile(rf"{FOOTNOTE_ESCAPE_SENTINEL}([A-Za-z0-9_-]+)ENDNOTE")
     return pattern.sub(lambda m: f"[^{decode_inline_math(m.group(1))}]", text)
 
+
 _CALLOUT_KINDS = {"note", "tip", "important", "warning", "caution", "example"}
 
 
@@ -409,13 +638,16 @@ def normalize_callout_containers(markdown: str) -> str:
     while i < len(lines):
         m = re.match(r"^\s*:::\s*([A-Za-z][\w-]*)(?:\s+(.+?))?\s*$", lines[i])
         if not m or m.group(1).lower() not in _CALLOUT_KINDS:
-            out.append(lines[i]); i += 1; continue
+            out.append(lines[i])
+            i += 1
+            continue
         kind = m.group(1).lower()
         title = (m.group(2) or "").strip()
         body: list[str] = []
         i += 1
         while i < len(lines) and not re.match(r"^\s*:::\s*$", lines[i]):
-            body.append(lines[i]); i += 1
+            body.append(lines[i])
+            i += 1
         if i < len(lines):
             i += 1
         marker = f"> [!{kind.upper()}]"
@@ -438,7 +670,7 @@ def split_comment_markup(text: str) -> list[tuple[str, str]]:
     pattern = re.compile(r"(?<!\\)\{>>(.+?)<<\}")
     for match in pattern.finditer(text):
         if match.start() > pos:
-            result.append(("text", text[pos:match.start()]))
+            result.append(("text", text[pos : match.start()]))
         result.append(("comment", match.group(1).strip()))
         pos = match.end()
     if pos < len(text):

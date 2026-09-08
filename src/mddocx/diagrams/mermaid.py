@@ -32,7 +32,9 @@ class MermaidRenderer:
     diagram families fail cleanly so callers can preserve the source as editable code.
     """
 
-    def __init__(self, *, max_source_chars: int = 100_000, max_nodes: int = 500, max_edges: int = 1_000):
+    def __init__(
+        self, *, max_source_chars: int = 100_000, max_nodes: int = 500, max_edges: int = 1_000
+    ):
         self.max_source_chars = max_source_chars
         self.max_nodes = max_nodes
         self.max_edges = max_edges
@@ -40,8 +42,12 @@ class MermaidRenderer:
     def render(self, source: str, output_dir: Path) -> Path:
         if len(source) > self.max_source_chars:
             raise MermaidRenderError("Mermaid source exceeds configured size limit.")
-        lines = [line.rstrip() for line in source.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-        significant_raw = [line for line in lines if line.strip() and not line.lstrip().startswith("%%")]
+        lines = [
+            line.rstrip() for line in source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        ]
+        significant_raw = [
+            line for line in lines if line.strip() and not line.lstrip().startswith("%%")
+        ]
         significant = [line.strip() for line in significant_raw]
         if not significant:
             raise MermaidRenderError("Empty Mermaid diagram.")
@@ -60,7 +66,9 @@ class MermaidRenderer:
             self._render_er(significant, target)
         elif re.match(r"^mindmap\b", first, flags=re.I):
             self._render_mindmap(significant_raw, target)
-        elif re.match(r"^(?:stateDiagram(?:-v2)?|classDiagram|timeline|journey|gantt)\b", first, flags=re.I):
+        elif re.match(
+            r"^(?:stateDiagram(?:-v2)?|classDiagram|timeline|journey|gantt)\b", first, flags=re.I
+        ):
             self._render_structured_text(significant, target)
         else:
             kind = first.split(None, 1)[0]
@@ -108,14 +116,16 @@ class MermaidRenderer:
 
     def _parse_flow(self, lines: list[str]):
         head = re.match(r"^(?:flowchart|graph)\s+([A-Za-z]+)", lines[0], flags=re.I)
-        direction = (head.group(1).upper() if head else "TD")
+        direction = head.group(1).upper() if head else "TD"
         nodes: dict[str, _Node] = {}
         edges: list[_Edge] = []
         edge_re = re.compile(r"\s+(-->|---|-.->|==>)\s+")
         labeled_re = re.compile(r"^(.*?)\s+--\s*(.*?)\s*-->\s*(.*?)$")
         for line in lines[1:]:
             stripped = line.strip().rstrip(";")
-            if not stripped or stripped.startswith(("%%", "classDef ", "class ", "style ", "linkStyle ")):
+            if not stripped or stripped.startswith(
+                ("%%", "classDef ", "class ", "style ", "linkStyle ")
+            ):
                 continue
             lm = labeled_re.match(stripped)
             if lm:
@@ -128,11 +138,19 @@ class MermaidRenderer:
             parts = edge_re.split(stripped)
             if len(parts) >= 3:
                 current = self._node_from_token(parts[0])
-                nodes[current.ident] = current if current.label != current.ident or current.ident not in nodes else nodes[current.ident]
+                nodes[current.ident] = (
+                    current
+                    if current.label != current.ident or current.ident not in nodes
+                    else nodes[current.ident]
+                )
                 idx = 1
                 while idx + 1 < len(parts):
                     nxt = self._node_from_token(parts[idx + 1])
-                    nodes[nxt.ident] = nxt if nxt.label != nxt.ident or nxt.ident not in nodes else nodes[nxt.ident]
+                    nodes[nxt.ident] = (
+                        nxt
+                        if nxt.label != nxt.ident or nxt.ident not in nodes
+                        else nodes[nxt.ident]
+                    )
                     edges.append(_Edge(current.ident, nxt.ident))
                     current = nxt
                     idx += 2
@@ -225,7 +243,10 @@ class MermaidRenderer:
                 mx, my = (sx + dx) / 2, (sy + dy) / 2
                 box = draw.textbbox((0, 0), edge.label, font=label_font)
                 tw, th = box[2] - box[0], box[3] - box[1]
-                draw.rectangle((mx - tw / 2 - 4, my - th / 2 - 3, mx + tw / 2 + 4, my + th / 2 + 3), fill="white")
+                draw.rectangle(
+                    (mx - tw / 2 - 4, my - th / 2 - 3, mx + tw / 2 + 4, my + th / 2 + 3),
+                    fill="white",
+                )
                 draw.text((mx - tw / 2, my - th / 2), edge.label, fill="black", font=label_font)
         for ident, node in nodes.items():
             self._draw_node(draw, positions[ident], node, font)
@@ -234,6 +255,7 @@ class MermaidRenderer:
     @staticmethod
     def _arrow(draw, sx, sy, dx, dy):
         import math
+
         angle = math.atan2(dy - sy, dx - sx)
         start_pad, end_pad = 70, 70
         x1, y1 = sx + math.cos(angle) * start_pad, sy + math.sin(angle) * start_pad
@@ -265,13 +287,23 @@ class MermaidRenderer:
         x, y = pos
         w, h = (180, 74) if node.shape != "circle" else (88, 88)
         if node.shape == "diamond":
-            draw.polygon([(x, y - 48), (x + 95, y), (x, y + 48), (x - 95, y)], outline="black", fill="white")
+            draw.polygon(
+                [(x, y - 48), (x + 95, y), (x, y + 48), (x - 95, y)], outline="black", fill="white"
+            )
         elif node.shape == "circle":
             draw.ellipse((x - 44, y - 44, x + 44, y + 44), outline="black", fill="white", width=2)
         elif node.shape == "round":
-            draw.rounded_rectangle((x - w / 2, y - h / 2, x + w / 2, y + h / 2), radius=18, outline="black", fill="white", width=2)
+            draw.rounded_rectangle(
+                (x - w / 2, y - h / 2, x + w / 2, y + h / 2),
+                radius=18,
+                outline="black",
+                fill="white",
+                width=2,
+            )
         else:
-            draw.rectangle((x - w / 2, y - h / 2, x + w / 2, y + h / 2), outline="black", fill="white", width=2)
+            draw.rectangle(
+                (x - w / 2, y - h / 2, x + w / 2, y + h / 2), outline="black", fill="white", width=2
+            )
         lines = self._wrap(draw, node.label, font)
         heights = [draw.textbbox((0, 0), line, font=font)[3] for line in lines]
         total_h = sum(heights) + max(0, len(lines) - 1) * 3
@@ -295,7 +327,10 @@ class MermaidRenderer:
             if pm:
                 participants[pm.group(1)] = (pm.group(2) or pm.group(1)).strip()
                 continue
-            mm = re.match(r"^([A-Za-z_][\w.-]*?)\s*(-->>|->>|-->|->)\s*([A-Za-z_][\w.-]*)\s*:\s*(.+)$", stripped)
+            mm = re.match(
+                r"^([A-Za-z_][\w.-]*?)\s*(-->>|->>|-->|->)\s*([A-Za-z_][\w.-]*)\s*:\s*(.+)$",
+                stripped,
+            )
             if mm:
                 src, arrow, dst, text = mm.groups()
                 participants.setdefault(src, src)
@@ -304,7 +339,9 @@ class MermaidRenderer:
         if not participants:
             raise MermaidRenderError("No supported Mermaid sequence participants were found.")
         if len(participants) > self.max_nodes or len(messages) > self.max_edges:
-            raise MermaidRenderError("Mermaid sequence exceeds configured participant/message limits.")
+            raise MermaidRenderError(
+                "Mermaid sequence exceeds configured participant/message limits."
+            )
         ids = list(participants)
         width = max(700, 180 * len(ids) + 120)
         height = max(320, 150 + 72 * len(messages))
@@ -317,7 +354,13 @@ class MermaidRenderer:
         for ident in ids:
             x = xs[ident]
             label = participants[ident]
-            draw.rounded_rectangle((x - 65, top - 24, x + 65, top + 24), radius=8, outline="black", fill="white", width=2)
+            draw.rounded_rectangle(
+                (x - 65, top - 24, x + 65, top + 24),
+                radius=8,
+                outline="black",
+                fill="white",
+                width=2,
+            )
             box = draw.textbbox((0, 0), label, font=font)
             draw.text((x - (box[2] - box[0]) / 2, top - 10), label, fill="black", font=font)
             draw.line((x, top + 24, x, height - 35), fill="gray", width=1)
@@ -327,17 +370,22 @@ class MermaidRenderer:
             if dashed:
                 step = 10 if x2 >= x1 else -10
                 xx = x1
-                while (xx < x2 if step > 0 else xx > x2):
+                while xx < x2 if step > 0 else xx > x2:
                     end = xx + step * 0.55
                     draw.line((xx, y, end, y), fill="black", width=2)
                     xx += step
             else:
                 draw.line((x1, y, x2, y), fill="black", width=2)
             direction = 1 if x2 >= x1 else -1
-            draw.polygon([(x2, y), (x2 - 10 * direction, y - 5), (x2 - 10 * direction, y + 5)], fill="black")
+            draw.polygon(
+                [(x2, y), (x2 - 10 * direction, y - 5), (x2 - 10 * direction, y + 5)], fill="black"
+            )
             box = draw.textbbox((0, 0), text, font=small)
             tw = box[2] - box[0]
-            draw.rectangle(((x1 + x2) / 2 - tw / 2 - 3, y - 24, (x1 + x2) / 2 + tw / 2 + 3, y - 5), fill="white")
+            draw.rectangle(
+                ((x1 + x2) / 2 - tw / 2 - 3, y - 24, (x1 + x2) / 2 + tw / 2 + 3, y - 5),
+                fill="white",
+            )
             draw.text(((x1 + x2) / 2 - tw / 2, y - 23), text, fill="black", font=small)
             y += 72
         image.save(target, format="PNG", dpi=(144, 144))
@@ -349,7 +397,7 @@ class MermaidRenderer:
             raise MermaidRenderError("Mermaid rendering requires Pillow.") from exc
         first = lines[0].strip()
         title_match = re.match(r"^pie(?:\s+title\s+(.+))?$", first, re.I)
-        title = (title_match.group(1).strip() if title_match and title_match.group(1) else "")
+        title = title_match.group(1).strip() if title_match and title_match.group(1) else ""
         values: list[tuple[str, float]] = []
         for line in lines[1:]:
             stripped = line.strip()
@@ -374,7 +422,9 @@ class MermaidRenderer:
         for idx, (_label, value) in enumerate(values):
             end = start + 360.0 * value / total
             shade = 220 - (idx * 31) % 150
-            draw.pieslice(box, start=start, end=end, fill=(shade, shade, shade), outline="black", width=2)
+            draw.pieslice(
+                box, start=start, end=end, fill=(shade, shade, shade), outline="black", width=2
+            )
             start = end
         y = 115
         for idx, (label, value) in enumerate(values):
@@ -390,9 +440,7 @@ class MermaidRenderer:
         except ImportError as exc:
             raise MermaidRenderError("Mermaid rendering requires Pillow.") from exc
         relations: list[tuple[str, str, str, str]] = []
-        relation_re = re.compile(
-            r"^(\S+)\s+([|}{o*.+-]*--[|}{o*.+-]*)\s+(\S+)\s*(?::\s*(.*))?$"
-        )
+        relation_re = re.compile(r"^(\S+)\s+([|}{o*.+-]*--[|}{o*.+-]*)\s+(\S+)\s*(?::\s*(.*))?$")
         for line in lines[1:]:
             m = relation_re.match(line.strip())
             if m:
@@ -410,13 +458,19 @@ class MermaidRenderer:
         font = self._font(17)
         small = self._font(14)
         head = self._font(23, bold=True)
-        draw.rounded_rectangle((35, 25, width - 35, 72), radius=10, outline="black", fill=(245, 245, 245), width=2)
+        draw.rounded_rectangle(
+            (35, 25, width - 35, 72), radius=10, outline="black", fill=(245, 245, 245), width=2
+        )
         draw.text((55, 37), "erDiagram", fill="black", font=head)
         y = 115
         for left, right, label, cardinality in relations:
-            draw.rounded_rectangle((55, y - 18, 330, y + 22), radius=7, outline="black", fill="white")
+            draw.rounded_rectangle(
+                (55, y - 18, 330, y + 22), radius=7, outline="black", fill="white"
+            )
             draw.text((70, y - 9), left, fill="black", font=font)
-            draw.rounded_rectangle((720, y - 18, 995, y + 22), radius=7, outline="black", fill="white")
+            draw.rounded_rectangle(
+                (720, y - 18, 995, y + 22), radius=7, outline="black", fill="white"
+            )
             draw.text((735, y - 9), right, fill="black", font=font)
             draw.line((350, y + 2, 700, y + 2), fill="black", width=2)
             draw.polygon([(700, y + 2), (687, y - 4), (687, y + 8)], fill="black")
@@ -440,7 +494,7 @@ class MermaidRenderer:
             text = text[4:].strip()
         for left, right in (("((", "))"), ("(", ")"), ("[", "]"), ("{", "}")):
             if text.startswith(left) and text.endswith(right):
-                text = text[len(left):-len(right)].strip()
+                text = text[len(left) : -len(right)].strip()
                 break
         return text or "root"
 
@@ -468,7 +522,9 @@ class MermaidRenderer:
         draw = ImageDraw.Draw(image)
         font = self._font(17)
         head = self._font(23, bold=True)
-        draw.rounded_rectangle((35, 25, width - 35, 72), radius=10, outline="black", fill=(245, 245, 245), width=2)
+        draw.rounded_rectangle(
+            (35, 25, width - 35, 72), radius=10, outline="black", fill=(245, 245, 245), width=2
+        )
         draw.text((55, 37), "mindmap", fill="black", font=head)
         anchors: dict[int, tuple[float, float]] = {}
         y = 108
@@ -485,7 +541,13 @@ class MermaidRenderer:
                 if parent:
                     px, py = parent
                     draw.line((px, py, x - 10, cy), fill=(90, 90, 90), width=2)
-            draw.rounded_rectangle((x, y, x + box_w, y + 36), radius=9, outline="black", fill="white", width=2 if level == 0 else 1)
+            draw.rounded_rectangle(
+                (x, y, x + box_w, y + 36),
+                radius=9,
+                outline="black",
+                fill="white",
+                width=2 if level == 0 else 1,
+            )
             draw.text((x + 12, y + 8), label[:70], fill="black", font=font)
             anchors[level] = (x + box_w, cy)
             for deeper in [k for k in anchors if k > level]:
@@ -519,10 +581,14 @@ class MermaidRenderer:
         height = max(300, 100 + line_h * len(rows))
         image = Image.new("RGB", (width, height), "white")
         draw = ImageDraw.Draw(image)
-        draw.rounded_rectangle((35, 25, width - 35, 72), radius=10, outline="black", fill=(245, 245, 245), width=2)
+        draw.rounded_rectangle(
+            (35, 25, width - 35, 72), radius=10, outline="black", fill=(245, 245, 245), width=2
+        )
         draw.text((55, 37), kind, fill="black", font=head)
         y = 95
-        rel_re = re.compile(r"\s*(?:\|\|--o\{|\}o--\|\||\}\|--\|\{|o\{--\|\{|<\|--|\*--|--\*|-->|->|--|\.\.)\s*")
+        rel_re = re.compile(
+            r"\s*(?:\|\|--o\{|\}o--\|\||\}\|--\|\{|o\{--\|\{|<\|--|\*--|--\*|-->|->|--|\.\.)\s*"
+        )
         for row in rows:
             if row.isupper() and len(row) < 80:
                 draw.text((55, y), row, fill="black", font=self._font(17, bold=True))
@@ -530,14 +596,23 @@ class MermaidRenderer:
                 rel = rel_re.split(row, maxsplit=1)
                 if len(rel) == 2 and rel[0] and rel[1]:
                     left, right = rel[0][:45], rel[1][:55]
-                    draw.rounded_rectangle((55, y - 3, 330, y + 27), radius=7, outline="black", fill="white")
+                    draw.rounded_rectangle(
+                        (55, y - 3, 330, y + 27), radius=7, outline="black", fill="white"
+                    )
                     draw.text((67, y + 3), left, fill="black", font=font)
                     draw.line((345, y + 12, 620, y + 12), fill="black", width=2)
                     draw.polygon([(620, y + 12), (608, y + 6), (608, y + 18)], fill="black")
-                    draw.rounded_rectangle((640, y - 3, 990, y + 27), radius=7, outline="black", fill="white")
+                    draw.rounded_rectangle(
+                        (640, y - 3, 990, y + 27), radius=7, outline="black", fill="white"
+                    )
                     draw.text((652, y + 3), right, fill="black", font=font)
                 else:
-                    draw.rounded_rectangle((55, y - 3, width - 55, y + 27), radius=7, outline=(120, 120, 120), fill=(250, 250, 250))
+                    draw.rounded_rectangle(
+                        (55, y - 3, width - 55, y + 27),
+                        radius=7,
+                        outline=(120, 120, 120),
+                        fill=(250, 250, 250),
+                    )
                     draw.text((67, y + 3), row[:115], fill="black", font=font)
             y += line_h
         image.save(target, format="PNG", dpi=(144, 144))

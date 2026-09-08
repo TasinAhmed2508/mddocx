@@ -7,20 +7,55 @@ from markdown_it.token import Token
 
 from mddocx.ast.base import Document, SourcePosition
 from mddocx.ast.block import (
-    BlockQuote, BulletList, CodeBlock, Heading, HorizontalRule, ImageBlock, ListItem,
-    MathBlock, OrderedList, PageBreak, Paragraph, SectionBreak, Table, TableCell, TableRow, ChartBlock, DataTableBlock, BibliographyBlock, DefinitionList, DefinitionItem, Callout,
+    BlockQuote,
+    BulletList,
+    CodeBlock,
+    Heading,
+    HorizontalRule,
+    ImageBlock,
+    ListItem,
+    MathBlock,
+    OrderedList,
+    PageBreak,
+    Paragraph,
+    SectionBreak,
+    Table,
+    TableCell,
+    TableRow,
+    ChartBlock,
+    DataTableBlock,
+    BibliographyBlock,
+    DefinitionList,
+    DefinitionItem,
+    Callout,
 )
 from mddocx.ast.inline import (
-    Emphasis, HardBreak, Image, InlineCode, InlineMath, Link, SoftBreak, Strikethrough,
-    Strong, Text, FootnoteReference, CrossReference, Citation, Comment,
+    Emphasis,
+    HardBreak,
+    Image,
+    InlineCode,
+    InlineMath,
+    Link,
+    SoftBreak,
+    Strikethrough,
+    Strong,
+    Text,
+    FootnoteReference,
+    CrossReference,
+    Citation,
+    Comment,
 )
 from .compatibility import (
     extract_footnote_definitions,
-    normalize_math_syntax, normalize_bibliography_directives, normalize_definition_lists, normalize_callout_containers,
+    normalize_math_syntax,
+    normalize_bibliography_directives,
+    normalize_definition_lists,
+    normalize_callout_containers,
     normalize_simple_tables,
     protect_escaped_footnote_references,
     split_footnote_references,
-    split_text_math, split_comment_markup,
+    split_text_math,
+    split_comment_markup,
 )
 from .frontmatter import split_front_matter
 from mddocx.attributes import parse_attribute_list, parse_line_spec
@@ -31,10 +66,14 @@ from mddocx.metadata import MetadataSanitizationReport, sanitize_markdown_metada
 
 
 class MarkdownParser:
-    def __init__(self, extensions: tuple[object, ...] = (), metadata_config: MetadataConfig | None = None) -> None:
+    def __init__(
+        self, extensions: tuple[object, ...] = (), metadata_config: MetadataConfig | None = None
+    ) -> None:
         self.extensions = extensions
         self.metadata_config = metadata_config or MetadataConfig()
-        self.last_metadata_report = MetadataSanitizationReport(policy=self.metadata_config.ai_export)
+        self.last_metadata_report = MetadataSanitizationReport(
+            policy=self.metadata_config.ai_export
+        )
         self.md = MarkdownIt("commonmark").enable("table").enable("strikethrough")
         call_configure_markdown(self.extensions, self.md)
         self.source_file: str | None = None
@@ -43,18 +82,33 @@ class MarkdownParser:
         path = Path(path)
         return self.parse(path.read_text(encoding="utf-8"), source_file=str(path))
 
-    def parse(self, markdown: str, source_file: str | None = None, *, base_line_offset: int = 0, sanitize_metadata: bool = True) -> Document:
+    def parse(
+        self,
+        markdown: str,
+        source_file: str | None = None,
+        *,
+        base_line_offset: int = 0,
+        sanitize_metadata: bool = True,
+    ) -> Document:
         self.source_file = source_file
         if sanitize_metadata:
             sanitized = sanitize_markdown_metadata(markdown, self.metadata_config)
             markdown = sanitized.markdown
             self.last_metadata_report = sanitized.report
         else:
-            self.last_metadata_report = MetadataSanitizationReport(policy=self.metadata_config.ai_export)
+            self.last_metadata_report = MetadataSanitizationReport(
+                policy=self.metadata_config.ai_export
+            )
         metadata, body, line_offset = split_front_matter(markdown)
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
-        normalized = normalize_math_syntax(normalize_simple_tables(normalize_bibliography_directives(normalize_definition_lists(normalize_callout_containers(body)))))
+        normalized = normalize_math_syntax(
+            normalize_simple_tables(
+                normalize_bibliography_directives(
+                    normalize_definition_lists(normalize_callout_containers(body))
+                )
+            )
+        )
         tokens = self.md.parse(normalized)
         self._line_offset = line_offset + base_line_offset
         children, _ = self._parse_blocks(tokens, 0, None)
@@ -93,22 +147,52 @@ class MarkdownParser:
             if t.type == "heading_open":
                 level = int(t.tag[1])
                 inline = tokens[i + 1]
-                heading_children = self._inline(inline.children or [])
+                heading_children = self._inline(inline.children or [], self._pos(t))
                 identifier, _attrs = self._extract_trailing_attrs(heading_children)
-                nodes.append(Heading(level=level, children=heading_children, identifier=identifier, source=self._pos(t)))
+                nodes.append(
+                    Heading(
+                        level=level,
+                        children=heading_children,
+                        identifier=identifier,
+                        source=self._pos(t),
+                    )
+                )
                 i += 3
             elif t.type == "paragraph_open":
                 inline = tokens[i + 1]
-                content = self._inline(inline.children or [])
+                content = self._inline(inline.children or [], self._pos(t))
                 # Promote a standalone image (optionally followed by an attribute list) to a block node.
-                if content and isinstance(content[0], Image) and all(isinstance(x, (Image, Text)) for x in content):
+                if (
+                    content
+                    and isinstance(content[0], Image)
+                    and all(isinstance(x, (Image, Text)) for x in content)
+                ):
                     im = content[0]
                     identifier, attrs = self._extract_trailing_attrs(content[1:])
                     leftover = "".join(x.text for x in content[1:] if isinstance(x, Text)).strip()
                     if not leftover:
                         width = attrs.get("width")
-                        width_percent = float(width[:-1]) if width and width.endswith("%") and width[:-1].replace(".", "", 1).isdigit() else None
-                        nodes.append(ImageBlock(src=im.src, alt=im.alt, title=im.title, identifier=identifier, caption=attrs.get("caption"), width_percent=width_percent, align=attrs.get("align"), decorative=attrs.get("decorative", "false").lower() in {"1","true","yes"}, source=self._pos(t)))
+                        width_percent = (
+                            float(width[:-1])
+                            if width
+                            and width.endswith("%")
+                            and width[:-1].replace(".", "", 1).isdigit()
+                            else None
+                        )
+                        nodes.append(
+                            ImageBlock(
+                                src=im.src,
+                                alt=im.alt,
+                                title=im.title,
+                                identifier=identifier,
+                                caption=attrs.get("caption"),
+                                width_percent=width_percent,
+                                align=attrs.get("align"),
+                                decorative=attrs.get("decorative", "false").lower()
+                                in {"1", "true", "yes"},
+                                source=self._pos(t),
+                            )
+                        )
                     else:
                         nodes.append(Paragraph(children=content, source=self._pos(t)))
                 else:
@@ -128,9 +212,21 @@ class MarkdownParser:
                         term, definition = line.split("\t", 1)
                         term_tokens = self.md.parseInline(term)
                         def_tokens = self.md.parseInline(definition)
-                        term_nodes = self._inline(term_tokens[0].children or []) if term_tokens else [Text(text=term)]
-                        def_nodes = self._inline(def_tokens[0].children or []) if def_tokens else [Text(text=definition)]
-                        items.append(DefinitionItem(term=term_nodes, definition=def_nodes, source=self._pos(t)))
+                        term_nodes = (
+                            self._inline(term_tokens[0].children or [], self._pos(t))
+                            if term_tokens
+                            else [Text(text=term)]
+                        )
+                        def_nodes = (
+                            self._inline(def_tokens[0].children or [], self._pos(t))
+                            if def_tokens
+                            else [Text(text=definition)]
+                        )
+                        items.append(
+                            DefinitionItem(
+                                term=term_nodes, definition=def_nodes, source=self._pos(t)
+                            )
+                        )
                     nodes.append(DefinitionList(items=items, source=self._pos(t)))
                 else:
                     language, identifier, attrs = self._parse_fence_info(info)
@@ -140,7 +236,15 @@ class MarkdownParser:
                         if isinstance(series, dict):
                             series = [{"name": str(k), "values": v} for k, v in series.items()]
                         if not isinstance(series, list):
-                            raise MddocxError(Diagnostic("error", "PARSE351", "Chart 'series' must be a list or mapping.", self.source_file, getattr(self._pos(t), "line", None)))
+                            raise MddocxError(
+                                Diagnostic(
+                                    "error",
+                                    "PARSE351",
+                                    "Chart 'series' must be a list or mapping.",
+                                    self.source_file,
+                                    getattr(self._pos(t), "line", None),
+                                )
+                            )
                         raw_fields = spec.get("series_fields") or spec.get("values") or []
                         if isinstance(raw_fields, str):
                             raw_fields = [raw_fields]
@@ -149,72 +253,145 @@ class MarkdownParser:
                             categories = []
                         x_axis = spec.get("x_axis") if isinstance(spec.get("x_axis"), dict) else {}
                         y_axis = spec.get("y_axis") if isinstance(spec.get("y_axis"), dict) else {}
-                        secondary_axis = spec.get("secondary_axis") if isinstance(spec.get("secondary_axis"), dict) else {}
+                        secondary_axis = (
+                            spec.get("secondary_axis")
+                            if isinstance(spec.get("secondary_axis"), dict)
+                            else {}
+                        )
                         raw_secondary = spec.get("secondary_series") or []
                         if isinstance(raw_secondary, str):
                             raw_secondary = [raw_secondary]
                         legend = spec.get("legend", "right")
                         if isinstance(legend, bool):
                             legend = "right" if legend else "none"
-                        nodes.append(ChartBlock(
-                            chart_type=str(spec.get("type") or "column"),
-                            title=str(spec.get("title") or ""),
-                            categories=list(categories),
-                            series=list(series),
-                            source_path=str(spec.get("source")) if spec.get("source") else None,
-                            category_field=str(spec.get("category") or spec.get("x")) if (spec.get("category") or spec.get("x")) else None,
-                            series_fields=tuple(str(v) for v in raw_fields),
-                            identifier=identifier or (str(spec.get("id")) if spec.get("id") else None),
-                            caption=attrs.get("caption") or (str(spec.get("caption")) if spec.get("caption") else None),
-                            width_mm=float(spec["width_mm"]) if spec.get("width_mm") is not None else None,
-                            height_mm=float(spec["height_mm"]) if spec.get("height_mm") is not None else None,
-                            x_axis_title=str(x_axis.get("title")) if x_axis.get("title") is not None else None,
-                            y_axis_title=str(y_axis.get("title")) if y_axis.get("title") is not None else None,
-                            x_min=float(x_axis["min"]) if x_axis.get("min") is not None else None,
-                            x_max=float(x_axis["max"]) if x_axis.get("max") is not None else None,
-                            y_min=float(y_axis["min"]) if y_axis.get("min") is not None else None,
-                            y_max=float(y_axis["max"]) if y_axis.get("max") is not None else None,
-                            x_number_format=str(x_axis.get("number_format")) if x_axis.get("number_format") is not None else None,
-                            y_number_format=str(y_axis.get("number_format")) if y_axis.get("number_format") is not None else None,
-                            legend_position=str(legend).lower(),
-                            data_labels=bool(spec.get("data_labels", False)),
-                            show_gridlines=bool(spec.get("gridlines", True)),
-                            secondary_series=tuple(str(v) for v in raw_secondary),
-                            secondary_axis_title=str(secondary_axis.get("title")) if secondary_axis.get("title") is not None else None,
-                            secondary_min=float(secondary_axis["min"]) if secondary_axis.get("min") is not None else None,
-                            secondary_max=float(secondary_axis["max"]) if secondary_axis.get("max") is not None else None,
-                            secondary_number_format=str(secondary_axis.get("number_format")) if secondary_axis.get("number_format") is not None else None,
-                            style=int(spec["style"]) if spec.get("style") is not None else None,
-                            source=self._pos(t),
-                        ))
-                    elif (language or "").lower() in {"data-table", "datatable", "mddocx-data-table"}:
+                        nodes.append(
+                            ChartBlock(
+                                chart_type=str(spec.get("type") or "column"),
+                                title=str(spec.get("title") or ""),
+                                categories=list(categories),
+                                series=list(series),
+                                source_path=str(spec.get("source")) if spec.get("source") else None,
+                                category_field=str(spec.get("category") or spec.get("x"))
+                                if (spec.get("category") or spec.get("x"))
+                                else None,
+                                series_fields=tuple(str(v) for v in raw_fields),
+                                identifier=identifier
+                                or (str(spec.get("id")) if spec.get("id") else None),
+                                caption=attrs.get("caption")
+                                or (str(spec.get("caption")) if spec.get("caption") else None),
+                                width_mm=float(spec["width_mm"])
+                                if spec.get("width_mm") is not None
+                                else None,
+                                height_mm=float(spec["height_mm"])
+                                if spec.get("height_mm") is not None
+                                else None,
+                                x_axis_title=str(x_axis.get("title"))
+                                if x_axis.get("title") is not None
+                                else None,
+                                y_axis_title=str(y_axis.get("title"))
+                                if y_axis.get("title") is not None
+                                else None,
+                                x_min=float(x_axis["min"])
+                                if x_axis.get("min") is not None
+                                else None,
+                                x_max=float(x_axis["max"])
+                                if x_axis.get("max") is not None
+                                else None,
+                                y_min=float(y_axis["min"])
+                                if y_axis.get("min") is not None
+                                else None,
+                                y_max=float(y_axis["max"])
+                                if y_axis.get("max") is not None
+                                else None,
+                                x_number_format=str(x_axis.get("number_format"))
+                                if x_axis.get("number_format") is not None
+                                else None,
+                                y_number_format=str(y_axis.get("number_format"))
+                                if y_axis.get("number_format") is not None
+                                else None,
+                                legend_position=str(legend).lower(),
+                                data_labels=bool(spec.get("data_labels", False)),
+                                show_gridlines=bool(spec.get("gridlines", True)),
+                                secondary_series=tuple(str(v) for v in raw_secondary),
+                                secondary_axis_title=str(secondary_axis.get("title"))
+                                if secondary_axis.get("title") is not None
+                                else None,
+                                secondary_min=float(secondary_axis["min"])
+                                if secondary_axis.get("min") is not None
+                                else None,
+                                secondary_max=float(secondary_axis["max"])
+                                if secondary_axis.get("max") is not None
+                                else None,
+                                secondary_number_format=str(secondary_axis.get("number_format"))
+                                if secondary_axis.get("number_format") is not None
+                                else None,
+                                style=int(spec["style"]) if spec.get("style") is not None else None,
+                                source=self._pos(t),
+                            )
+                        )
+                    elif (language or "").lower() in {
+                        "data-table",
+                        "datatable",
+                        "mddocx-data-table",
+                    }:
                         spec = self._parse_yaml_mapping(t.content, "data table", t)
                         raw_columns = spec.get("columns") or []
                         if isinstance(raw_columns, str):
                             raw_columns = [raw_columns]
                         if not spec.get("source"):
-                            raise MddocxError(Diagnostic("error", "PARSE352", "Data table requires a source path.", self.source_file, getattr(self._pos(t), "line", None)))
-                        nodes.append(DataTableBlock(
-                            source_path=str(spec["source"]),
-                            columns=tuple(str(v) for v in raw_columns),
-                            identifier=identifier or (str(spec.get("id")) if spec.get("id") else None),
-                            caption=attrs.get("caption") or (str(spec.get("caption")) if spec.get("caption") else None),
-                            source=self._pos(t),
-                        ))
+                            raise MddocxError(
+                                Diagnostic(
+                                    "error",
+                                    "PARSE352",
+                                    "Data table requires a source path.",
+                                    self.source_file,
+                                    getattr(self._pos(t), "line", None),
+                                )
+                            )
+                        nodes.append(
+                            DataTableBlock(
+                                source_path=str(spec["source"]),
+                                columns=tuple(str(v) for v in raw_columns),
+                                identifier=identifier
+                                or (str(spec.get("id")) if spec.get("id") else None),
+                                caption=attrs.get("caption")
+                                or (str(spec.get("caption")) if spec.get("caption") else None),
+                                source=self._pos(t),
+                            )
+                        )
                     else:
-                        nodes.append(CodeBlock(
-                        code=t.content.rstrip("\n"), language=language, identifier=identifier,
-                        caption=attrs.get("caption"),
-                        line_numbers=(attrs.get("linenos", attrs.get("line_numbers", "")).lower() in {"1","true","yes","on"}) if ("linenos" in attrs or "line_numbers" in attrs) else None,
-                        highlight_lines=parse_line_spec(attrs.get("highlight") or attrs.get("hl_lines")),
-                        show_language_label=(attrs.get("label", "").lower() in {"1","true","yes","on"}) if "label" in attrs else None,
-                        source=self._pos(t),
-                    ))
+                        nodes.append(
+                            CodeBlock(
+                                code=t.content.rstrip("\n"),
+                                language=language,
+                                identifier=identifier,
+                                caption=attrs.get("caption"),
+                                line_numbers=(
+                                    attrs.get("linenos", attrs.get("line_numbers", "")).lower()
+                                    in {"1", "true", "yes", "on"}
+                                )
+                                if ("linenos" in attrs or "line_numbers" in attrs)
+                                else None,
+                                highlight_lines=parse_line_spec(
+                                    attrs.get("highlight") or attrs.get("hl_lines")
+                                ),
+                                show_language_label=(
+                                    attrs.get("label", "").lower() in {"1", "true", "yes", "on"}
+                                )
+                                if "label" in attrs
+                                else None,
+                                source=self._pos(t),
+                            )
+                        )
                 i += 1
             elif t.type == "blockquote_open":
                 inner, i = self._parse_blocks(tokens, i + 1, "blockquote_close")
                 callout = self._callout_from_quote(inner, self._pos(t))
-                nodes.append(callout if callout is not None else BlockQuote(children=inner, source=self._pos(t)))
+                nodes.append(
+                    callout
+                    if callout is not None
+                    else BlockQuote(children=inner, source=self._pos(t))
+                )
             elif t.type in {"bullet_list_open", "ordered_list_open"}:
                 node, i = self._parse_list(tokens, i)
                 nodes.append(node)
@@ -230,6 +407,10 @@ class MarkdownParser:
                     nodes.append(PageBreak(source=self._pos(t)))
                 elif directive == "<!-- sectionbreak -->":
                     nodes.append(SectionBreak(source=self._pos(t)))
+                else:
+                    # Raw HTML execution/rendering is intentionally unsupported.
+                    # Preserve authored source visibly instead of silently dropping it.
+                    nodes.append(Paragraph(children=[Text(text=t.content)], source=self._pos(t)))
                 i += 1
             else:
                 i += 1
@@ -238,13 +419,30 @@ class MarkdownParser:
     def _parse_yaml_mapping(self, text: str, label: str, token: Token) -> dict:
         try:
             import yaml  # type: ignore
+
             value = yaml.safe_load(text) if text.strip() else {}
         except Exception as exc:
-            raise MddocxError(Diagnostic("error", "PARSE350", f"Unable to parse {label} YAML: {type(exc).__name__}", self.source_file, getattr(self._pos(token), "line", None))) from exc
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "PARSE350",
+                    f"Unable to parse {label} YAML: {type(exc).__name__}",
+                    self.source_file,
+                    getattr(self._pos(token), "line", None),
+                )
+            ) from exc
         if value is None:
             return {}
         if not isinstance(value, dict):
-            raise MddocxError(Diagnostic("error", "PARSE350", f"{label.title()} block must contain a YAML mapping.", self.source_file, getattr(self._pos(token), "line", None)))
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "PARSE350",
+                    f"{label.title()} block must contain a YAML mapping.",
+                    self.source_file,
+                    getattr(self._pos(token), "line", None),
+                )
+            )
         return value
 
     @staticmethod
@@ -255,7 +453,11 @@ class MarkdownParser:
         if not paragraph.children or not isinstance(paragraph.children[0], Text):
             return None
         first = paragraph.children[0]
-        match = re.match(r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|EXAMPLE)\](?:[ \t]+(.*))?$", first.text.strip(), re.I)
+        match = re.match(
+            r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|EXAMPLE)\](?:[ \t]+(.*))?$",
+            first.text.strip(),
+            re.I,
+        )
         if not match:
             return None
         kind = match.group(1).lower()
@@ -285,7 +487,6 @@ class MarkdownParser:
             return OrderedList(items=items, start=start, source=self._pos(opener)), i
         return BulletList(items=items, source=self._pos(opener)), i
 
-
     @staticmethod
     def _extract_task_state(children: list) -> bool | None:
         """Recognize GitHub/Pandoc task-list markers without altering normal list text.
@@ -303,7 +504,7 @@ class MarkdownParser:
         match = re.match(r"^\[(?P<state>[ xX])\](?:[ \t]+|$)", first.text)
         if not match:
             return None
-        first.text = first.text[match.end():]
+        first.text = first.text[match.end() :]
         return match.group("state").lower() == "x"
 
     _ATTR_RE = re.compile(r"\{(?P<body>[^{}]+)\}\s*$")
@@ -323,7 +524,7 @@ class MarkdownParser:
         if not m:
             return None, {}
         identifier, attrs = self._parse_attrs_text("{" + m.group("body") + "}")
-        children[-1].text = children[-1].text[:m.start()].rstrip()
+        children[-1].text = children[-1].text[: m.start()].rstrip()
         if not children[-1].text:
             children.pop()
         return identifier, attrs
@@ -344,7 +545,14 @@ class MarkdownParser:
             if isinstance(node, Paragraph):
                 text = self._plain_text(node.children).strip()
                 identifier, attrs = self._parse_attrs_text(text)
-                if (identifier or attrs) and out and isinstance(out[-1], (MathBlock, Table, ImageBlock, CodeBlock, ChartBlock, DataTableBlock)):
+                if (
+                    (identifier or attrs)
+                    and out
+                    and isinstance(
+                        out[-1],
+                        (MathBlock, Table, ImageBlock, CodeBlock, ChartBlock, DataTableBlock),
+                    )
+                ):
                     target = out[-1]
                     if identifier:
                         target.identifier = identifier
@@ -361,8 +569,17 @@ class MarkdownParser:
                         if "decorative" in attrs:
                             target.decorative = attrs["decorative"].lower() in {"1", "true", "yes"}
                     continue
-                cap = re.match(r"^(Figure|Table|Equation|Listing)\s*:\s*(.+?)(?:\s+(\{.*\}))?$", text, re.I)
-                if cap and out and isinstance(out[-1], (MathBlock, Table, ImageBlock, CodeBlock, ChartBlock, DataTableBlock)):
+                cap = re.match(
+                    r"^(Figure|Table|Equation|Listing)\s*:\s*(.+?)(?:\s+(\{.*\}))?$", text, re.I
+                )
+                if (
+                    cap
+                    and out
+                    and isinstance(
+                        out[-1],
+                        (MathBlock, Table, ImageBlock, CodeBlock, ChartBlock, DataTableBlock),
+                    )
+                ):
                     target = out[-1]
                     target.caption = cap.group(2).strip()
                     if cap.group(3):
@@ -385,21 +602,28 @@ class MarkdownParser:
                 parts.append(MarkdownParser._plain_text(node.children))
         return "".join(parts)
 
-    _COMBINED_REF_RE = re.compile(r"\[(?P<prefix>Figure|Table|Equation|Listing|Section)\s+@(?P<target>[A-Za-z0-9_.:-]+)\]", re.I)
+    _COMBINED_REF_RE = re.compile(
+        r"\[(?P<prefix>Figure|Table|Equation|Listing|Section)\s+@(?P<target>[A-Za-z0-9_.:-]+)\]",
+        re.I,
+    )
 
     def _split_refs_and_citations(self, text: str) -> list:
         nodes: list = []
         pos = 0
         combined: dict[str, tuple[str, str]] = {}
+
         def repl(match):
             key = f"MDDOCXREF{len(combined)}TOKEN"
             combined[key] = (match.group("prefix"), match.group("target"))
             return key
+
         text = self._COMBINED_REF_RE.sub(repl, text)
-        pattern = re.compile(r"MDDOCXREF\d+TOKEN|\[@[^\]]+\]|(?<![\w@])@(?:fig|tbl|eq|lst|sec)-[A-Za-z0-9_.:-]+")
+        pattern = re.compile(
+            r"MDDOCXREF\d+TOKEN|\[@[^\]]+\]|(?<![\w@])@(?:fig|tbl|eq|lst|sec)-[A-Za-z0-9_.:-]+"
+        )
         for match in pattern.finditer(text):
             if match.start() > pos:
-                nodes.append(Text(text=text[pos:match.start()]))
+                nodes.append(Text(text=text[pos : match.start()]))
             token = match.group(0)
             if token in combined:
                 prefix, target = combined[token]
@@ -420,7 +644,7 @@ class MarkdownParser:
             else:
                 raw_target = token[1:]
                 target = raw_target.rstrip(".,;:!?")
-                trailing = raw_target[len(target):]
+                trailing = raw_target[len(target) :]
                 nodes.append(CrossReference(target=target, prefix=None))
                 if trailing:
                     nodes.append(Text(text=trailing))
@@ -449,19 +673,46 @@ class MarkdownParser:
                 style = t.attrGet("style") or ""
                 if "text-align:" in style:
                     align = style.split("text-align:", 1)[1].split(";", 1)[0].strip()
-                inline = tokens[i + 1] if i + 1 < len(tokens) and tokens[i + 1].type == "inline" else None
-                cell_children = self._inline(inline.children or []) if inline else []
+                inline = (
+                    tokens[i + 1]
+                    if i + 1 < len(tokens) and tokens[i + 1].type == "inline"
+                    else None
+                )
+                cell_children = self._inline(inline.children or [], self._pos(t)) if inline else []
                 if current_cells is not None:
-                    current_cells.append(TableCell(children=cell_children, alignment=align, header=is_header, source=self._pos(t)))
+                    current_cells.append(
+                        TableCell(
+                            children=cell_children,
+                            alignment=align,
+                            header=is_header,
+                            source=self._pos(t),
+                        )
+                    )
             elif t.type == "tr_close" and current_cells is not None:
-                rows.append(TableRow(cells=current_cells, header=header_section or all(c.header for c in current_cells), source=self._pos(t)))
+                rows.append(
+                    TableRow(
+                        cells=current_cells,
+                        header=header_section or all(c.header for c in current_cells),
+                        source=self._pos(t),
+                    )
+                )
                 current_cells = None
             i += 1
         return Table(rows=rows, source=self._pos(opener)), i + 1
 
-    def _inline(self, tokens: list[Token]) -> list:
+    def _inline(self, tokens: list[Token], source: SourcePosition | None = None) -> list:
         nodes, _ = self._inline_range(tokens, 0, None)
+        if source is not None:
+            self._attach_inline_source(nodes, source)
         return nodes
+
+    def _attach_inline_source(self, nodes: list, source: SourcePosition) -> None:
+        for node in nodes:
+            if getattr(node, "source", None) is None:
+                node.source = source
+            children = getattr(node, "children", None)
+            if isinstance(children, list):
+                self._attach_inline_source(children, source)
 
     def _inline_range(self, tokens: list[Token], i: int, stop: str | None):
         nodes = []
@@ -494,13 +745,21 @@ class MarkdownParser:
                                     nodes.extend(self._split_refs_and_citations(subvalue))
                 i += 1
             elif t.type == "code_inline":
-                nodes.append(InlineCode(code=t.content)); i += 1
+                nodes.append(InlineCode(code=t.content))
+                i += 1
             elif t.type == "softbreak":
-                nodes.append(SoftBreak()); i += 1
+                nodes.append(SoftBreak())
+                i += 1
             elif t.type == "hardbreak":
-                nodes.append(HardBreak()); i += 1
+                nodes.append(HardBreak())
+                i += 1
             elif t.type in {"strong_open", "em_open", "s_open", "link_open"}:
-                close = {"strong_open":"strong_close", "em_open":"em_close", "s_open":"s_close", "link_open":"link_close"}[t.type]
+                close = {
+                    "strong_open": "strong_close",
+                    "em_open": "em_close",
+                    "s_open": "s_close",
+                    "link_open": "link_close",
+                }[t.type]
                 inner, i = self._inline_range(tokens, i + 1, close)
                 if t.type == "strong_open":
                     nodes.append(Strong(children=inner))
@@ -509,10 +768,15 @@ class MarkdownParser:
                 elif t.type == "s_open":
                     nodes.append(Strikethrough(children=inner))
                 else:
-                    nodes.append(Link(href=t.attrGet("href") or "", title=t.attrGet("title"), children=inner))
+                    nodes.append(
+                        Link(href=t.attrGet("href") or "", title=t.attrGet("title"), children=inner)
+                    )
             elif t.type == "image":
                 alt = t.content or ""
                 nodes.append(Image(src=t.attrGet("src") or "", alt=alt, title=t.attrGet("title")))
+                i += 1
+            elif t.type == "html_inline":
+                nodes.append(Text(text=t.content))
                 i += 1
             else:
                 i += 1

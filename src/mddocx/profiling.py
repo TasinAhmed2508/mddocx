@@ -8,6 +8,7 @@ import json
 class RenderStats:
     parse_ms: float = 0.0
     normalize_ms: float = 0.0
+    plan_ms: float = 0.0
     render_ms: float = 0.0
     total_ms: float = 0.0
     peak_memory_bytes: int | None = None

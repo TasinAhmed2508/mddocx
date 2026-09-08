@@ -7,7 +7,7 @@ from .ast.base import Document
 from .ast.codec import document_from_json, document_to_json
 from .config import CacheConfig
 
-_AST_CACHE_SCHEMA = "mddocx-ast-v1"
+_AST_CACHE_SCHEMA = "mddocx-ast-v2"
 
 
 class AstCache:

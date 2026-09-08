@@ -30,7 +30,11 @@ class BenchmarkReport:
 
     @property
     def memory_ok(self) -> bool:
-        return self.max_peak_memory_bytes is None or self.peak_memory_bytes is None or self.peak_memory_bytes <= self.max_peak_memory_bytes
+        return (
+            self.max_peak_memory_bytes is None
+            or self.peak_memory_bytes is None
+            or self.peak_memory_bytes <= self.max_peak_memory_bytes
+        )
 
     @property
     def ok(self) -> bool:
@@ -45,42 +49,50 @@ class BenchmarkReport:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=True)
 
     def to_text(self) -> str:
-        peak = "n/a" if self.peak_memory_bytes is None else f"{self.peak_memory_bytes / 1024 / 1024:.1f} MiB"
-        return "\n".join([
-            f"mddocx performance gate: {'PASS' if self.ok else 'FAIL'}",
-            f"Sections: {self.sections}",
-            f"Markdown: {self.markdown_bytes} bytes  DOCX: {self.output_bytes} bytes",
-            f"Elapsed: {self.elapsed_seconds:.3f}s / {self.max_seconds:.3f}s",
-            f"Peak traced Python memory: {peak}",
-            f"Paragraphs/equations/tables: {self.paragraphs}/{self.equations}/{self.tables}",
-            f"Structural inspection: {'PASS' if self.structural_ok else 'FAIL'}",
-            f"SHA-256: {self.sha256}",
-        ])
+        peak = (
+            "n/a"
+            if self.peak_memory_bytes is None
+            else f"{self.peak_memory_bytes / 1024 / 1024:.1f} MiB"
+        )
+        return "\n".join(
+            [
+                f"mddocx performance gate: {'PASS' if self.ok else 'FAIL'}",
+                f"Sections: {self.sections}",
+                f"Markdown: {self.markdown_bytes} bytes  DOCX: {self.output_bytes} bytes",
+                f"Elapsed: {self.elapsed_seconds:.3f}s / {self.max_seconds:.3f}s",
+                f"Peak traced Python memory: {peak}",
+                f"Paragraphs/equations/tables: {self.paragraphs}/{self.equations}/{self.tables}",
+                f"Structural inspection: {'PASS' if self.structural_ok else 'FAIL'}",
+                f"SHA-256: {self.sha256}",
+            ]
+        )
 
 
 def build_benchmark_markdown(sections: int = 100) -> str:
     sections = max(1, int(sections))
     parts = ["# Large-document benchmark", "", "Generated deterministically by mddocx.", ""]
     for idx in range(1, sections + 1):
-        parts.extend([
-            f"## Section {idx}",
-            "",
-            "This paragraph contains **bold**, *italic*, a [link](https://example.com), and inline math $E=mc^2$.",
-            "",
-            "- First item",
-            "  - Nested item",
-            "- Final item",
-            "",
-            "$$",
-            rf"\sum_{{i=1}}^{{{idx + 3}}} i = \frac{{({idx + 3})({idx + 4})}}{{2}}",
-            "$$",
-            "",
-            "| Metric | Value |",
-            "|---|---:|",
-            f"| Section | {idx} |",
-            f"| Square | {idx * idx} |",
-            "",
-        ])
+        parts.extend(
+            [
+                f"## Section {idx}",
+                "",
+                "This paragraph contains **bold**, *italic*, a [link](https://example.com), and inline math $E=mc^2$.",
+                "",
+                "- First item",
+                "  - Nested item",
+                "- Final item",
+                "",
+                "$$",
+                rf"\sum_{{i=1}}^{{{idx + 3}}} i = \frac{{({idx + 3})({idx + 4})}}{{2}}",
+                "$$",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+                f"| Section | {idx} |",
+                f"| Square | {idx * idx} |",
+                "",
+            ]
+        )
     return "\n".join(parts)
 
 

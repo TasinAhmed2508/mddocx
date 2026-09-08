@@ -56,7 +56,9 @@ def inject_comments(
 
     parts["word/comments.xml"] = _build_comments_xml(comments, author, initials)
     parts["[Content_Types].xml"] = _patch_content_types(parts["[Content_Types].xml"])
-    parts["word/_rels/document.xml.rels"] = _patch_document_rels(parts["word/_rels/document.xml.rels"])
+    parts["word/_rels/document.xml.rels"] = _patch_document_rels(
+        parts["word/_rels/document.xml.rels"]
+    )
 
     output = BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as zout:
@@ -78,7 +80,10 @@ def _build_comments_xml(comments: dict[int, str], author: str, initials: str) ->
         r = OxmlElement("w:r")
         t = OxmlElement("w:t")
         t.text = clean_xml_text(body)
-        r.append(t); p.append(r); comment.append(p); root.append(comment)
+        r.append(t)
+        p.append(r)
+        comment.append(p)
+        root.append(comment)
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
 
 

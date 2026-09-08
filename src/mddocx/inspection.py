@@ -109,7 +109,11 @@ class DocxInspection:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=True)
 
     def to_text(self) -> str:
-        status = "PASS" if self.ok and not self.quality_warnings else ("PASS WITH WARNINGS" if self.ok else "ISSUES")
+        status = (
+            "PASS"
+            if self.ok and not self.quality_warnings
+            else ("PASS WITH WARNINGS" if self.ok else "ISSUES")
+        )
         lines = [
             f"mddocx inspection: {status}",
             f"Package parts: {self.package_parts}",
@@ -141,7 +145,9 @@ class DocxInspection:
             lines.append("Broken relationship targets:")
             lines.extend(f"  - {value}" for value in self.broken_relationships[:20])
         if self.suspicious_placeholder_chars:
-            details = ", ".join(f"{repr(k)}×{v}" for k, v in self.suspicious_placeholder_chars.items())
+            details = ", ".join(
+                f"{repr(k)}×{v}" for k, v in self.suspicious_placeholder_chars.items()
+            )
             lines.append("Placeholder details: " + details)
         return "\n".join(lines)
 
@@ -173,7 +179,9 @@ def inspect_docx_bytes(blob: bytes) -> DocxInspection:
         report.missing_required_parts = sorted(required.difference(seen))
 
         roots: dict[str, etree._Element] = {}
-        parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False)
+        parser = etree.XMLParser(
+            resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
+        )
         for name in names:
             if not (name.endswith(".xml") or name.endswith(".rels")):
                 continue
@@ -201,33 +209,51 @@ def inspect_docx_bytes(blob: bytes) -> DocxInspection:
         )
         report.tables = len(document.xpath(".//w:tbl", namespaces=NS))
         content_roots = [
-            root for name, root in roots.items()
+            root
+            for name, root in roots.items()
             if name == "word/document.xml"
             or name in {"word/footnotes.xml", "word/endnotes.xml"}
             or name.startswith("word/header")
             or name.startswith("word/footer")
         ]
-        report.equations = sum(len(root.xpath(".//m:oMath", namespaces=NS)) for root in content_roots)
-        report.nary_operators = sum(len(root.xpath(".//m:nary", namespaces=NS)) for root in content_roots)
+        report.equations = sum(
+            len(root.xpath(".//m:oMath", namespaces=NS)) for root in content_roots
+        )
+        report.nary_operators = sum(
+            len(root.xpath(".//m:nary", namespaces=NS)) for root in content_roots
+        )
         report.empty_nary_operands = sum(_count_empty_nary_operands(root) for root in content_roots)
         report.radicals = sum(len(root.xpath(".//m:rad", namespaces=NS)) for root in content_roots)
-        report.radicals_missing_degree = sum(len(root.xpath(".//m:rad[not(m:deg)]", namespaces=NS)) for root in content_roots)
+        report.radicals_missing_degree = sum(
+            len(root.xpath(".//m:rad[not(m:deg)]", namespaces=NS)) for root in content_roots
+        )
         report.matrices = sum(len(root.xpath(".//m:m", namespaces=NS)) for root in content_roots)
         report.native_list_paragraphs = len(document.xpath(".//w:p[w:pPr/w:numPr]", namespaces=NS))
         report.task_checkboxes = len(document.xpath(".//w14:checkbox", namespaces=NS))
         report.footnote_references = len(document.xpath(".//w:footnoteReference", namespaces=NS))
         report.endnote_references = len(document.xpath(".//w:endnoteReference", namespaces=NS))
-        report.drawings = sum(len(root.xpath(".//w:drawing", namespaces=NS)) for root in content_roots)
-        report.hyperlinks = sum(len(root.xpath(".//w:hyperlink", namespaces=NS)) for root in content_roots)
+        report.drawings = sum(
+            len(root.xpath(".//w:drawing", namespaces=NS)) for root in content_roots
+        )
+        report.hyperlinks = sum(
+            len(root.xpath(".//w:hyperlink", namespaces=NS)) for root in content_roots
+        )
         report.internal_hyperlinks = len(document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS))
         bookmark_nodes = document.xpath(".//w:bookmarkStart", namespaces=NS)
         report.bookmarks = len(bookmark_nodes)
         bookmark_names = [n.get(f"{{{W}}}name") for n in bookmark_nodes if n.get(f"{{{W}}}name")]
         report.duplicate_bookmark_names = len(bookmark_names) - len(set(bookmark_names))
-        anchors = [n.get(f"{{{W}}}anchor") for n in document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS)]
-        report.dangling_internal_hyperlinks = sum(1 for a in anchors if a and a not in set(bookmark_names))
+        anchors = [
+            n.get(f"{{{W}}}anchor")
+            for n in document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS)
+        ]
+        report.dangling_internal_hyperlinks = sum(
+            1 for a in anchors if a and a not in set(bookmark_names)
+        )
         report.comment_references = len(document.xpath(".//w:commentReference", namespaces=NS))
-        field_nodes = [n for root in content_roots for n in root.xpath(".//w:instrText", namespaces=NS)]
+        field_nodes = [
+            n for root in content_roots for n in root.xpath(".//w:instrText", namespaces=NS)
+        ]
         report.fields = len(field_nodes)
         report.seq_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("SEQ "))
         report.ref_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("REF "))
@@ -238,8 +264,15 @@ def inspect_docx_bytes(blob: bytes) -> DocxInspection:
                 parts = text.split()
                 if len(parts) >= 2:
                     ref_targets.append(parts[1])
-        report.dangling_ref_fields = sum(1 for name in ref_targets if name not in set(bookmark_names))
-        report.images_missing_alt = len(document.xpath(".//wp:docPr[(not(@descr) or normalize-space(@descr)='') and not(.//adec:decorative[@val='1'])]", namespaces=NS))
+        report.dangling_ref_fields = sum(
+            1 for name in ref_targets if name not in set(bookmark_names)
+        )
+        report.images_missing_alt = len(
+            document.xpath(
+                ".//wp:docPr[(not(@descr) or normalize-space(@descr)='') and not(.//adec:decorative[@val='1'])]",
+                namespaces=NS,
+            )
+        )
         report.sections = len(document.xpath(".//w:sectPr", namespaces=NS))
         report.landscape_sections = _count_landscape_sections(document)
         report.table_overflow_candidates = _count_table_overflow_candidates(document)
@@ -276,9 +309,17 @@ def inspect_docx_bytes(blob: bytes) -> DocxInspection:
         if comments is not None:
             report.comment_definitions = len(comments.xpath("./w:comment", namespaces=NS))
 
-        report.media_parts = sum(1 for name in names if name.startswith("word/media/") and not name.endswith("/"))
-        report.native_charts = sum(1 for name in names if name.startswith("word/charts/chart") and name.endswith(".xml"))
-        report.embedded_workbooks = sum(1 for name in names if name.startswith("word/embeddings/") and name.lower().endswith(".xlsx"))
+        report.media_parts = sum(
+            1 for name in names if name.startswith("word/media/") and not name.endswith("/")
+        )
+        report.native_charts = sum(
+            1 for name in names if name.startswith("word/charts/chart") and name.endswith(".xml")
+        )
+        report.embedded_workbooks = sum(
+            1
+            for name in names
+            if name.startswith("word/embeddings/") and name.lower().endswith(".xlsx")
+        )
         report.suspicious_placeholder_chars = _placeholder_counts(roots.values())
     return report
 
@@ -294,7 +335,9 @@ def _count_empty_nary_operands(root: etree._Element) -> int:
         text = "".join(operand.itertext()).strip()
         # A legitimate operand can contain only structured math without text in an
         # intermediate node, so also consider descendant math runs/elements.
-        meaningful = bool(text) or bool(operand.xpath(".//m:r|.//m:f|.//m:rad|.//m:m|.//m:sSup|.//m:sSub|.//m:d", namespaces=NS))
+        meaningful = bool(text) or bool(
+            operand.xpath(".//m:r|.//m:f|.//m:rad|.//m:m|.//m:sSup|.//m:sSub|.//m:d", namespaces=NS)
+        )
         if not meaningful:
             count += 1
     return count
@@ -409,7 +452,8 @@ def _count_chart_relationship_issues(roots: dict[str, etree._Element], names: se
             issues += 1
             continue
         package_rels = [
-            rel for rel in rels.xpath("./pr:Relationship", namespaces=NS)
+            rel
+            for rel in rels.xpath("./pr:Relationship", namespaces=NS)
             if (rel.get("Type") or "").endswith("/package")
         ]
         if len(package_rels) != 1:

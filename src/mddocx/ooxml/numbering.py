@@ -79,7 +79,11 @@ class NumberingEngine:
             # Explicitly assign a Unicode-capable font to *all* list markers.
             # Word can otherwise inherit the preceding Symbol/Wingdings font and
             # render perfectly valid Unicode bullets or decimal markers as boxes.
-            marker_font = self.config.bullet_font if kind == "bullet" else (self.config.number_font or self.body_font)
+            marker_font = (
+                self.config.bullet_font
+                if kind == "bullet"
+                else (self.config.number_font or self.body_font)
+            )
             rpr = OxmlElement("w:rPr")
             fonts = OxmlElement("w:rFonts")
             for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
@@ -99,8 +103,9 @@ class NumberingEngine:
         self.root.append(num)
         return num_id
 
-
-    def create_heading_scheme(self, max_level: int = 3, separator: str = ".", suffix: str = " ") -> int:
+    def create_heading_scheme(
+        self, max_level: int = 3, separator: str = ".", suffix: str = " "
+    ) -> int:
         """Create a native multilevel outline numbering definition for headings."""
         abstract_id = self._next_abstract
         self._next_abstract += 1
@@ -113,8 +118,12 @@ class NumberingEngine:
         for level in range(9):
             lvl = OxmlElement("w:lvl")
             lvl.set(qn("w:ilvl"), str(level))
-            start = OxmlElement("w:start"); start.set(qn("w:val"), "1"); lvl.append(start)
-            num_fmt = OxmlElement("w:numFmt"); num_fmt.set(qn("w:val"), "decimal"); lvl.append(num_fmt)
+            start = OxmlElement("w:start")
+            start.set(qn("w:val"), "1")
+            lvl.append(start)
+            num_fmt = OxmlElement("w:numFmt")
+            num_fmt.set(qn("w:val"), "decimal")
+            lvl.append(num_fmt)
             lvl_text = OxmlElement("w:lvlText")
             if level < max_level:
                 pieces = [f"%{i + 1}" for i in range(level + 1)]
@@ -122,9 +131,14 @@ class NumberingEngine:
             else:
                 lvl_text.set(qn("w:val"), "")
             lvl.append(lvl_text)
-            suff = OxmlElement("w:suff"); suff.set(qn("w:val"), "space"); lvl.append(suff)
+            suff = OxmlElement("w:suff")
+            suff.set(qn("w:val"), "space")
+            lvl.append(suff)
             ppr = OxmlElement("w:pPr")
-            ind = OxmlElement("w:ind"); ind.set(qn("w:left"), "0"); ind.set(qn("w:hanging"), "0"); ppr.append(ind)
+            ind = OxmlElement("w:ind")
+            ind.set(qn("w:left"), "0")
+            ind.set(qn("w:hanging"), "0")
+            ppr.append(ind)
             lvl.append(ppr)
             abstract.append(lvl)
         self.root.append(abstract)
@@ -132,7 +146,9 @@ class NumberingEngine:
         self._next_num += 1
         num = OxmlElement("w:num")
         num.set(qn("w:numId"), str(num_id))
-        abs_id = OxmlElement("w:abstractNumId"); abs_id.set(qn("w:val"), str(abstract_id)); num.append(abs_id)
+        abs_id = OxmlElement("w:abstractNumId")
+        abs_id.set(qn("w:val"), str(abstract_id))
+        num.append(abs_id)
         self.root.append(num)
         return num_id
 

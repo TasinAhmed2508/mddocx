@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from mddocx.ast.block import Heading, ImageBlock, Table, MathBlock, CodeBlock, ChartBlock, DataTableBlock
+from mddocx.ast.block import (
+    Heading,
+    ImageBlock,
+    Table,
+    MathBlock,
+    CodeBlock,
+    ChartBlock,
+    DataTableBlock,
+)
 
 
 @dataclass(slots=True)
@@ -17,6 +25,7 @@ class ReferenceTarget:
 
 class ReferenceRegistry:
     """Document-wide semantic ID -> Word bookmark/sequence registry."""
+
     def __init__(self) -> None:
         self.targets: dict[str, ReferenceTarget] = {}
         self._counts = {"Figure": 0, "Table": 0, "Equation": 0, "Listing": 0}
@@ -29,7 +38,13 @@ class ReferenceRegistry:
             value = "ref_" + value
         return value[:38]
 
-    def register(self, identifier: str | None, kind: str, title: str = "", number_override: int | str | None = None) -> ReferenceTarget | None:
+    def register(
+        self,
+        identifier: str | None,
+        kind: str,
+        title: str = "",
+        number_override: int | str | None = None,
+    ) -> ReferenceTarget | None:
         if not identifier:
             return None
         if identifier in self.targets:
@@ -56,7 +71,10 @@ class ReferenceRegistry:
 
     @classmethod
     def from_document(
-        cls, document, plain_text, equation_number_format: str = "document",
+        cls,
+        document,
+        plain_text,
+        equation_number_format: str = "document",
         caption_number_format: str = "document",
     ) -> "ReferenceRegistry":
         reg = cls()
@@ -75,32 +93,57 @@ class ReferenceRegistry:
             elif isinstance(node, ImageBlock):
                 if node.identifier and caption_number_format == "section":
                     caption_in_section["Figure"] += 1
-                    reg.register(node.identifier, "Figure", node.caption or node.title or node.alt, f"{max(1, section)}.{caption_in_section['Figure']}")
+                    reg.register(
+                        node.identifier,
+                        "Figure",
+                        node.caption or node.title or node.alt,
+                        f"{max(1, section)}.{caption_in_section['Figure']}",
+                    )
                 else:
                     reg.register(node.identifier, "Figure", node.caption or node.title or node.alt)
             elif isinstance(node, ChartBlock):
                 if node.identifier and caption_number_format == "section":
                     caption_in_section["Figure"] += 1
-                    reg.register(node.identifier, "Figure", node.caption or node.title or "", f"{max(1, section)}.{caption_in_section['Figure']}")
+                    reg.register(
+                        node.identifier,
+                        "Figure",
+                        node.caption or node.title or "",
+                        f"{max(1, section)}.{caption_in_section['Figure']}",
+                    )
                 else:
                     reg.register(node.identifier, "Figure", node.caption or node.title or "")
             elif isinstance(node, (Table, DataTableBlock)):
                 if node.identifier and caption_number_format == "section":
                     caption_in_section["Table"] += 1
-                    reg.register(node.identifier, "Table", node.caption or "", f"{max(1, section)}.{caption_in_section['Table']}")
+                    reg.register(
+                        node.identifier,
+                        "Table",
+                        node.caption or "",
+                        f"{max(1, section)}.{caption_in_section['Table']}",
+                    )
                 else:
                     reg.register(node.identifier, "Table", node.caption or "")
             elif isinstance(node, MathBlock):
                 if node.identifier and equation_number_format == "section":
                     equation_in_section += 1
-                    reg.register(node.identifier, "Equation", node.caption or "", f"{max(1, section)}.{equation_in_section}")
+                    reg.register(
+                        node.identifier,
+                        "Equation",
+                        node.caption or "",
+                        f"{max(1, section)}.{equation_in_section}",
+                    )
                 else:
                     reg.register(node.identifier, "Equation", node.caption or "")
             elif isinstance(node, CodeBlock):
                 kind = "Figure" if (node.language or "").lower() == "mermaid" else "Listing"
                 if node.identifier and caption_number_format == "section":
                     caption_in_section[kind] += 1
-                    reg.register(node.identifier, kind, node.caption or "", f"{max(1, section)}.{caption_in_section[kind]}")
+                    reg.register(
+                        node.identifier,
+                        kind,
+                        node.caption or "",
+                        f"{max(1, section)}.{caption_in_section[kind]}",
+                    )
                 else:
                     reg.register(node.identifier, kind, node.caption or "")
         return reg

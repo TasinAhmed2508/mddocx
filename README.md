@@ -23,6 +23,7 @@ mddocx converts Markdown into native Word structures instead of screenshots or f
 - Provides project mode for compiling multiple Markdown chapters into one document.
 - Includes diagnostics, document inspection, accessibility checks, and profiling utilities.
 - Provides privacy-aware metadata handling for exported AI/chat conversations.
+- Accepts common equation syntax copied from ChatGPT, Claude, Gemini, and other MathJax/LaTeX-producing assistants.
 
 ## Installation
 
@@ -112,6 +113,8 @@ Convert it to Word:
     mddocx document.md --toc --page-numbers
     mddocx document.md --header "Project Report" --footer "Confidential"
     mddocx document.md --diagnostics-json diagnostics.json
+    mddocx document.md --strict-math
+    mddocx math-check document.md
     mddocx inspect document.docx --strict
     mddocx accessibility document.docx --strict
     mddocx doctor
@@ -143,6 +146,35 @@ Run mddocx --help for the complete command reference.
         file.write(document)
 
 The public API is documented in docs/API_STABILITY.md and can also be inspected with mddocx api --json.
+
+For callers that need the output, diagnostics, and profiling data together, use the staged-v2
+compiler service:
+
+    from mddocx import Compiler
+
+    result = Compiler().compile_string("# Report\n\nInline \\(x^2\\).")
+    print(result.success, result.diagnostics, result.stats)
+    print(result.layout_plan.tables)
+
+The same service exposes `parse_string`, `parse_file`, `normalize`, `plan`, `render`,
+`check_string`, `check_file`, `compile_string`, and `compile_file`, so applications can
+inspect canonical AST and layout decisions without duplicating compiler internals.
+
+### AI-generated equations
+
+Common inline forms (`\\(...\\)` and `$...$`), display forms (`\\[...\\]` and `$$...$$`),
+and `math`, `latex`, or `tex` fenced blocks are converted to editable Word equations. Math-like
+text inside code spans and ordinary code fences is preserved as code, and common currency forms
+are preserved as text.
+
+When an equation uses syntax that the active math engine cannot convert, mddocx preserves its
+source as editable text and emits a `MATH201` warning. Use `--strict-math` when every equation must
+be native Word math and conversion should fail on the first unsupported expression. See
+`docs/AI_MATH_COMPATIBILITY.md` for the tested compatibility contract.
+
+Run `mddocx math-check document.md` before conversion to see the active math engine and the number
+of equations that can be rendered natively. Add `--json` for automation or `--strict` to return
+exit code 3 when any equation requires a fallback.
 
 ## YAML front matter
 
@@ -182,6 +214,17 @@ Document settings can be defined at the top of a Markdown file:
 ## Documentation
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
+
+The compiler stages and system architecture are described in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The machine-readable supported
+feature contract is [docs/feature-matrix.json](docs/feature-matrix.json).
+
+The machine-readable fidelity contract is `docs/feature-matrix.json`; every listed feature links
+its accepted syntax, canonical AST, native Word representation, diagnostic behavior, host status,
+and tracked regression evidence.
+
+Microsoft Word 365 release qualification, including the reusable Windows automation script, is
+documented in `docs/WORD365_QA.md`.
 
 ## Releases
 

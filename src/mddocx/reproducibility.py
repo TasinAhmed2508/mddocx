@@ -11,7 +11,10 @@ def make_reproducible_docx(blob: bytes, config: ReproducibilityConfig) -> bytes:
         return blob
     source = BytesIO(blob)
     output = BytesIO()
-    with ZipFile(source, "r") as zin, ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as zout:
+    with (
+        ZipFile(source, "r") as zin,
+        ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as zout,
+    ):
         infos = zin.infolist()
         if config.sort_package_parts:
             infos = sorted(infos, key=lambda item: item.filename)

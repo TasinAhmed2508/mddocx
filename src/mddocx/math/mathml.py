@@ -6,12 +6,21 @@ from docx.oxml.ns import qn
 
 NARY_CHARS = {"∑", "∏", "∫", "∬", "∭", "∮"}
 ACCENT_CHARS = {
-    "^": "\u0302", "ˆ": "\u0302", "̂": "\u0302",
-    "¯": "\u0305", "‾": "\u0305", "̅": "\u0305",
-    "→": "\u20d7", "⃗": "\u20d7",
-    "~": "\u0303", "˜": "\u0303", "̃": "\u0303",
-    "˙": "\u0307", "̇": "\u0307",
-    "¨": "\u0308", "̈": "\u0308",
+    "^": "\u0302",
+    "ˆ": "\u0302",
+    "̂": "\u0302",
+    "¯": "\u0305",
+    "‾": "\u0305",
+    "̅": "\u0305",
+    "→": "\u20d7",
+    "⃗": "\u20d7",
+    "~": "\u0303",
+    "˜": "\u0303",
+    "̃": "\u0303",
+    "˙": "\u0307",
+    "̇": "\u0307",
+    "¨": "\u0308",
+    "̈": "\u0308",
 }
 SCRIPT_VARIANTS = {
     "double-struck": "double-struck",
@@ -42,7 +51,9 @@ class MathMLToOMML:
     """
 
     def convert(self, mathml: str):
-        parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False, recover=False)
+        parser = etree.XMLParser(
+            resolve_entities=False, no_network=True, load_dtd=False, recover=False
+        )
         root = etree.fromstring(mathml.encode("utf-8"), parser=parser)
         omath = OxmlElement("m:oMath")
         self._append_children(omath, root)
@@ -86,7 +97,11 @@ class MathMLToOMML:
             # mathematical divides/vertical-line glyph for reliable equation rendering.
             if tag == "mo" and value == "|":
                 value = "∣"
-            self._run(parent, value, variant=variant)
+            # TeX ``\\text{...}`` and MathML string literals are prose, not
+            # mathematical identifiers. Word otherwise applies math italic to
+            # them, which visibly breaks AI-generated explanatory boxes.
+            token_variant = "normal" if tag in {"mtext", "ms"} and variant is None else variant
+            self._run(parent, value, variant=token_variant)
             return
         if tag == "mspace":
             if node.get("width") not in {None, "0em", "0ex", "0px"}:
@@ -97,6 +112,12 @@ class MathMLToOMML:
                 self._run(parent, "\u200b", variant="normal")
                 return
             f = OxmlElement("m:f")
+            if node.get("linethickness") in {"0", "0px", "0pt", "0em"}:
+                f_pr = OxmlElement("m:fPr")
+                fraction_type = OxmlElement("m:type")
+                fraction_type.set(qn("m:val"), "noBar")
+                f_pr.append(fraction_type)
+                f.append(f_pr)
             num = OxmlElement("m:num")
             den = OxmlElement("m:den")
             self._append_children(num, node[0], variant)
@@ -244,7 +265,9 @@ class MathMLToOMML:
 
                 built = self._make_nary(chain[-1], operand=operand, inherited_variant=variant)
                 for nary_node in reversed(chain[:-1]):
-                    built = self._make_nary(nary_node, operand_omml=built, inherited_variant=variant)
+                    built = self._make_nary(
+                        nary_node, operand_omml=built, inherited_variant=variant
+                    )
                 parent.append(built)
                 i = j + (1 if consume_operand else 0)
                 continue
@@ -297,7 +320,9 @@ class MathMLToOMML:
             return False
         return True
 
-    def _make_nary(self, node, operand=None, operand_omml=None, inherited_variant: str | None = None):
+    def _make_nary(
+        self, node, operand=None, operand_omml=None, inherited_variant: str | None = None
+    ):
         tag = self._local(node)
         base = node
         sub_node = sup_node = None
@@ -358,7 +383,11 @@ class MathMLToOMML:
         return nary
 
     def _is_limit_script(self, node) -> bool:
-        return len(node) >= 2 and self._local(node[0]) in {"mi", "mtext"} and self._text(node[0]) == "lim"
+        return (
+            len(node) >= 2
+            and self._local(node[0]) in {"mi", "mtext"}
+            and self._text(node[0]) == "lim"
+        )
 
     def _append_limit(self, parent, node, variant: str | None = None) -> None:
         tag = self._local(node)

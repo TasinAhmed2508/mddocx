@@ -14,4 +14,10 @@ def open_path(path: str | Path) -> None:
         os.startfile(str(target))  # type: ignore[attr-defined]
         return
     command = ["open", str(target)] if sys.platform == "darwin" else ["xdg-open", str(target)]
-    subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )

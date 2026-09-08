@@ -7,10 +7,9 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import sys
 import time
-from typing import Callable, Iterable
+from typing import Callable
 from urllib.parse import urlparse
 
 from .. import __version__
@@ -22,7 +21,14 @@ from ..data import load_tabular_data
 from ..diagnostics import MddocxError
 from ..doctor import run_doctor
 from ..inspection import inspect_docx
-from ..project import build_project, init_project, load_project, project_info, watch_project, ProjectWatchEvent
+from ..project import (
+    build_project,
+    init_project,
+    load_project,
+    project_info,
+    watch_project,
+    ProjectWatchEvent,
+)
 from ..styles import THEMES
 from ..template_inspection import inspect_template
 from ..metadata import sanitize_markdown_metadata
@@ -30,14 +36,41 @@ from .history import add_recent, load_recent, repl_history_path
 from .fonts import discover_fonts, font_display_name
 from .opening import open_path
 from .tokenize import split_command
-from .workspace import WorkspaceSummary, display_path, inspect_workspace
+from .workspace import display_path, inspect_workspace
 
 _MD_REMOTE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?(https://[^)\s>]+)>?", re.IGNORECASE)
-_HTML_REMOTE_IMAGE_RE = re.compile(r"<img\b[^>]*\bsrc=[\"\'](https://[^\"\']+)[\"\']", re.IGNORECASE)
+_HTML_REMOTE_IMAGE_RE = re.compile(
+    r"<img\b[^>]*\bsrc=[\"\'](https://[^\"\']+)[\"\']", re.IGNORECASE
+)
 _COMMANDS = (
-    "menu", "render", "check", "build", "watch", "new", "config", "project",
-    "doctor", "inspect", "accessibility", "template", "data", "metadata", "benchmark",
-    "recent", "open", "fonts", "diagnostics", "explain", "tools", "cd", "pwd", "files", "help", "clear", "exit", "quit",
+    "menu",
+    "render",
+    "check",
+    "build",
+    "watch",
+    "new",
+    "config",
+    "project",
+    "doctor",
+    "inspect",
+    "accessibility",
+    "template",
+    "data",
+    "metadata",
+    "benchmark",
+    "recent",
+    "open",
+    "fonts",
+    "diagnostics",
+    "explain",
+    "tools",
+    "cd",
+    "pwd",
+    "files",
+    "help",
+    "clear",
+    "exit",
+    "quit",
 )
 
 
@@ -113,7 +146,9 @@ class InteractiveConsole:
                 return number
             self.println("Selection out of range.")
 
-    def choose_file(self, suffixes: set[str], title: str, *, allow_missing: bool = False) -> Path | None:
+    def choose_file(
+        self, suffixes: set[str], title: str, *, allow_missing: bool = False
+    ) -> Path | None:
         files = self._matching_files(suffixes)
         self.println(title)
         if files:
@@ -135,7 +170,9 @@ class InteractiveConsole:
                 return None
             if lowered == "s":
                 query = self.ask("Search filename").casefold()
-                matches = [p for p in files if query in str(p.relative_to(self.workspace)).casefold()]
+                matches = [
+                    p for p in files if query in str(p.relative_to(self.workspace)).casefold()
+                ]
                 if not matches:
                     self.println("No matches.")
                     continue
@@ -165,7 +202,10 @@ class InteractiveConsole:
                     rel_parts = path.relative_to(self.workspace).parts
                 except ValueError:
                     continue
-                if any(part in {".git", ".mddocx", ".venv", "venv", "node_modules", "__pycache__"} for part in rel_parts[:-1]):
+                if any(
+                    part in {".git", ".mddocx", ".venv", "venv", "node_modules", "__pycache__"}
+                    for part in rel_parts[:-1]
+                ):
                     continue
                 if path.is_file() and path.suffix.lower() in suffixes:
                     result.append(path.resolve())
@@ -216,7 +256,9 @@ class InteractiveConsole:
             self.println(f"  [{i:2d}] {item}")
         self.println("  [ Q] Quit")
         self.println("")
-        self.println("Tip: you can also type commands such as `render report.md`, `build`, `doctor`, or `help`.")
+        self.println(
+            "Tip: you can also type commands such as `render report.md`, `build`, `doctor`, or `help`."
+        )
 
     def run(self, *, show_menu: bool = True) -> int:
         self.banner()
@@ -241,9 +283,18 @@ class InteractiveConsole:
             self.show_menu()
             return ShellResult()
         numeric = {
-            "1": "render", "2": "build", "3": "watch", "4": "new", "5": "config",
-            "6": "check", "7": "inspect", "8": "accessibility", "9": "tools",
-            "10": "doctor", "11": "recent", "12": "help",
+            "1": "render",
+            "2": "build",
+            "3": "watch",
+            "4": "new",
+            "5": "config",
+            "6": "check",
+            "7": "inspect",
+            "8": "accessibility",
+            "9": "tools",
+            "10": "doctor",
+            "11": "recent",
+            "12": "help",
         }
         if line.lower() in {"q", "quit", "exit"}:
             self.println("Goodbye.")
@@ -258,7 +309,13 @@ class InteractiveConsole:
         if not tokens:
             return ShellResult()
         command, args = tokens[0].lower(), tokens[1:]
-        aliases = {"ls": "files", "dir": "files", "a11y": "accessibility", "new-project": "new", "tools": "tools"}
+        aliases = {
+            "ls": "files",
+            "dir": "files",
+            "a11y": "accessibility",
+            "new-project": "new",
+            "tools": "tools",
+        }
         command = aliases.get(command, command)
         handlers = {
             "menu": self.cmd_menu,
@@ -306,7 +363,8 @@ class InteractiveConsole:
 
     # ----- commands -------------------------------------------------
     def cmd_menu(self, args: list[str]) -> int:
-        self.show_menu(); return 0
+        self.show_menu()
+        return 0
 
     def cmd_render(self, args: list[str]) -> int:
         parser = _nonexiting_parser("render")
@@ -320,7 +378,11 @@ class InteractiveConsole:
         if ns is None:
             return 2
         guided = ns.source is None
-        source = self._resolve_path(ns.source) if ns.source else self.choose_file({".md", ".markdown", ".mdown", ".mkd"}, "Select a Markdown file:")
+        source = (
+            self._resolve_path(ns.source)
+            if ns.source
+            else self.choose_file({".md", ".markdown", ".mdown", ".mkd"}, "Select a Markdown file:")
+        )
         if source is None:
             return 0
         output_default = source.with_suffix(".docx")
@@ -351,10 +413,14 @@ class InteractiveConsole:
         metadata_policy = ns.ai_metadata
         try:
             source_text = source.read_text(encoding="utf-8-sig")
-            metadata_preview = sanitize_markdown_metadata(source_text, MetadataConfig(ai_export=metadata_policy))
+            metadata_preview = sanitize_markdown_metadata(
+                source_text, MetadataConfig(ai_export=metadata_policy)
+            )
             if metadata_preview.report.detected_export_metadata:
                 if metadata_policy == "keep":
-                    self.println("AI/chat export metadata detected; it will be preserved (--ai-metadata keep).")
+                    self.println(
+                        "AI/chat export metadata detected; it will be preserved (--ai-metadata keep)."
+                    )
                 else:
                     self.println(
                         f"AI/chat export metadata detected: {metadata_preview.report.removed_lines} line(s), "
@@ -384,14 +450,24 @@ class InteractiveConsole:
             self.last_diagnostics = []
         size = output.stat().st_size
         self.println("  [OK] DOCX generated")
-        self.println(f"  [OK] Equations: {report.equations}  Tables: {report.tables}  Lists: {report.native_list_paragraphs}")
+        self.println(
+            f"  [OK] Equations: {report.equations}  Tables: {report.tables}  Lists: {report.native_list_paragraphs}"
+        )
         self.println(f"  [OK] Drawings: {report.drawings}  Charts: {report.native_charts}")
         self.println(f"Completed in {elapsed:.2f} s")
         self.println(f"Output size: {_human_size(size)}")
-        self.println(f"Structural issues: {report.structural_issues}  Warnings: {report.quality_warnings}")
+        self.println(
+            f"Structural issues: {report.structural_issues}  Warnings: {report.quality_warnings}"
+        )
         self.println(f"Output: {output}")
         self.last_output = output
-        add_recent(source=source, output=output, action="render", workspace=self.workspace, settings={"theme": theme})
+        add_recent(
+            source=source,
+            output=output,
+            action="render",
+            workspace=self.workspace,
+            settings={"theme": theme},
+        )
         should_open = ns.open or (guided and self.confirm("Open DOCX now?", default=True))
         if should_open:
             self.opener(output)
@@ -399,7 +475,13 @@ class InteractiveConsole:
         return 0
 
     def cmd_check(self, args: list[str]) -> int:
-        source = self._resolve_path(args[0]) if args else self.choose_file({".md", ".markdown", ".mdown", ".mkd"}, "Select Markdown to check:")
+        source = (
+            self._resolve_path(args[0])
+            if args
+            else self.choose_file(
+                {".md", ".markdown", ".mdown", ".mkd"}, "Select Markdown to check:"
+            )
+        )
         if source is None:
             return 0
         converter = MarkdownWord(RenderConfig())
@@ -411,7 +493,11 @@ class InteractiveConsole:
         force = "--force" in args
         open_after = "--open" in args
         raw_project = next((x for x in args if not x.startswith("-")), None)
-        project = self._resolve_path(raw_project) if raw_project else (self.summary.project_file or self.workspace)
+        project = (
+            self._resolve_path(raw_project)
+            if raw_project
+            else (self.summary.project_file or self.workspace)
+        )
         self.println(f"Building project: {project}")
         result = build_project(project, force=force)
         status = "BUILT" if result.built else "UP-TO-DATE"
@@ -419,7 +505,13 @@ class InteractiveConsole:
         self.println(f"Dependencies: {len(result.dependencies)}")
         self.println(f"Completed in {result.elapsed_ms / 1000:.2f} s")
         self.last_output = result.output_path
-        add_recent(source=result.project_file, output=result.output_path, action="build", workspace=self.workspace, settings={"fingerprint": result.fingerprint})
+        add_recent(
+            source=result.project_file,
+            output=result.output_path,
+            action="build",
+            workspace=self.workspace,
+            settings={"fingerprint": result.fingerprint},
+        )
         if open_after:
             self.opener(result.output_path)
         self._refresh()
@@ -428,7 +520,11 @@ class InteractiveConsole:
     def cmd_watch(self, args: list[str]) -> int:
         once = "--once" in args
         raw_project = next((x for x in args if not x.startswith("-")), None)
-        project = self._resolve_path(raw_project) if raw_project else (self.summary.project_file or self.workspace)
+        project = (
+            self._resolve_path(raw_project)
+            if raw_project
+            else (self.summary.project_file or self.workspace)
+        )
         manifest = load_project(project)
         self.println(f"Watching: {manifest.root}")
         self.println(f"Output  : {manifest.output}")
@@ -457,8 +553,12 @@ class InteractiveConsole:
         root = self._resolve_path(directory, require_exists=False)
         path = init_project(root)
         title = self.ask("Document title", "My Document")
-        theme = sorted(THEMES)[self.choose("Theme:", sorted(THEMES), sorted(THEMES).index("default") + 1) - 1]
-        _update_project_yaml(path, {"variables.project_name": title, "render.title": title, "render.theme": theme})
+        theme = sorted(THEMES)[
+            self.choose("Theme:", sorted(THEMES), sorted(THEMES).index("default") + 1) - 1
+        ]
+        _update_project_yaml(
+            path, {"variables.project_name": title, "render.title": title, "render.theme": theme}
+        )
         self.println(f"Created project: {path}")
         if self.confirm("Switch workspace to the new project?", default=True):
             self.workspace = root
@@ -471,20 +571,34 @@ class InteractiveConsole:
             return 2
         path = self.summary.project_file
         if args and args[0] == "show":
-            self.println(path.read_text(encoding="utf-8")); return 0
+            self.println(path.read_text(encoding="utf-8"))
+            return 0
         if len(args) >= 3 and args[0] == "set":
             key = args[1]
             value = _coerce_scalar(" ".join(args[2:]))
             _update_project_yaml(path, {key: value})
             self.println(f"Updated {key} = {value!r}")
-            self._refresh(); return 0
+            self._refresh()
+            return 0
         self._show_project_config(path)
         if not self.confirm("Change a common setting?", default=False):
             return 0
-        choices = ["Theme", "Title", "Table of contents", "Heading numbering", "Equation numbering", "Caption numbering", "Page X of Y", "AI export metadata", "Output path"]
+        choices = [
+            "Theme",
+            "Title",
+            "Table of contents",
+            "Heading numbering",
+            "Equation numbering",
+            "Caption numbering",
+            "Page X of Y",
+            "AI export metadata",
+            "Output path",
+        ]
         pick = self.choose("Project configuration", choices)
         if pick == 1:
-            themes = sorted(THEMES); value = themes[self.choose("Theme", themes) - 1]; changes = {"render.theme": value}
+            themes = sorted(THEMES)
+            value = themes[self.choose("Theme", themes) - 1]
+            changes = {"render.theme": value}
         elif pick == 2:
             changes = {"render.title": self.ask("Title")}
         elif pick == 3:
@@ -492,14 +606,32 @@ class InteractiveConsole:
         elif pick == 4:
             changes = {"render.heading_numbering": self.confirm("Enable heading numbering?", True)}
         elif pick == 5:
-            value = ["document", "section"][self.choose("Equation numbering", ["Document", "Section/chapter"]) - 1]; changes = {"render.equation_numbering": value}
+            value = ["document", "section"][
+                self.choose("Equation numbering", ["Document", "Section/chapter"]) - 1
+            ]
+            changes = {"render.equation_numbering": value}
         elif pick == 6:
-            value = ["document", "section"][self.choose("Caption numbering", ["Document", "Section/chapter"]) - 1]; changes = {"render.caption_numbering": value}
+            value = ["document", "section"][
+                self.choose("Caption numbering", ["Document", "Section/chapter"]) - 1
+            ]
+            changes = {"render.caption_numbering": value}
         elif pick == 7:
             changes = {"render.page_x_of_y": self.confirm("Enable Page X of Y?", True)}
         elif pick == 8:
             values = ["auto", "strip", "keep"]
-            changes = {"render.ai_metadata": values[self.choose("AI export metadata", ["Auto-strip high-confidence metadata", "Force strip recognized metadata", "Keep export metadata"]) - 1]}
+            changes = {
+                "render.ai_metadata": values[
+                    self.choose(
+                        "AI export metadata",
+                        [
+                            "Auto-strip high-confidence metadata",
+                            "Force strip recognized metadata",
+                            "Keep export metadata",
+                        ],
+                    )
+                    - 1
+                ]
+            }
         else:
             changes = {"output": self.ask("Output path", "build/document.docx")}
         _update_project_yaml(path, changes)
@@ -509,6 +641,7 @@ class InteractiveConsole:
 
     def _show_project_config(self, path: Path) -> None:
         import yaml
+
         loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         render = loaded.get("render") or {}
         self.println("Project configuration")
@@ -516,10 +649,14 @@ class InteractiveConsole:
         self.println(f"  Theme ................ {render.get('theme', 'default')}")
         self.println(f"  Title ................ {render.get('title', '(not set)')}")
         self.println(f"  TOC .................. {'enabled' if render.get('toc') else 'disabled'}")
-        self.println(f"  Heading numbering .... {'enabled' if render.get('heading_numbering') else 'disabled'}")
+        self.println(
+            f"  Heading numbering .... {'enabled' if render.get('heading_numbering') else 'disabled'}"
+        )
         self.println(f"  Equation numbering ... {render.get('equation_numbering', 'document')}")
         self.println(f"  Caption numbering .... {render.get('caption_numbering', 'document')}")
-        self.println(f"  Page X of Y .......... {'enabled' if render.get('page_x_of_y') else 'disabled'}")
+        self.println(
+            f"  Page X of Y .......... {'enabled' if render.get('page_x_of_y') else 'disabled'}"
+        )
         self.println(f"  AI export metadata ... {render.get('ai_metadata', 'auto')}")
 
     def cmd_project(self, args: list[str]) -> int:
@@ -541,7 +678,7 @@ class InteractiveConsole:
             try:
                 info = project_info(self.summary.project_file)
                 self.println("\nWorkspace")
-                self.println(f"  Project ............... ready")
+                self.println("  Project ............... ready")
                 self.println(f"  Sources ............... {info['source_count']}")
                 self.println(f"  Includes .............. {info['include_count']}")
                 self.println(f"  Dependencies .......... {len(info['dependencies'])}")
@@ -551,14 +688,16 @@ class InteractiveConsole:
 
     def cmd_inspect(self, args: list[str]) -> int:
         target = self._pick_docx(args)
-        if target is None: return 0
+        if target is None:
+            return 0
         report = inspect_docx(target)
         self.println(report.to_text())
         return 0 if report.ok else 2
 
     def cmd_accessibility(self, args: list[str]) -> int:
         target = self._pick_docx(args)
-        if target is None: return 0
+        if target is None:
+            return 0
         report = audit_docx_accessibility(target)
         self.println(report.to_text())
         return 0 if report.passes("medium") else 2
@@ -566,21 +705,37 @@ class InteractiveConsole:
     def _pick_docx(self, args: list[str]) -> Path | None:
         if args:
             return self._resolve_path(args[0])
-        if self.last_output and self.last_output.exists() and self.confirm(f"Use last output {self.last_output.name}?", default=True):
+        if (
+            self.last_output
+            and self.last_output.exists()
+            and self.confirm(f"Use last output {self.last_output.name}?", default=True)
+        ):
             return self.last_output
         return self.choose_file({".docx"}, "Select a DOCX:")
 
     def cmd_template(self, args: list[str]) -> int:
-        if args and args[0] == "inspect": args = args[1:]
-        target = self._resolve_path(args[0]) if args else self.choose_file({".docx", ".dotx"}, "Select a Word template/document:")
-        if target is None: return 0
+        if args and args[0] == "inspect":
+            args = args[1:]
+        target = (
+            self._resolve_path(args[0])
+            if args
+            else self.choose_file({".docx", ".dotx"}, "Select a Word template/document:")
+        )
+        if target is None:
+            return 0
         self.println(inspect_template(target).to_text())
         return 0
 
     def cmd_data(self, args: list[str]) -> int:
-        if args and args[0] == "inspect": args = args[1:]
-        target = self._resolve_path(args[0]) if args else self.choose_file({".csv", ".json"}, "Select CSV/JSON data:")
-        if target is None: return 0
+        if args and args[0] == "inspect":
+            args = args[1:]
+        target = (
+            self._resolve_path(args[0])
+            if args
+            else self.choose_file({".csv", ".json"}, "Select CSV/JSON data:")
+        )
+        if target is None:
+            return 0
         data = load_tabular_data(target)
         self.println(f"Data source: {target}")
         self.println(f"Rows: {len(data.rows)}")
@@ -594,14 +749,27 @@ class InteractiveConsole:
         elif "--strip" in args:
             policy = "strip"
         raw_source = next((x for x in args if not x.startswith("-")), None)
-        source = self._resolve_path(raw_source) if raw_source else self.choose_file({".md", ".markdown", ".mdown", ".mkd"}, "Select Markdown to inspect for AI/export metadata:")
+        source = (
+            self._resolve_path(raw_source)
+            if raw_source
+            else self.choose_file(
+                {".md", ".markdown", ".mdown", ".mkd"},
+                "Select Markdown to inspect for AI/export metadata:",
+            )
+        )
         if source is None:
             return 0
-        result = sanitize_markdown_metadata(source.read_text(encoding="utf-8-sig"), MetadataConfig(ai_export=policy))
+        result = sanitize_markdown_metadata(
+            source.read_text(encoding="utf-8-sig"), MetadataConfig(ai_export=policy)
+        )
         r = result.report
-        self.println(f"AI/export metadata detected: {'yes' if r.detected_export_metadata else 'no'}")
+        self.println(
+            f"AI/export metadata detected: {'yes' if r.detected_export_metadata else 'no'}"
+        )
         self.println(f"Policy: {r.policy}")
-        self.println(f"Would remove: {r.removed_lines} source line(s), {len(r.removed_front_matter_keys)} front-matter field(s)")
+        self.println(
+            f"Would remove: {r.removed_lines} source line(s), {len(r.removed_front_matter_keys)} front-matter field(s)"
+        )
         if r.removed_front_matter_keys:
             self.println("Fields: " + ", ".join(r.removed_front_matter_keys))
         for reason in r.reasons:
@@ -610,15 +778,19 @@ class InteractiveConsole:
 
     def cmd_benchmark(self, args: list[str]) -> int:
         sections = 100
-        if args and args[0].isdigit(): sections = max(1, int(args[0]))
-        report = run_performance_gate(sections=sections, max_seconds=30.0, max_peak_memory_bytes=512 * 1024 * 1024)
+        if args and args[0].isdigit():
+            sections = max(1, int(args[0]))
+        report = run_performance_gate(
+            sections=sections, max_seconds=30.0, max_peak_memory_bytes=512 * 1024 * 1024
+        )
         self.println(report.to_text())
         return 0 if report.ok else 2
 
     def cmd_recent(self, args: list[str]) -> int:
         items = load_recent(limit=20)
         if not items:
-            self.println("No recent renders/builds recorded yet."); return 0
+            self.println("No recent renders/builds recorded yet.")
+            return 0
         self.println("Recently generated documents")
         for i, item in enumerate(items, start=1):
             output = Path(item.output)
@@ -637,7 +809,11 @@ class InteractiveConsole:
             return 0
         query = " ".join(args).casefold().strip()
         if query:
-            fonts = tuple(p for p in fonts if query in p.name.casefold() or query in font_display_name(p).casefold())
+            fonts = tuple(
+                p
+                for p in fonts
+                if query in p.name.casefold() or query in font_display_name(p).casefold()
+            )
         self.println(f"System fonts: {len(fonts)} matching file(s)")
         for path in fonts[:50]:
             self.println(f"  {font_display_name(path)}  [{path.name}]")
@@ -659,7 +835,10 @@ class InteractiveConsole:
                 location = item.get("source_file") or ""
                 if item.get("line") is not None:
                     location = f"{location}:{item.get('line')}"
-                self.println(f"  {index}. {severity} {code} {message}" + (f" [{location}]" if location else ""))
+                self.println(
+                    f"  {index}. {severity} {code} {message}"
+                    + (f" [{location}]" if location else "")
+                )
         return 0
 
     def cmd_explain(self, args: list[str]) -> int:
@@ -694,7 +873,10 @@ class InteractiveConsole:
         }
         message = exact.get(code)
         if message is None:
-            message = next((text for key, text in prefix.items() if code.startswith(key)), "No built-in explanation is available for this code yet. The original diagnostic message remains authoritative.")
+            message = next(
+                (text for key, text in prefix.items() if code.startswith(key)),
+                "No built-in explanation is available for this code yet. The original diagnostic message remains authoritative.",
+            )
         self.println(code)
         self.println(message)
         return 0
@@ -707,7 +889,8 @@ class InteractiveConsole:
         else:
             recent = load_recent(limit=1)
             if not recent:
-                self.println("No recent output is available."); return 2
+                self.println("No recent output is available.")
+                return 2
             target = Path(recent[0].output)
         self.opener(target)
         self.println(f"Opened: {target}")
@@ -715,34 +898,53 @@ class InteractiveConsole:
 
     def cmd_cd(self, args: list[str]) -> int:
         if not args:
-            self.println(str(self.workspace)); return 0
+            self.println(str(self.workspace))
+            return 0
         target = self._resolve_path(args[0])
-        if not target.is_dir(): raise OSError(f"Not a directory: {target}")
+        if not target.is_dir():
+            raise OSError(f"Not a directory: {target}")
         self.workspace = target
         self._refresh()
         self.println(f"Workspace: {self.workspace}")
         return 0
 
     def cmd_pwd(self, args: list[str]) -> int:
-        self.println(str(self.workspace)); return 0
+        self.println(str(self.workspace))
+        return 0
 
     def cmd_files(self, args: list[str]) -> int:
         self._refresh()
         self.println("Workspace files")
         self.println(f"  Markdown .............. {len(self.summary.markdown_files)}")
-        for path in self.summary.markdown_files[:20]: self.println(f"    {display_path(path, self.workspace)}")
+        for path in self.summary.markdown_files[:20]:
+            self.println(f"    {display_path(path, self.workspace)}")
         self.println(f"  DOCX .................. {len(self.summary.docx_files)}")
         self.println(f"  Images ................ {len(self.summary.image_files)}")
         self.println(f"  Data .................. {len(self.summary.data_files)}")
         return 0
 
     def cmd_tools(self, args: list[str]) -> int:
-        pick = self.choose("Template / data / metadata / font tools", ["Inspect Word template", "Inspect CSV/JSON data", "Inspect AI/chat export metadata", "Browse system fonts", "Run benchmark", "Back"])
-        if pick == 1: return self.cmd_template([])
-        if pick == 2: return self.cmd_data([])
-        if pick == 3: return self.cmd_metadata([])
-        if pick == 4: return self.cmd_fonts([])
-        if pick == 5: return self.cmd_benchmark([])
+        pick = self.choose(
+            "Template / data / metadata / font tools",
+            [
+                "Inspect Word template",
+                "Inspect CSV/JSON data",
+                "Inspect AI/chat export metadata",
+                "Browse system fonts",
+                "Run benchmark",
+                "Back",
+            ],
+        )
+        if pick == 1:
+            return self.cmd_template([])
+        if pick == 2:
+            return self.cmd_data([])
+        if pick == 3:
+            return self.cmd_metadata([])
+        if pick == 4:
+            return self.cmd_fonts([])
+        if pick == 5:
+            return self.cmd_benchmark([])
         return 0
 
     def cmd_help(self, args: list[str]) -> int:
@@ -763,7 +965,8 @@ class InteractiveConsole:
                 "recent": "recent [NUMBER]",
                 "open": "open [FILE.docx]",
             }
-            self.println(details.get(topic, f"No detailed help for {topic}.")); return 0
+            self.println(details.get(topic, f"No detailed help for {topic}."))
+            return 0
         self.println("DOCUMENTS")
         self.println("  render       Guided or direct Markdown -> DOCX")
         self.println("  check        Parse/validate Markdown without writing")
@@ -824,7 +1027,9 @@ def _nonexiting_parser(prog: str) -> argparse.ArgumentParser:
     return argparse.ArgumentParser(prog=f"mddocx shell {prog}", add_help=False, exit_on_error=False)
 
 
-def _parse_interactive(parser: argparse.ArgumentParser, args: list[str], writer: Callable[[str], None]):
+def _parse_interactive(
+    parser: argparse.ArgumentParser, args: list[str], writer: Callable[[str], None]
+):
     try:
         return parser.parse_args(args)
     except (argparse.ArgumentError, SystemExit) as exc:
@@ -834,26 +1039,36 @@ def _parse_interactive(parser: argparse.ArgumentParser, args: list[str], writer:
 
 def _coerce_scalar(value: str):
     lowered = value.strip().lower()
-    if lowered in {"true", "yes", "on"}: return True
-    if lowered in {"false", "no", "off"}: return False
-    if lowered in {"null", "none", "~"}: return None
-    try: return int(value)
-    except ValueError: pass
-    try: return float(value)
-    except ValueError: return value
+    if lowered in {"true", "yes", "on"}:
+        return True
+    if lowered in {"false", "no", "off"}:
+        return False
+    if lowered in {"null", "none", "~"}:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
 
 
 def _update_project_yaml(path: Path, changes: dict[str, object]) -> None:
     import yaml
+
     loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(loaded, dict): raise ValueError("Project YAML must be a mapping")
+    if not isinstance(loaded, dict):
+        raise ValueError("Project YAML must be a mapping")
     for dotted, value in changes.items():
         parts = dotted.split(".")
         current = loaded
         for part in parts[:-1]:
             child = current.get(part)
             if not isinstance(child, dict):
-                child = {}; current[part] = child
+                child = {}
+                current[part] = child
             current = child
         current[parts[-1]] = value
     path.write_text(yaml.safe_dump(loaded, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -887,9 +1102,20 @@ def _make_prompt_reader(workspace_getter: Callable[[], Path]):
                         yield Completion(command, start_position=-len(word))
                 return
             command = stripped.split(None, 1)[0].lower()
-            if command in {"render", "check", "cd", "inspect", "accessibility", "template", "data", "open", "build", "watch"}:
+            if command in {
+                "render",
+                "check",
+                "cd",
+                "inspect",
+                "accessibility",
+                "template",
+                "data",
+                "open",
+                "build",
+                "watch",
+            }:
                 fragment = before.rsplit(" ", 1)[-1]
-                quote = fragment[:1] if fragment[:1] in {"\"", "'"} else ""
+                quote = fragment[:1] if fragment[:1] in {'"', "'"} else ""
                 raw_fragment = fragment[1:] if quote else fragment
                 candidate = Path(raw_fragment).expanduser()
                 if candidate.is_absolute():
@@ -899,7 +1125,9 @@ def _make_prompt_reader(workspace_getter: Callable[[], Path]):
                     parent = workspace_getter() / candidate.parent
                     prefix = candidate.name
                 try:
-                    children = sorted(parent.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
+                    children = sorted(
+                        parent.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold())
+                    )
                 except OSError:
                     children = []
                 for child in children:
@@ -908,7 +1136,9 @@ def _make_prompt_reader(workspace_getter: Callable[[], Path]):
                     replacement = child.name + (os.sep if child.is_dir() else "")
                     yield Completion(replacement, start_position=-len(prefix), display=replacement)
 
-    session = PromptSession(history=history, completer=ShellCompleter(), complete_while_typing=False)
+    session = PromptSession(
+        history=history, completer=ShellCompleter(), complete_while_typing=False
+    )
     return session.prompt
 
 

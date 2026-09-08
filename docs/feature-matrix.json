@@ -1,0 +1,148 @@
+{
+  "schema": "mddocx-feature-matrix",
+  "version": 1,
+  "baseline": "CommonMark/GFM via markdown-it-py plus documented mddocx extensions",
+  "fidelity_dimensions": ["semantic", "native_editability", "presentation"],
+  "features": [
+    {
+      "id": "core-text",
+      "syntax": "CommonMark paragraphs, emphasis, strong, strikethrough, code spans, links and breaks",
+      "ast": "Paragraph and inline nodes",
+      "ooxml": "w:p, w:r, w:rPr and w:hyperlink",
+      "malformed_diagnostic": "Markdown is preserved as literal text where CommonMark does not recognize markup",
+      "word365": "implemented; structural regression tested",
+      "libreoffice": "automated visual smoke",
+      "tests": ["tests/test_core_regressions.py"]
+    },
+    {
+      "id": "headings-toc-fields",
+      "syntax": "ATX/setext headings; toc/page field configuration",
+      "ast": "Heading",
+      "ooxml": "heading paragraph styles, outline levels, bookmarks and complex fields",
+      "malformed_diagnostic": "NORM401 for invalid canonical heading levels",
+      "word365": "implemented; field updates requested on open",
+      "libreoffice": "structural support; pagination may differ",
+      "tests": ["tests/test_technical_report.py", "tests/test_compiler_and_normalizer.py"]
+    },
+    {
+      "id": "lists-and-tasks",
+      "syntax": "ordered, bullet, nested and GFM task lists",
+      "ast": "OrderedList, BulletList and ListItem",
+      "ooxml": "native w:numPr numbering and checkbox content controls",
+      "malformed_diagnostic": "invalid source falls back to CommonMark paragraph semantics",
+      "word365": "implemented; structural regression tested",
+      "libreoffice": "automated visual smoke coverage",
+      "tests": ["tests/test_core_regressions.py", "tests/test_technical_report.py", "tests/test_fidelity_corpora.py"]
+    },
+    {
+      "id": "tables",
+      "syntax": "GFM pipe tables and documented simple-table compatibility form",
+      "ast": "Table, TableRow and TableCell",
+      "ooxml": "native w:tbl with widths, alignment, repeated headers and non-splitting short rows",
+      "malformed_diagnostic": "NORM201 for irregular canonical rows",
+      "word365": "implemented; automatic landscape planning tested",
+      "libreoffice": "automated visual smoke",
+      "tests": ["tests/test_layout_regressions.py", "tests/test_technical_report.py"]
+    },
+    {
+      "id": "math",
+      "syntax": "$...$, $$...$$, \\(...\\), \\[...\\] and math/latex/tex fences",
+      "ast": "InlineMath and MathBlock",
+      "ooxml": "native m:oMath and m:oMathPara/OMML",
+      "malformed_diagnostic": "MATH101 for unmatched explicit delimiters; MATH201 for conversion fallback",
+      "word365": "qualified in Word 365 with 22-equation AI fixture",
+      "libreoffice": "automated visual smoke",
+      "tests": ["tests/test_ai_math_compatibility.py", "tests/test_fidelity_corpora.py", "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"]
+    },
+    {
+      "id": "images-and-figures",
+      "syntax": "Markdown images plus documented captions/attributes",
+      "ast": "Image and ImageBlock",
+      "ooxml": "native DrawingML image, docPr alternative text, caption and bookmark",
+      "malformed_diagnostic": "RESOURCE/IMAGE/A11Y diagnostic families",
+      "word365": "implemented; manual release-corpus review required",
+      "libreoffice": "supported",
+      "tests": ["tests/test_security_and_metadata.py", "tests/test_release_contract.py"]
+    },
+    {
+      "id": "equation-figure-table-references",
+      "syntax": "documented identifiers and @ref cross-references",
+      "ast": "CrossReference plus identifiers on target blocks",
+      "ooxml": "bookmarks and REF/SEQ fields",
+      "malformed_diagnostic": "REF201 for unresolved references with source location",
+      "word365": "implemented; structural regression tested",
+      "libreoffice": "fields supported with rendering differences",
+      "tests": ["tests/test_diagnostic_locations.py", "tests/test_technical_report.py"]
+    },
+    {
+      "id": "citations-bibliography",
+      "syntax": "documented citation syntax and BibTeX bibliography directive",
+      "ast": "Citation and BibliographyBlock",
+      "ooxml": "editable Word text with deterministic bibliography ordering",
+      "malformed_diagnostic": "CITE201/CITE202 for missing database or key",
+      "word365": "implemented; structural regression tested",
+      "libreoffice": "supported",
+      "tests": ["tests/test_technical_report.py", "tests/test_diagnostic_locations.py", "tests/test_fidelity_corpora.py"]
+    },
+    {
+      "id": "notes",
+      "syntax": "[^id] references and definitions; footnote/endnote configuration",
+      "ast": "FootnoteReference and document footnote definitions",
+      "ooxml": "native footnotes.xml or endnotes.xml parts and relationships",
+      "malformed_diagnostic": "NOTE201 for unresolved notes",
+      "word365": "implemented; structural regression tested",
+      "libreoffice": "supported",
+      "tests": ["tests/test_technical_report.py", "tests/test_diagnostic_locations.py", "tests/test_fidelity_corpora.py"]
+    },
+    {
+      "id": "charts-and-data",
+      "syntax": "documented chart/data-table fenced YAML extensions",
+      "ast": "ChartBlock and DataTableBlock",
+      "ooxml": "native ChartML with embedded XLSX workbook",
+      "malformed_diagnostic": "CHART/DATA diagnostic families",
+      "word365": "implemented; manual advanced-axis review required",
+      "libreoffice": "structural compatibility tested",
+      "tests": ["tests/test_technical_report.py"]
+    },
+    {
+      "id": "callouts-comments-code",
+      "syntax": "GitHub/colon callouts, CriticMarkup comments and fenced code",
+      "ast": "Callout, Comment and CodeBlock",
+      "ooxml": "styled paragraphs/tables, native comments part and editable code runs",
+      "malformed_diagnostic": "unsupported containers remain literal source",
+      "word365": "implemented",
+      "libreoffice": "supported with theme differences",
+      "tests": ["tests/test_technical_report.py"]
+    },
+    {
+      "id": "rtl-unicode-xml",
+      "syntax": "Unicode Markdown with automatic or forced RTL configuration",
+      "ast": "ordinary text nodes",
+      "ooxml": "XML-safe text and bidi paragraph/run properties",
+      "malformed_diagnostic": "invalid XML characters are sanitized",
+      "word365": "implemented; broader manual language corpus planned",
+      "libreoffice": "supported with font-dependent layout",
+      "tests": ["tests/test_release_contract.py"]
+    },
+    {
+      "id": "templates-professional-features",
+      "syntax": "DOCX template plus title/abstract/header/footer/page configuration",
+      "ast": "document metadata and normal block AST",
+      "ooxml": "template styles/sections, headers, footers and fields",
+      "malformed_diagnostic": "CONFIG301/CONFIG302/DOCX301 for invalid templates",
+      "word365": "implemented; template-specific manual qualification required",
+      "libreoffice": "supported with template-dependent differences",
+      "tests": ["tests/test_release_contract.py", "tests/test_technical_report.py"]
+    },
+    {
+      "id": "privacy-security",
+      "syntax": "AI export metadata and local/HTTPS resource references",
+      "ast": "sanitized source and resource-bearing nodes",
+      "ooxml": "scrubbed core properties and contained package relationships",
+      "malformed_diagnostic": "META, RESOURCE, IMAGE, LIMIT and DOCX diagnostic families",
+      "word365": "package opens without repair for qualification fixture",
+      "libreoffice": "package accepted in automated smoke",
+      "tests": ["tests/test_security_and_metadata.py"]
+    }
+  ]
+}

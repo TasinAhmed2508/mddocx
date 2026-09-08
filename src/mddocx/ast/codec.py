@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import fields, is_dataclass
+from dataclasses import fields
 from datetime import date, datetime
 import json
 from pathlib import Path
@@ -8,30 +8,110 @@ from typing import Any
 
 from .base import Document, Node, SourcePosition
 from .block import (
-    BlockQuote, BulletList, CodeBlock, Heading, HorizontalRule, ImageBlock, ListItem,
-    MathBlock, OrderedList, PageBreak, Paragraph, SectionBreak, Table, TableCell, TableRow, ChartBlock, DataTableBlock, BibliographyBlock, DefinitionList, DefinitionItem, Callout,
+    BlockQuote,
+    BulletList,
+    CodeBlock,
+    Heading,
+    HorizontalRule,
+    ImageBlock,
+    ListItem,
+    MathBlock,
+    OrderedList,
+    PageBreak,
+    Paragraph,
+    SectionBreak,
+    Table,
+    TableCell,
+    TableRow,
+    ChartBlock,
+    DataTableBlock,
+    BibliographyBlock,
+    DefinitionList,
+    DefinitionItem,
+    Callout,
 )
 from .inline import (
-    Emphasis, HardBreak, Image, InlineCode, InlineMath, Link, SoftBreak, Strikethrough,
-    Strong, Text, FootnoteReference, CrossReference, Citation, Comment,
+    Emphasis,
+    HardBreak,
+    Image,
+    InlineCode,
+    InlineMath,
+    Link,
+    SoftBreak,
+    Strikethrough,
+    Strong,
+    Text,
+    FootnoteReference,
+    CrossReference,
+    Citation,
+    Comment,
 )
 
 _NODE_TYPES = {
     cls.__name__: cls
     for cls in (
-        Document, Heading, Paragraph, BlockQuote, BulletList, OrderedList, ListItem, CodeBlock,
-        MathBlock, Table, TableRow, TableCell, ImageBlock, ChartBlock, DataTableBlock, BibliographyBlock, DefinitionList, DefinitionItem, Callout, HorizontalRule, PageBreak, SectionBreak,
-        Text, Strong, Emphasis, Strikethrough, InlineCode, Link, InlineMath, CrossReference, Citation, Comment, SoftBreak, HardBreak, Image, FootnoteReference,
+        Document,
+        Heading,
+        Paragraph,
+        BlockQuote,
+        BulletList,
+        OrderedList,
+        ListItem,
+        CodeBlock,
+        MathBlock,
+        Table,
+        TableRow,
+        TableCell,
+        ImageBlock,
+        ChartBlock,
+        DataTableBlock,
+        BibliographyBlock,
+        DefinitionList,
+        DefinitionItem,
+        Callout,
+        HorizontalRule,
+        PageBreak,
+        SectionBreak,
+        Text,
+        Strong,
+        Emphasis,
+        Strikethrough,
+        InlineCode,
+        Link,
+        InlineMath,
+        CrossReference,
+        Citation,
+        Comment,
+        SoftBreak,
+        HardBreak,
+        Image,
+        FootnoteReference,
     )
 }
 
+AST_SCHEMA_NAME = "mddocx-ast"
+AST_SCHEMA_VERSION = 2
+
 
 def document_to_json(document: Document) -> str:
-    return json.dumps(_encode(document), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    payload = {
+        "schema": AST_SCHEMA_NAME,
+        "version": AST_SCHEMA_VERSION,
+        "document": _encode(document),
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def document_from_json(text: str) -> Document:
-    value = _decode(json.loads(text))
+    payload = json.loads(text)
+    if not isinstance(payload, dict) or payload.get("schema") != AST_SCHEMA_NAME:
+        raise ValueError("Cached AST has no recognized schema identifier.")
+    if payload.get("version") != AST_SCHEMA_VERSION:
+        raise ValueError(
+            f"Cached AST schema version {payload.get('version')!r} is not supported; "
+            f"expected {AST_SCHEMA_VERSION}."
+        )
+    value = _decode(payload.get("document"))
     if not isinstance(value, Document):
         raise ValueError("Cached AST root is not a Document.")
     return value
@@ -44,7 +124,10 @@ def _encode(value: Any) -> Any:
             **{f.name: _encode(getattr(value, f.name)) for f in fields(value)},
         }
     if isinstance(value, SourcePosition):
-        return {"__source__": True, **{f.name: _encode(getattr(value, f.name)) for f in fields(value)}}
+        return {
+            "__source__": True,
+            **{f.name: _encode(getattr(value, f.name)) for f in fields(value)},
+        }
     if isinstance(value, datetime):
         return {"__datetime__": value.isoformat()}
     if isinstance(value, date):

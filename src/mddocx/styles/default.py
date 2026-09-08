@@ -18,7 +18,9 @@ def _outline(style, level: int) -> None:
     existing.set(qn("w:val"), str(level))
 
 
-def _set_font(style, latin: str, east_asia: str | None = None, complex_script: str | None = None) -> None:
+def _set_font(
+    style, latin: str, east_asia: str | None = None, complex_script: str | None = None
+) -> None:
     style.font.name = latin
     rpr = style.element.get_or_add_rPr()
     rfonts = rpr.find(qn("w:rFonts"))
@@ -39,8 +41,12 @@ def ensure_styles(document, config: RenderConfig) -> None:
     body_font = config.fonts.body or theme.body_font
     heading_font = config.fonts.headings or theme.heading_font
     code_font = config.fonts.code or theme.code_font
-    east_asia = config.fonts.east_asia or (config.fonts.fallback[0] if config.fonts.fallback else body_font)
-    complex_script = config.fonts.complex_script or (config.fonts.fallback[0] if config.fonts.fallback else body_font)
+    east_asia = config.fonts.east_asia or (
+        config.fonts.fallback[0] if config.fonts.fallback else body_font
+    )
+    complex_script = config.fonts.complex_script or (
+        config.fonts.fallback[0] if config.fonts.fallback else body_font
+    )
     preserve = bool(config.template and config.preserve_template_styles)
 
     if "MD Normal" not in styles:
@@ -137,8 +143,10 @@ def _set_paragraph_shading(style, fill: str) -> None:
     ppr = style.element.get_or_add_pPr()
     shd = ppr.find(qn("w:shd"))
     if shd is None:
-        shd = OxmlElement("w:shd"); ppr.append(shd)
-    shd.set(qn("w:val"), "clear"); shd.set(qn("w:fill"), fill)
+        shd = OxmlElement("w:shd")
+        ppr.append(shd)
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:fill"), fill)
 
 
 def ensure_professional_styles(document, config: RenderConfig) -> None:
@@ -153,29 +161,39 @@ def ensure_professional_styles(document, config: RenderConfig) -> None:
         s = styles.add_style("MD Title", WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["MD Normal"]
         _set_font(s, heading_font, east_asia, complex_script)
-        s.font.size = Pt(28); s.font.bold = True; s.font.color.rgb = RGBColor(0, 0, 0)
+        s.font.size = Pt(28)
+        s.font.bold = True
+        s.font.color.rgb = RGBColor(0, 0, 0)
         s.paragraph_format.space_after = Pt(12)
     if "MD Subtitle" not in styles:
         s = styles.add_style("MD Subtitle", WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["MD Normal"]
         _set_font(s, body_font, east_asia, complex_script)
-        s.font.size = Pt(16); s.font.color.rgb = RGBColor(0, 0, 0)
+        s.font.size = Pt(16)
+        s.font.color.rgb = RGBColor(0, 0, 0)
         s.paragraph_format.space_after = Pt(10)
     if "MD Abstract" not in styles:
         s = styles.add_style("MD Abstract", WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["MD Normal"]
         _set_font(s, body_font, east_asia, complex_script)
-        s.paragraph_format.left_indent = Pt(18); s.paragraph_format.right_indent = Pt(18)
+        s.paragraph_format.left_indent = Pt(18)
+        s.paragraph_format.right_indent = Pt(18)
         s.paragraph_format.keep_together = True
     if "MD Code Label" not in styles:
         s = styles.add_style("MD Code Label", WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["MD Normal"]
         _set_font(s, config.fonts.code or theme.code_font, None, None)
-        s.font.size = Pt(max(8.0, theme.code_size_pt - 0.5)); s.font.bold = True
-        s.paragraph_format.space_after = Pt(0); s.paragraph_format.keep_with_next = True
+        s.font.size = Pt(max(8.0, theme.code_size_pt - 0.5))
+        s.font.bold = True
+        s.paragraph_format.space_after = Pt(0)
+        s.paragraph_format.keep_with_next = True
     callout_fills = {
-        "Note": "F2F2F2", "Tip": "EEF7EE", "Important": "EEF3FA",
-        "Warning": "FFF4E5", "Caution": "FDECEC", "Example": "F5F0FA",
+        "Note": "F2F2F2",
+        "Tip": "EEF7EE",
+        "Important": "EEF3FA",
+        "Warning": "FFF4E5",
+        "Caution": "FDECEC",
+        "Example": "F5F0FA",
     }
     for kind, fill in callout_fills.items():
         name = f"MD Callout {kind}"
@@ -184,7 +202,9 @@ def ensure_professional_styles(document, config: RenderConfig) -> None:
         s = styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["MD Normal"]
         _set_font(s, body_font, east_asia, complex_script)
-        s.paragraph_format.left_indent = Pt(12); s.paragraph_format.right_indent = Pt(6)
-        s.paragraph_format.space_before = Pt(4); s.paragraph_format.space_after = Pt(4)
+        s.paragraph_format.left_indent = Pt(12)
+        s.paragraph_format.right_indent = Pt(6)
+        s.paragraph_format.space_before = Pt(4)
+        s.paragraph_format.space_after = Pt(4)
         s.paragraph_format.keep_together = True
         _set_paragraph_shading(s, fill)

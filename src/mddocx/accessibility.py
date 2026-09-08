@@ -88,7 +88,9 @@ class AccessibilityReport:
             lines.append("Findings:")
             for finding in self.findings:
                 suffix = f" (x{finding.count})" if finding.count != 1 else ""
-                lines.append(f"  {finding.severity.upper()} {finding.code}: {finding.message}{suffix}")
+                lines.append(
+                    f"  {finding.severity.upper()} {finding.code}: {finding.message}{suffix}"
+                )
         return "\n".join(lines)
 
 
@@ -100,11 +102,15 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
     report = AccessibilityReport()
     package = inspect_docx_bytes(blob)
     if not package.valid_zip:
-        report.findings.append(AccessibilityFinding("A11Y001", "high", "The input is not a valid DOCX package."))
+        report.findings.append(
+            AccessibilityFinding("A11Y001", "high", "The input is not a valid DOCX package.")
+        )
         return report
     try:
         with ZipFile(BytesIO(blob), "r") as zf:
-            parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False)
+            parser = etree.XMLParser(
+                resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
+            )
             document = etree.fromstring(zf.read("word/document.xml"), parser=parser)
             core = None
             if "docProps/core.xml" in zf.namelist():
@@ -113,7 +119,9 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
                 except etree.XMLSyntaxError:
                     core = None
     except (BadZipFile, KeyError, OSError, etree.XMLSyntaxError):
-        report.findings.append(AccessibilityFinding("A11Y001", "high", "The DOCX package cannot be audited safely."))
+        report.findings.append(
+            AccessibilityFinding("A11Y001", "high", "The DOCX package cannot be audited safely.")
+        )
         return report
 
     docprs = document.xpath(".//wp:docPr", namespaces=NS)
@@ -124,13 +132,21 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
     )
     report.images_missing_alt = len(missing_alt)
     if report.images_missing_alt:
-        report.findings.append(AccessibilityFinding(
-            "A11Y101", "high", "Images or charts are missing alternative text.", report.images_missing_alt
-        ))
+        report.findings.append(
+            AccessibilityFinding(
+                "A11Y101",
+                "high",
+                "Images or charts are missing alternative text.",
+                report.images_missing_alt,
+            )
+        )
 
     for table in document.xpath(".//w:tbl", namespaces=NS):
         # Equation-number layout tables are presentation scaffolding, not semantic data tables.
-        if table.xpath(".//m:oMath", namespaces=NS) and len(table.xpath("./w:tr", namespaces=NS)) <= 1:
+        if (
+            table.xpath(".//m:oMath", namespaces=NS)
+            and len(table.xpath("./w:tr", namespaces=NS)) <= 1
+        ):
             continue
         report.semantic_tables += 1
         first_rows = table.xpath("./w:tr[1]", namespaces=NS)
@@ -138,9 +154,14 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
         if not has_header:
             report.tables_missing_header += 1
     if report.tables_missing_header:
-        report.findings.append(AccessibilityFinding(
-            "A11Y201", "medium", "Semantic tables should identify their first row as a repeating/header row.", report.tables_missing_header
-        ))
+        report.findings.append(
+            AccessibilityFinding(
+                "A11Y201",
+                "medium",
+                "Semantic tables should identify their first row as a repeating/header row.",
+                report.tables_missing_header,
+            )
+        )
 
     levels: list[int] = []
     for p in document.xpath(".//w:p[w:pPr/w:pStyle]", namespaces=NS):
@@ -157,9 +178,14 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
             report.heading_level_jumps += 1
         last = level
     if report.heading_level_jumps:
-        report.findings.append(AccessibilityFinding(
-            "A11Y301", "medium", "Heading hierarchy skips one or more levels.", report.heading_level_jumps
-        ))
+        report.findings.append(
+            AccessibilityFinding(
+                "A11Y301",
+                "medium",
+                "Heading hierarchy skips one or more levels.",
+                report.heading_level_jumps,
+            )
+        )
 
     empty_links = 0
     for link in document.xpath(".//w:hyperlink", namespaces=NS):
@@ -168,9 +194,11 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
             empty_links += 1
     report.empty_hyperlinks = empty_links
     if empty_links:
-        report.findings.append(AccessibilityFinding(
-            "A11Y401", "high", "Hyperlinks with no readable link text were found.", empty_links
-        ))
+        report.findings.append(
+            AccessibilityFinding(
+                "A11Y401", "high", "Hyperlinks with no readable link text were found.", empty_links
+            )
+        )
 
     title = ""
     if core is not None:
@@ -179,14 +207,18 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
             title = nodes[0].text.strip()
     report.document_title_present = bool(title)
     if not report.document_title_present:
-        report.findings.append(AccessibilityFinding(
-            "A11Y501", "low", "Document title metadata is empty. Set RenderConfig.title or YAML front matter title."
-        ))
+        report.findings.append(
+            AccessibilityFinding(
+                "A11Y501",
+                "low",
+                "Document title metadata is empty. Set RenderConfig.title or YAML front matter title.",
+            )
+        )
 
     if not levels:
-        report.findings.append(AccessibilityFinding(
-            "A11Y302", "low", "No semantic Word heading styles were detected."
-        ))
+        report.findings.append(
+            AccessibilityFinding("A11Y302", "low", "No semantic Word heading styles were detected.")
+        )
     return report
 
 

@@ -22,21 +22,49 @@ from .config import (
     TableConfig,
     TOCConfig,
     ValidationConfig,
-    ReferenceConfig, NotesConfig, CitationConfig, AccessibilityConfig, FigureConfig,
-    HeadingNumberingConfig, TitlePageConfig, AbstractConfig, CodeConfig, CalloutConfig, CommentConfig, FieldConfig, MetadataConfig,
+    ReferenceConfig,
+    NotesConfig,
+    CitationConfig,
+    AccessibilityConfig,
+    FigureConfig,
+    HeadingNumberingConfig,
+    TitlePageConfig,
+    AbstractConfig,
+    CodeConfig,
+    CalloutConfig,
+    CommentConfig,
+    FieldConfig,
+    MetadataConfig,
 )
 from .extensions import MddocxExtension, load_entrypoint_extensions
 from .profiling import RenderStats
 from .validation import validate_docx_package
 from .inspection import DocxInspection, inspect_docx, inspect_docx_bytes
 from .visual_qa import VisualQAReport, compare_visual_pages, render_docx_pages
-from .accessibility import AccessibilityFinding, AccessibilityReport, audit_docx_accessibility, audit_docx_accessibility_bytes
+from .accessibility import (
+    AccessibilityFinding,
+    AccessibilityReport,
+    audit_docx_accessibility,
+    audit_docx_accessibility_bytes,
+)
 from .benchmark import BenchmarkReport, run_performance_gate
 from .api_stability import PUBLIC_API_VERSION, get_public_api_manifest
 from .metadata import MetadataSanitizationReport, SanitizedMarkdown, sanitize_markdown_metadata
+from .math.preflight import EquationCheck, MathPreflightReport, inspect_math, inspect_math_file
+from .compiler import CompilationResult, Compiler, DocumentStageResult, LayoutStageResult
+from .config_validation import validate_render_config
+from .layout import LayoutPlan, LayoutPlanner, TableLayoutDecision
 from .project import (
-    ProjectManifest, ProjectCompilation, ProjectBuildResult, ProjectWatchEvent,
-    load_project, compile_project, build_project, watch_project, init_project, project_info,
+    ProjectManifest,
+    ProjectCompilation,
+    ProjectBuildResult,
+    ProjectWatchEvent,
+    load_project,
+    compile_project,
+    build_project,
+    watch_project,
+    init_project,
+    project_info,
 )
 
 __all__ = [
@@ -78,6 +106,18 @@ __all__ = [
     "MetadataSanitizationReport",
     "SanitizedMarkdown",
     "sanitize_markdown_metadata",
+    "EquationCheck",
+    "MathPreflightReport",
+    "inspect_math",
+    "inspect_math_file",
+    "CompilationResult",
+    "Compiler",
+    "DocumentStageResult",
+    "LayoutStageResult",
+    "validate_render_config",
+    "LayoutPlan",
+    "LayoutPlanner",
+    "TableLayoutDecision",
     "RenderStats",
     "MddocxExtension",
     "load_entrypoint_extensions",

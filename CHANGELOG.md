@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Added fence-aware AI math normalization for `\\(...\\)`, `$...$`, `\\[...\\]`, `$$...$$`, and `math`/`latex`/`tex` fenced blocks.
+- Prevented currency ranges, inline code, and non-math code fences from being misclassified as equations.
+- Prevented an unmatched display delimiter from consuming the remaining document.
+- Added the first tracked regression suite, including an equation-heavy ChatGPT fixture with 20 display equations and two inline equations.
+- Unsupported fallback-parser commands now produce explicit diagnostics and readable source fallbacks by default; `--strict-math` restores fail-fast behavior.
+- Added `mddocx math-check`, `inspect_math()`, and `inspect_math_file()` for non-writing equation preflight with text or JSON reports.
+- Restored pytest execution in CI so a release cannot pass with no collected tests.
+- Restored the Windows/Linux/macOS and Python 3.11-3.13 CI matrix, added full Ruff lint and formatting gates, and cleared the existing lint backlog.
+- Added the staged-v2 `Compiler` and typed `CompilationResult` interfaces while retaining the v1 rendering facade.
+- Replaced the no-op normalizer with renderer-safe semantic normalization for text, math sources, heading levels, irregular tables, and duplicate document identifiers.
+- Versioned serialized AST/cache payloads independently and made incompatible caches fail closed and rebuild cleanly.
+- Added regression coverage for local traversal, disabled remote resources, domain allowlists, private-address blocking, unsafe DOCX paths, macros, oversized XML parts, and fence-aware AI metadata privacy.
+- Added project-mode regression coverage for reproducible incremental builds, dependency tracking, includes, variable substitution, configuration precedence, path containment, and include cycles.
+- Added a deterministic technical-report acceptance fixture covering native equations, lists/tasks, tables, charts/workbooks, code listings, citations, bibliography, notes, definitions, bookmarks, cross-references, headings, TOC, and page fields.
+- Propagated source locations to inline AST nodes and added file/line evidence to unresolved link, reference, citation, and footnote diagnostics.
+- Added a reusable Word 365 automation smoke script and release qualification checklist for open/repair detection, equation counts, pagination, and PDF export.
+- Added layout regression coverage for deterministic wide-table landscape sections, portrait restoration, repeated table headers, and non-splitting rows.
+- Added an explicit, inspectable layout-planning stage with typed table decisions and per-stage timing.
+- Expanded the staged compiler service with typed parse, normalize, plan, render, check, and compile operations.
+- Added source-located `MATH101` diagnostics for unterminated explicit math delimiters and math fences.
+- Hardened the optional external math engine so literal unconverted TeX commands cannot be reported as successful native math.
+- Defined the raw HTML policy: unsupported HTML is preserved as literal editable text instead of being silently discarded.
+- Added stable generated heading identifiers during normalization.
+- Added a machine-readable feature/fidelity matrix and release-contract tests linking supported constructs to tracked evidence.
+- Added round-trip, images/alt-text, Unicode/RTL/XML safety, templates, CLI exit-code, and paths-with-spaces regressions.
+- Added a Linux LibreOffice/Poppler visual smoke job and clean wheel/source-distribution install and CLI smoke gates.
+
 ## 1.2.1 — Packaging and release improvements
 
 - Published the project under the unique PyPI distribution name `mddocx-native` while preserving the `mddocx` import package and command-line interface.

@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass, field
 import importlib.util
 from importlib import metadata
 import json
-import os
 import platform
 import shutil
 import sys
@@ -23,12 +22,28 @@ class DoctorReport:
 
     @property
     def visual_qa_ready(self) -> bool:
-        return bool((self.executables.get("libreoffice") or self.executables.get("soffice")) and self.executables.get("pdftoppm"))
+        return bool(
+            (self.executables.get("libreoffice") or self.executables.get("soffice"))
+            and self.executables.get("pdftoppm")
+        )
 
     @property
     def ok(self) -> bool:
-        required = ("markdown-it-py", "python-docx", "lxml", "Pillow", "Pygments", "PyYAML", "openpyxl", "prompt-toolkit")
-        return sys.version_info >= (3, 11) and self.temp_directory_writable and all(self.dependencies.get(name) not in {None, "missing"} for name in required)
+        required = (
+            "markdown-it-py",
+            "python-docx",
+            "lxml",
+            "Pillow",
+            "Pygments",
+            "PyYAML",
+            "openpyxl",
+            "prompt-toolkit",
+        )
+        return (
+            sys.version_info >= (3, 11)
+            and self.temp_directory_writable
+            and all(self.dependencies.get(name) not in {None, "missing"} for name in required)
+        )
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -55,7 +70,9 @@ class DoctorReport:
             lines.append(f"  {name}: {value or 'not found'}")
         lines.append(f"Visual DOCX regression ready: {'yes' if self.visual_qa_ready else 'no'}")
         if not self.visual_qa_ready:
-            lines.append("  Visual QA needs LibreOffice/soffice plus pdftoppm; document conversion itself does not.")
+            lines.append(
+                "  Visual QA needs LibreOffice/soffice plus pdftoppm; document conversion itself does not."
+            )
         return "\n".join(lines)
 
 
@@ -88,7 +105,11 @@ def run_doctor() -> DoctorReport:
                 "PyYAML": "yaml",
                 "prompt-toolkit": "prompt_toolkit",
             }.get(label, label)
-            deps[label] = "available (version unknown)" if importlib.util.find_spec(module_name) else "missing"
+            deps[label] = (
+                "available (version unknown)"
+                if importlib.util.find_spec(module_name)
+                else "missing"
+            )
 
     try:
         from . import __version__ as mddocx_version

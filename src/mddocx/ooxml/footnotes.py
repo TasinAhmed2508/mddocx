@@ -51,7 +51,9 @@ def inject_footnotes(blob: bytes, notes: dict[int, list], math_converter) -> byt
 
     parts["word/footnotes.xml"] = _build_footnotes_xml(notes, math_converter)
     parts["[Content_Types].xml"] = _patch_content_types(parts["[Content_Types].xml"])
-    parts["word/_rels/document.xml.rels"] = _patch_document_rels(parts["word/_rels/document.xml.rels"])
+    parts["word/_rels/document.xml.rels"] = _patch_document_rels(
+        parts["word/_rels/document.xml.rels"]
+    )
 
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as zout:
         for name, data in parts.items():
@@ -106,11 +108,17 @@ def _append_inlines(parent, nodes, math_converter, *, bold=False, italic=False, 
         if isinstance(node, Text):
             _append_run(parent, node.text, bold=bold, italic=italic, strike=strike)
         elif isinstance(node, Strong):
-            _append_inlines(parent, node.children, math_converter, bold=True, italic=italic, strike=strike)
+            _append_inlines(
+                parent, node.children, math_converter, bold=True, italic=italic, strike=strike
+            )
         elif isinstance(node, Emphasis):
-            _append_inlines(parent, node.children, math_converter, bold=bold, italic=True, strike=strike)
+            _append_inlines(
+                parent, node.children, math_converter, bold=bold, italic=True, strike=strike
+            )
         elif isinstance(node, Strikethrough):
-            _append_inlines(parent, node.children, math_converter, bold=bold, italic=italic, strike=True)
+            _append_inlines(
+                parent, node.children, math_converter, bold=bold, italic=italic, strike=True
+            )
         elif isinstance(node, InlineCode):
             _append_run(parent, node.code, bold=bold, italic=italic, strike=strike, code=True)
         elif isinstance(node, InlineMath):
@@ -121,7 +129,9 @@ def _append_inlines(parent, nodes, math_converter, *, bold=False, italic=False, 
         elif isinstance(node, Link):
             # Footnotes are a separate OOXML part and need their own relationship
             # collection. Preserve editable visible text rather than emit a broken link.
-            _append_inlines(parent, node.children, math_converter, bold=bold, italic=italic, strike=strike)
+            _append_inlines(
+                parent, node.children, math_converter, bold=bold, italic=italic, strike=strike
+            )
         elif isinstance(node, SoftBreak):
             _append_run(parent, " ")
         elif isinstance(node, HardBreak):
@@ -133,7 +143,9 @@ def _append_inlines(parent, nodes, math_converter, *, bold=False, italic=False, 
         elif isinstance(node, FootnoteReference):
             _append_run(parent, f"[^{node.label}]")
         elif hasattr(node, "children"):
-            _append_inlines(parent, node.children, math_converter, bold=bold, italic=italic, strike=strike)
+            _append_inlines(
+                parent, node.children, math_converter, bold=bold, italic=italic, strike=strike
+            )
 
 
 def _append_run(parent, text: str, *, bold=False, italic=False, strike=False, code=False):

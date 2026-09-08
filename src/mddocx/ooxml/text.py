@@ -61,7 +61,9 @@ def set_paragraph_rtl(paragraph, enabled: bool = True) -> None:
         ppr.remove(bidi)
 
 
-def configure_run_fonts(run, text: str, body: str, east_asia: str | None, complex_script: str | None, rtl: bool) -> None:
+def configure_run_fonts(
+    run, text: str, body: str, east_asia: str | None, complex_script: str | None, rtl: bool
+) -> None:
     run.font.name = body
     rpr = run._r.get_or_add_rPr()
     rfonts = rpr.find(qn("w:rFonts"))

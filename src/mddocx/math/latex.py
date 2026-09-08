@@ -7,39 +7,162 @@ MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 ET.register_namespace("", MATHML_NS)
 
 GREEK = {
-    "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε",
-    "varepsilon": "ε", "zeta": "ζ", "eta": "η", "theta": "θ", "vartheta": "ϑ",
-    "iota": "ι", "kappa": "κ", "lambda": "λ", "mu": "μ", "nu": "ν", "xi": "ξ",
-    "omicron": "ο", "pi": "π", "varpi": "ϖ", "rho": "ρ", "varrho": "ϱ",
-    "sigma": "σ", "varsigma": "ς", "tau": "τ", "upsilon": "υ", "phi": "φ",
-    "varphi": "ϕ", "chi": "χ", "psi": "ψ", "omega": "ω", "Gamma": "Γ",
-    "Delta": "Δ", "Theta": "Θ", "Lambda": "Λ", "Xi": "Ξ", "Pi": "Π",
-    "Sigma": "Σ", "Upsilon": "Υ", "Phi": "Φ", "Psi": "Ψ", "Omega": "Ω",
+    "alpha": "α",
+    "beta": "β",
+    "gamma": "γ",
+    "delta": "δ",
+    "epsilon": "ε",
+    "varepsilon": "ε",
+    "zeta": "ζ",
+    "eta": "η",
+    "theta": "θ",
+    "vartheta": "ϑ",
+    "iota": "ι",
+    "kappa": "κ",
+    "lambda": "λ",
+    "mu": "μ",
+    "nu": "ν",
+    "xi": "ξ",
+    "omicron": "ο",
+    "pi": "π",
+    "varpi": "ϖ",
+    "rho": "ρ",
+    "varrho": "ϱ",
+    "sigma": "σ",
+    "varsigma": "ς",
+    "tau": "τ",
+    "upsilon": "υ",
+    "phi": "φ",
+    "varphi": "ϕ",
+    "chi": "χ",
+    "psi": "ψ",
+    "omega": "ω",
+    "Gamma": "Γ",
+    "Delta": "Δ",
+    "Theta": "Θ",
+    "Lambda": "Λ",
+    "Xi": "Ξ",
+    "Pi": "Π",
+    "Sigma": "Σ",
+    "Upsilon": "Υ",
+    "Phi": "Φ",
+    "Psi": "Ψ",
+    "Omega": "Ω",
 }
 SYMBOLS = {
-    "pm": "±", "mp": "∓", "times": "×", "cdot": "·", "div": "÷", "le": "≤",
-    "leq": "≤", "ge": "≥", "geq": "≥", "neq": "≠", "ne": "≠", "approx": "≈",
-    "equiv": "≡", "infty": "∞", "partial": "∂", "nabla": "∇", "in": "∈",
-    "notin": "∉", "subset": "⊂", "subseteq": "⊆", "supset": "⊃", "supseteq": "⊇",
-    "cup": "∪", "cap": "∩", "to": "→", "rightarrow": "→", "leftarrow": "←",
-    "leftrightarrow": "↔", "Rightarrow": "⇒", "Leftarrow": "⇐", "Leftrightarrow": "⇔",
-    "forall": "∀", "exists": "∃", "neg": "¬", "land": "∧", "lor": "∨", "cdots": "⋯",
-    "ldots": "…", "dots": "…", "vdots": "⋮", "ddots": "⋱", "prime": "′",
-    "circ": "∘", "bullet": "•", "mid": "∣", "setminus": "∖", "hbar": "ℏ",
-    "Longrightarrow": "⟹", "ni": "∋", "perp": "⊥", "parallel": "∥",
-    "propto": "∝", "therefore": "∴", "because": "∵", "angle": "∠",
-    "emptyset": "∅", "ell": "ℓ", "Re": "ℜ", "Im": "ℑ",
+    "pm": "±",
+    "mp": "∓",
+    "times": "×",
+    "cdot": "·",
+    "div": "÷",
+    "le": "≤",
+    "leq": "≤",
+    "ge": "≥",
+    "geq": "≥",
+    "neq": "≠",
+    "ne": "≠",
+    "approx": "≈",
+    "equiv": "≡",
+    "infty": "∞",
+    "partial": "∂",
+    "nabla": "∇",
+    "in": "∈",
+    "notin": "∉",
+    "subset": "⊂",
+    "subseteq": "⊆",
+    "supset": "⊃",
+    "supseteq": "⊇",
+    "cup": "∪",
+    "cap": "∩",
+    "to": "→",
+    "rightarrow": "→",
+    "leftarrow": "←",
+    "leftrightarrow": "↔",
+    "Rightarrow": "⇒",
+    "Leftarrow": "⇐",
+    "Leftrightarrow": "⇔",
+    "forall": "∀",
+    "exists": "∃",
+    "neg": "¬",
+    "land": "∧",
+    "lor": "∨",
+    "cdots": "⋯",
+    "ldots": "…",
+    "dots": "…",
+    "vdots": "⋮",
+    "ddots": "⋱",
+    "prime": "′",
+    "circ": "∘",
+    "bullet": "•",
+    "mid": "∣",
+    "setminus": "∖",
+    "hbar": "ℏ",
+    "Longrightarrow": "⟹",
+    "ni": "∋",
+    "perp": "⊥",
+    "parallel": "∥",
+    "propto": "∝",
+    "therefore": "∴",
+    "because": "∵",
+    "angle": "∠",
+    "emptyset": "∅",
+    "ell": "ℓ",
+    "Re": "ℜ",
+    "Im": "ℑ",
 }
 NARY = {"sum": "∑", "prod": "∏", "int": "∫", "iint": "∬", "iiint": "∭", "oint": "∮"}
-FUNCTIONS = {"lim", "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "exp", "max", "min", "det", "gcd"}
+FUNCTIONS = {
+    "lim",
+    "sin",
+    "cos",
+    "tan",
+    "cot",
+    "sec",
+    "csc",
+    "arcsin",
+    "arccos",
+    "arctan",
+    "sinh",
+    "cosh",
+    "tanh",
+    "log",
+    "ln",
+    "exp",
+    "max",
+    "min",
+    "det",
+    "gcd",
+}
 DELIMS = {
-    "langle": "⟨", "rangle": "⟩", "lceil": "⌈", "rceil": "⌉", "lfloor": "⌊",
-    "rfloor": "⌋", "lbrace": "{", "rbrace": "}", "vert": "|", "Vert": "‖",
+    "langle": "⟨",
+    "rangle": "⟩",
+    "lceil": "⌈",
+    "rceil": "⌉",
+    "lfloor": "⌊",
+    "rfloor": "⌋",
+    "lbrace": "{",
+    "rbrace": "}",
+    "vert": "|",
+    "Vert": "‖",
 }
 ACCENTS = {
-    "hat": "̂", "widehat": "̂", "bar": "̅", "overline": "̅", "vec": "⃗",
-    "tilde": "̃", "dot": "̇", "ddot": "̈",
+    "hat": "̂",
+    "widehat": "̂",
+    "bar": "̅",
+    "overline": "̅",
+    "vec": "⃗",
+    "tilde": "̃",
+    "dot": "̇",
+    "ddot": "̈",
 }
+
+
+class UnsupportedLatexError(ValueError):
+    """Raised when the deterministic fallback cannot safely map a TeX command."""
+
+    def __init__(self, command: str):
+        self.command = command
+        super().__init__(f"Unsupported LaTeX command: \\{command}")
 
 
 def _e(tag: str, text: str | None = None, *children: ET.Element, **attrs: str) -> ET.Element:
@@ -180,7 +303,7 @@ class _Parser:
             elif self.text[self.i] == "}":
                 depth -= 1
                 if depth == 0:
-                    raw = self.text[start:self.i]
+                    raw = self.text[start : self.i]
                     self.i += 1
                     return raw
             self.i += 1
@@ -199,7 +322,7 @@ class _Parser:
             elif self.text[self.i] == "]":
                 depth -= 1
                 if depth == 0:
-                    raw = self.text[start:self.i]
+                    raw = self.text[start : self.i]
                     self.i += 1
                     return raw
             self.i += 1
@@ -219,17 +342,24 @@ class _Parser:
         if ch in ")]":
             self.i += 1
             return _e("mo", ch)
-        if ch.isdigit() or (ch == "." and self.i + 1 < len(self.text) and self.text[self.i + 1].isdigit()):
+        if ch.isdigit() or (
+            ch == "." and self.i + 1 < len(self.text) and self.text[self.i + 1].isdigit()
+        ):
             start = self.i
             if ch == ".":
                 self.i += 1
             while self.i < len(self.text) and self.text[self.i].isdigit():
                 self.i += 1
-            if self.i < len(self.text) and self.text[self.i] == "." and self.i + 1 < len(self.text) and self.text[self.i + 1].isdigit():
+            if (
+                self.i < len(self.text)
+                and self.text[self.i] == "."
+                and self.i + 1 < len(self.text)
+                and self.text[self.i + 1].isdigit()
+            ):
                 self.i += 1
                 while self.i < len(self.text) and self.text[self.i].isdigit():
                     self.i += 1
-            return _e("mn", self.text[start:self.i])
+            return _e("mn", self.text[start : self.i])
         if ch.isalpha():
             self.i += 1
             return _e("mi", ch)
@@ -254,10 +384,19 @@ class _Parser:
         start = self.i
         while self.i < len(self.text) and self.text[self.i].isalpha():
             self.i += 1
-        cmd = self.text[start:self.i]
+        cmd = self.text[start : self.i]
 
-        if cmd == "frac":
+        if cmd in {"frac", "dfrac", "tfrac"}:
             return _e("mfrac", None, self.parse_required_arg(), self.parse_required_arg())
+        if cmd == "binom":
+            fraction = _e(
+                "mfrac",
+                None,
+                self.parse_required_arg(),
+                self.parse_required_arg(),
+                linethickness="0",
+            )
+            return _e("mfenced", None, fraction, open="(", close=")")
         if cmd == "sqrt":
             degree = self._read_bracket_raw()
             radicand = self.parse_required_arg()
@@ -275,11 +414,35 @@ class _Parser:
             return self._parse_environment(self._read_braced_raw())
         if cmd == "end":
             raise ValueError("Unexpected \\end")
-        if cmd in {"mathrm", "mathbf", "mathit", "mathsf", "mathtt", "mathbb", "mathcal", "mathfrak", "operatorname"}:
+        if cmd in {
+            "mathrm",
+            "mathbf",
+            "mathit",
+            "mathsf",
+            "mathtt",
+            "mathbb",
+            "mathcal",
+            "mathfrak",
+            "operatorname",
+            "textrm",
+            "textnormal",
+            "textbf",
+            "textit",
+        }:
             variants = {
-                "mathrm": "normal", "operatorname": "normal", "mathbf": "bold",
-                "mathit": "italic", "mathsf": "sans-serif", "mathtt": "monospace",
-                "mathbb": "double-struck", "mathcal": "script", "mathfrak": "fraktur",
+                "mathrm": "normal",
+                "operatorname": "normal",
+                "mathbf": "bold",
+                "mathit": "italic",
+                "mathsf": "sans-serif",
+                "mathtt": "monospace",
+                "mathbb": "double-struck",
+                "mathcal": "script",
+                "mathfrak": "fraktur",
+                "textrm": "normal",
+                "textnormal": "normal",
+                "textbf": "bold",
+                "textit": "italic",
             }
             return _e("mstyle", None, self.parse_required_arg(), mathvariant=variants[cmd])
         if cmd == "boxed":
@@ -301,10 +464,15 @@ class _Parser:
             return _e("mi", cmd, mathvariant="normal")
         if cmd in {"quad", "qquad"}:
             return _e("mspace", None, width="1em" if cmd == "quad" else "2em")
+        if cmd in {"displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle"}:
+            return _e("mspace", None, width="0em")
+        if cmd == "mod":
+            return _e("mtext", " mod ")
+        if cmd == "pmod":
+            return _e("mfenced", None, _e("mtext", "mod "), self.parse_required_arg())
         if cmd == "limits" or cmd == "nolimits":
             return _e("mspace", None, width="0em")
-        return _e("mi", "\\" + cmd)
-
+        raise UnsupportedLatexError(cmd)
 
     def _parse_left_right(self) -> ET.Element:
         open_delim = self._read_delimiter()
@@ -341,24 +509,47 @@ class _Parser:
             while self.i < len(self.text) and self.text[self.i].isalpha():
                 self.i += 1
             if start == self.i and self.i < len(self.text):
-                ch = self.text[self.i]; self.i += 1
+                ch = self.text[self.i]
+                self.i += 1
                 return ch
-            cmd = self.text[start:self.i]
+            cmd = self.text[start : self.i]
             return DELIMS.get(cmd, SYMBOLS.get(cmd, cmd))
         ch = self.text[self.i]
         self.i += 1
         return "" if ch == "." else ch
 
     def _parse_environment(self, env: str) -> ET.Element:
-        supported = {"matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "aligned", "align", "cases"}
+        supported = {
+            "equation",
+            "equation*",
+            "matrix",
+            "pmatrix",
+            "bmatrix",
+            "Bmatrix",
+            "vmatrix",
+            "Vmatrix",
+            "aligned",
+            "align",
+            "align*",
+            "gather",
+            "gather*",
+            "gathered",
+            "cases",
+            "split",
+        }
         if env not in supported:
             raise ValueError(f"Unsupported LaTeX environment: {env}")
         marker = f"\\end{{{env}}}"
         end = self.text.find(marker, self.i)
         if end < 0:
             raise ValueError(f"Unclosed LaTeX environment: {env}")
-        content = self.text[self.i:end]
+        content = self.text[self.i : end]
         self.i = end + len(marker)
+
+        if env in {"equation", "equation*"}:
+            parser = _Parser(content.strip())
+            items = parser.parse_sequence()
+            return items[0] if len(items) == 1 else _e("mrow", None, *items)
 
         rows = [row.strip() for row in re.split(r"\\\\", content) if row.strip()]
         mrows: list[ET.Element] = []
@@ -371,11 +562,40 @@ class _Parser:
                 cell_node = items[0] if len(items) == 1 else _e("mrow", None, *items)
                 mtds.append(_e("mtd", None, cell_node))
             mrows.append(_e("mtr", None, *mtds))
-        table = _e("mtable", None, *mrows, columnalign="left" if env in {"aligned", "align", "cases"} else "center")
-        if env in {"aligned", "align", "matrix"}:
+        left_aligned = {"aligned", "align", "align*", "cases", "split"}
+        table = _e(
+            "mtable",
+            None,
+            *mrows,
+            columnalign="left" if env in left_aligned else "center",
+        )
+        if env in {
+            "aligned",
+            "align",
+            "align*",
+            "gather",
+            "gather*",
+            "gathered",
+            "split",
+            "matrix",
+        }:
             return table
-        opens = {"pmatrix": "(", "bmatrix": "[", "Bmatrix": "{", "vmatrix": "|", "Vmatrix": "‖", "cases": "{"}
-        closes = {"pmatrix": ")", "bmatrix": "]", "Bmatrix": "}", "vmatrix": "|", "Vmatrix": "‖", "cases": ""}
+        opens = {
+            "pmatrix": "(",
+            "bmatrix": "[",
+            "Bmatrix": "{",
+            "vmatrix": "|",
+            "Vmatrix": "‖",
+            "cases": "{",
+        }
+        closes = {
+            "pmatrix": ")",
+            "bmatrix": "]",
+            "Bmatrix": "}",
+            "vmatrix": "|",
+            "Vmatrix": "‖",
+            "cases": "",
+        }
         return _e("mfenced", None, table, open=opens[env], close=closes[env])
 
     def _skip_spaces(self) -> None:

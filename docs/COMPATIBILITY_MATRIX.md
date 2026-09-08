@@ -1,5 +1,10 @@
 # Compatibility matrix
 
+The executable, machine-readable construct contract is
+[`feature-matrix.json`](feature-matrix.json). It distinguishes native structure,
+diagnostic behavior, Word 365 qualification status, LibreOffice status, and the
+tracked evidence for each feature. This page summarizes host/runtime policy.
+
 ## Runtime
 
 | Component | v1.x policy |

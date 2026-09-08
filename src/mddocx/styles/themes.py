@@ -20,24 +20,52 @@ class ThemeSpec:
 
 THEMES: dict[str, ThemeSpec] = {
     "default": ThemeSpec(
-        body_font="Aptos", heading_font="Aptos Display", code_font="Consolas",
-        body_size_pt=11, line_spacing=1.15, heading_sizes_pt=(20, 16, 14, 12, 11, 10),
-        paragraph_after_pt=6, quote_indent_pt=18, code_size_pt=9, table_header_fill="EDEDED",
+        body_font="Aptos",
+        heading_font="Aptos Display",
+        code_font="Consolas",
+        body_size_pt=11,
+        line_spacing=1.15,
+        heading_sizes_pt=(20, 16, 14, 12, 11, 10),
+        paragraph_after_pt=6,
+        quote_indent_pt=18,
+        code_size_pt=9,
+        table_header_fill="EDEDED",
     ),
     "academic": ThemeSpec(
-        body_font="Times New Roman", heading_font="Times New Roman", code_font="Consolas",
-        body_size_pt=11.5, line_spacing=1.15, heading_sizes_pt=(18, 15, 13, 12, 11, 10),
-        paragraph_after_pt=5, quote_indent_pt=20, code_size_pt=9, table_header_fill="E8E8E8",
+        body_font="Times New Roman",
+        heading_font="Times New Roman",
+        code_font="Consolas",
+        body_size_pt=11.5,
+        line_spacing=1.15,
+        heading_sizes_pt=(18, 15, 13, 12, 11, 10),
+        paragraph_after_pt=5,
+        quote_indent_pt=20,
+        code_size_pt=9,
+        table_header_fill="E8E8E8",
     ),
     "modern": ThemeSpec(
-        body_font="Aptos", heading_font="Aptos Display", code_font="Cascadia Mono",
-        body_size_pt=10.5, line_spacing=1.12, heading_sizes_pt=(22, 17, 14, 12, 11, 10),
-        paragraph_after_pt=7, quote_indent_pt=16, code_size_pt=9, table_header_fill="EAF0F6",
+        body_font="Aptos",
+        heading_font="Aptos Display",
+        code_font="Cascadia Mono",
+        body_size_pt=10.5,
+        line_spacing=1.12,
+        heading_sizes_pt=(22, 17, 14, 12, 11, 10),
+        paragraph_after_pt=7,
+        quote_indent_pt=16,
+        code_size_pt=9,
+        table_header_fill="EAF0F6",
     ),
     "minimal": ThemeSpec(
-        body_font="Arial", heading_font="Arial", code_font="Courier New",
-        body_size_pt=10.5, line_spacing=1.1, heading_sizes_pt=(19, 15, 13, 11.5, 10.5, 10),
-        paragraph_after_pt=4, quote_indent_pt=15, code_size_pt=8.5, table_header_fill="F4F4F4",
+        body_font="Arial",
+        heading_font="Arial",
+        code_font="Courier New",
+        body_size_pt=10.5,
+        line_spacing=1.1,
+        heading_sizes_pt=(19, 15, 13, 11.5, 10.5, 10),
+        paragraph_after_pt=4,
+        quote_indent_pt=15,
+        code_size_pt=8.5,
+        table_header_fill="F4F4F4",
     ),
 }
 
@@ -46,4 +74,6 @@ def get_theme(name: str) -> ThemeSpec:
     try:
         return THEMES[name]
     except KeyError as exc:
-        raise ValueError(f"Unknown theme {name!r}. Available themes: {', '.join(sorted(THEMES))}") from exc
+        raise ValueError(
+            f"Unknown theme {name!r}. Available themes: {', '.join(sorted(THEMES))}"
+        ) from exc

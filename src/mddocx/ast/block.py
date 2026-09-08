@@ -146,6 +146,7 @@ class DefinitionItem(Node):
 class DefinitionList(Node):
     items: list[DefinitionItem] = field(default_factory=list)
 
+
 @dataclass(slots=True)
 class BibliographyBlock(Node):
     pass

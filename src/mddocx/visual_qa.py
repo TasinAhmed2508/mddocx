@@ -33,7 +33,9 @@ class VisualQAReport:
 
     @property
     def min_similarity(self) -> float:
-        return min((item.similarity for item in self.comparisons), default=0.0 if self.page_count else 1.0)
+        return min(
+            (item.similarity for item in self.comparisons), default=0.0 if self.page_count else 1.0
+        )
 
     @property
     def ok(self) -> bool:
@@ -69,7 +71,9 @@ class VisualQAReport:
             status = "PASS" if item.similarity >= self.threshold else "DIFF"
             lines.append(f"  page {item.page}: {item.similarity:.4f} {status}")
         if self.missing_baseline_pages:
-            lines.append("Missing baseline pages: " + ", ".join(map(str, self.missing_baseline_pages)))
+            lines.append(
+                "Missing baseline pages: " + ", ".join(map(str, self.missing_baseline_pages))
+            )
         if self.extra_baseline_pages:
             lines.append("Extra baseline pages: " + ", ".join(map(str, self.extra_baseline_pages)))
         return "\n".join(lines)
@@ -102,10 +106,14 @@ def render_docx_pages(docx_path: str | Path, output_dir: str | Path, dpi: int = 
             str(tmp_path),
             str(docx_path),
         ]
-        completed = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+        completed = subprocess.run(
+            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120
+        )
         pdf = tmp_path / (docx_path.stem + ".pdf")
         if completed.returncode != 0 or not pdf.is_file():
-            detail = (completed.stderr or completed.stdout or "LibreOffice conversion failed").strip()
+            detail = (
+                completed.stderr or completed.stdout or "LibreOffice conversion failed"
+            ).strip()
             raise VisualQAUnavailable(detail)
         prefix = output_dir / "page"
         completed = subprocess.run(
@@ -120,7 +128,9 @@ def render_docx_pages(docx_path: str | Path, output_dir: str | Path, dpi: int = 
     return _sorted_pages(output_dir)
 
 
-def compare_visual_pages(baseline_dir: str | Path, actual_dir: str | Path, threshold: float = 0.985) -> VisualQAReport:
+def compare_visual_pages(
+    baseline_dir: str | Path, actual_dir: str | Path, threshold: float = 0.985
+) -> VisualQAReport:
     baseline = _sorted_pages(Path(baseline_dir))
     actual = _sorted_pages(Path(actual_dir))
     baseline_map = {_page_number(path): path for path in baseline}
@@ -128,7 +138,9 @@ def compare_visual_pages(baseline_dir: str | Path, actual_dir: str | Path, thres
     comparisons: list[PageComparison] = []
     for page in sorted(set(baseline_map).intersection(actual_map)):
         score = image_similarity(baseline_map[page], actual_map[page])
-        comparisons.append(PageComparison(page, score, str(baseline_map[page]), str(actual_map[page])))
+        comparisons.append(
+            PageComparison(page, score, str(baseline_map[page]), str(actual_map[page]))
+        )
     return VisualQAReport(
         page_count=len(actual),
         threshold=threshold,

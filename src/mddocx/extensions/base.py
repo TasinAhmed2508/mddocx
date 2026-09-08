@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from mddocx.ast.base import Document
+from mddocx.diagnostics import Diagnostic, MddocxError
+
 
 class MddocxExtension(Protocol):
     """Optional hook interface for custom Markdown/AST/render behavior.
@@ -13,10 +16,14 @@ class MddocxExtension(Protocol):
 
     def configure_markdown(self, markdown_it: Any) -> None: ...
     def parse_block(self, parser: Any, tokens: list[Any], index: int) -> tuple[Any, int] | None: ...
-    def parse_inline(self, parser: Any, tokens: list[Any], index: int) -> tuple[Any, int] | None: ...
+    def parse_inline(
+        self, parser: Any, tokens: list[Any], index: int
+    ) -> tuple[Any, int] | None: ...
     def transform_document(self, document: Any) -> Any: ...
     def render_block(self, renderer: Any, node: Any) -> bool: ...
-    def render_inline(self, renderer: Any, paragraph: Any, node: Any, state: dict[str, Any]) -> bool: ...
+    def render_inline(
+        self, renderer: Any, paragraph: Any, node: Any, state: dict[str, Any]
+    ) -> bool: ...
 
 
 def call_configure_markdown(extensions: tuple[Any, ...], markdown_it: Any) -> None:
@@ -57,8 +64,24 @@ def call_transform_document(extensions: tuple[Any, ...], document: Any) -> Any:
     for extension in extensions:
         hook = getattr(extension, "transform_document", None)
         if hook is not None:
-            updated = hook(current)
+            name = type(extension).__name__
+            try:
+                updated = hook(current)
+            except MddocxError:
+                raise
+            except Exception as exc:
+                raise MddocxError(
+                    Diagnostic("error", "PLUGIN405", f"Extension transform failed: {name}")
+                ) from exc
             if updated is not None:
+                if not isinstance(updated, Document):
+                    raise MddocxError(
+                        Diagnostic(
+                            "error",
+                            "PLUGIN406",
+                            f"Extension transform must return a Document or None: {name}",
+                        )
+                    )
                 current = updated
     return current
 

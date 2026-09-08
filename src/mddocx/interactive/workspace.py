@@ -48,7 +48,11 @@ def inspect_workspace(root: str | Path) -> WorkspaceSummary:
     docx = _files(base, {".docx"})
     images = _files(base, _IMAGE_SUFFIXES)
     data = _files(base, _DATA_SUFFIXES)
-    templates = tuple(p for p in _files(base, _TEMPLATE_SUFFIXES) if p.suffix.lower() == ".dotx" or "template" in p.name.lower())
+    templates = tuple(
+        p
+        for p in _files(base, _TEMPLATE_SUFFIXES)
+        if p.suffix.lower() == ".dotx" or "template" in p.name.lower()
+    )
     return WorkspaceSummary(
         root=base,
         project_file=project if project.is_file() else None,

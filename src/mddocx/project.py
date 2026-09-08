@@ -113,7 +113,9 @@ class ProjectCompiler:
             children.extend(doc.children)
             self._merge_footnotes(footnotes, doc.footnotes, source)
         self._document_metadata.update(self.manifest.metadata)
-        document = Document(children=children, metadata=self._document_metadata, footnotes=footnotes)
+        document = Document(
+            children=children, metadata=self._document_metadata, footnotes=footnotes
+        )
         document = self.normalizer.normalize(document)
         return ProjectCompilation(
             document=document,
@@ -125,8 +127,12 @@ class ProjectCompiler:
     def _compile_file(self, path: Path, depth: int) -> Document:
         path = path.resolve()
         if depth > self.manifest.max_include_depth:
-            raise _project_error("PROJECT804", f"Include depth exceeds {self.manifest.max_include_depth}.", path)
-        _ensure_within(self.manifest.root, path, "PROJECT802", "Included source escapes the project root")
+            raise _project_error(
+                "PROJECT804", f"Include depth exceeds {self.manifest.max_include_depth}.", path
+            )
+        _ensure_within(
+            self.manifest.root, path, "PROJECT802", "Included source escapes the project root"
+        )
         if path.suffix.lower() not in _MARKDOWN_SUFFIXES:
             raise _project_error("PROJECT803", f"Included file must be Markdown: {path.name}", path)
         if not path.is_file():
@@ -198,7 +204,9 @@ class ProjectCompiler:
                 target = (source_dir / source).resolve()
                 self._dependencies.add(target)
                 _ensure_within(
-                    self.manifest.root, target, "PROJECT806",
+                    self.manifest.root,
+                    target,
+                    "PROJECT806",
                     f"Resource referenced by project source escapes the project root: {source}",
                 )
                 node.src = target.relative_to(self.manifest.root).as_posix()
@@ -206,26 +214,50 @@ class ProjectCompiler:
                 source = node.source_path
                 parsed = urlparse(source)
                 if parsed.scheme or parsed.netloc:
-                    raise _project_error("PROJECT827", "Chart data sources must be local project files.", Path(getattr(node.source, "file", self.manifest.path)))
+                    raise _project_error(
+                        "PROJECT827",
+                        "Chart data sources must be local project files.",
+                        Path(getattr(node.source, "file", self.manifest.path)),
+                    )
                 target = (source_dir / source).resolve()
                 self._dependencies.add(target)
-                _ensure_within(self.manifest.root, target, "PROJECT806", f"Chart data source escapes the project root: {source}")
+                _ensure_within(
+                    self.manifest.root,
+                    target,
+                    "PROJECT806",
+                    f"Chart data source escapes the project root: {source}",
+                )
                 node.source_path = target.relative_to(self.manifest.root).as_posix()
             elif isinstance(node, DataTableBlock):
                 source = node.source_path
                 parsed = urlparse(source)
                 if parsed.scheme or parsed.netloc:
-                    raise _project_error("PROJECT827", "Data-table sources must be local project files.", Path(getattr(node.source, "file", self.manifest.path)))
+                    raise _project_error(
+                        "PROJECT827",
+                        "Data-table sources must be local project files.",
+                        Path(getattr(node.source, "file", self.manifest.path)),
+                    )
                 target = (source_dir / source).resolve()
                 self._dependencies.add(target)
-                _ensure_within(self.manifest.root, target, "PROJECT806", f"Data-table source escapes the project root: {source}")
+                _ensure_within(
+                    self.manifest.root,
+                    target,
+                    "PROJECT806",
+                    f"Data-table source escapes the project root: {source}",
+                )
                 node.source_path = target.relative_to(self.manifest.root).as_posix()
 
     @staticmethod
-    def _merge_footnotes(target: dict[str, list[Any]], incoming: dict[str, list[Any]], source: Path) -> None:
+    def _merge_footnotes(
+        target: dict[str, list[Any]], incoming: dict[str, list[Any]], source: Path
+    ) -> None:
         for label, nodes in incoming.items():
             if label in target:
-                raise _project_error("PROJECT807", f"Duplicate footnote label across project sources: {label}", source)
+                raise _project_error(
+                    "PROJECT807",
+                    f"Duplicate footnote label across project sources: {label}",
+                    source,
+                )
             target[label] = nodes
 
 
@@ -243,7 +275,9 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
     try:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
-        raise _project_error("PROJECT810", f"Unable to parse project YAML: {type(exc).__name__}", path) from exc
+        raise _project_error(
+            "PROJECT810", f"Unable to parse project YAML: {type(exc).__name__}", path
+        ) from exc
     if not isinstance(loaded, dict):
         raise _project_error("PROJECT811", "Project manifest must contain a YAML mapping.", path)
     version = loaded.get("version", _PROJECT_SCHEMA_VERSION)
@@ -254,38 +288,54 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
     if isinstance(raw_sources, str):
         raw_sources = [raw_sources]
     if not isinstance(raw_sources, list) or not raw_sources:
-        raise _project_error("PROJECT813", "Project manifest requires a non-empty 'sources' list.", path)
+        raise _project_error(
+            "PROJECT813", "Project manifest requires a non-empty 'sources' list.", path
+        )
     sources: list[Path] = []
     for item in raw_sources:
         if not isinstance(item, str) or not item.strip():
-            raise _project_error("PROJECT813", "Every project source must be a non-empty path string.", path)
+            raise _project_error(
+                "PROJECT813", "Every project source must be a non-empty path string.", path
+            )
         if _glob.has_magic(item):
             pattern_path = Path(item)
             if pattern_path.is_absolute() or ".." in pattern_path.parts:
-                raise _project_error("PROJECT814", "Project source glob escapes the project root", path)
+                raise _project_error(
+                    "PROJECT814", "Project source glob escapes the project root", path
+                )
             matches = sorted(
                 (candidate.resolve() for candidate in root.glob(item) if candidate.is_file()),
                 key=lambda candidate: str(candidate).casefold(),
             )
             if not matches:
-                raise _project_error("PROJECT826", f"Project source glob matched no files: {item}", path)
+                raise _project_error(
+                    "PROJECT826", f"Project source glob matched no files: {item}", path
+                )
             for candidate in matches:
-                _ensure_within(root, candidate, "PROJECT814", "Project source escapes the project root")
+                _ensure_within(
+                    root, candidate, "PROJECT814", "Project source escapes the project root"
+                )
                 if candidate.suffix.lower() not in _MARKDOWN_SUFFIXES:
                     continue
                 if candidate not in sources:
                     sources.append(candidate)
         else:
-            candidate = _resolve_manifest_path(root, item, "PROJECT814", "Project source escapes the project root")
+            candidate = _resolve_manifest_path(
+                root, item, "PROJECT814", "Project source escapes the project root"
+            )
             if candidate not in sources:
                 sources.append(candidate)
     if not sources:
-        raise _project_error("PROJECT826", "Project sources did not resolve to any Markdown files.", path)
+        raise _project_error(
+            "PROJECT826", "Project sources did not resolve to any Markdown files.", path
+        )
 
     output_raw = loaded.get("output", "build/document.docx")
     if not isinstance(output_raw, str) or not output_raw.strip():
         raise _project_error("PROJECT815", "Project output must be a path string.", path)
-    output = _resolve_manifest_path(root, output_raw, "PROJECT816", "Project output escapes the project root")
+    output = _resolve_manifest_path(
+        root, output_raw, "PROJECT816", "Project output escapes the project root"
+    )
     if output.suffix.lower() != ".docx":
         raise _project_error("PROJECT817", "Project output must use the .docx extension.", path)
 
@@ -300,7 +350,9 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
             raise _project_error("PROJECT820", f"Project variable '{key}' must be scalar.", path)
         rendered = "" if value is None else str(value)
         if "\n" in rendered or "\r" in rendered:
-            raise _project_error("PROJECT820", f"Project variable '{key}' may not contain newlines.", path)
+            raise _project_error(
+                "PROJECT820", f"Project variable '{key}' may not contain newlines.", path
+            )
         variables[key] = rendered
 
     render = loaded.get("render") or {}
@@ -317,7 +369,9 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
     max_depth = max(1, min(256, max_depth))
     undefined = str(project_cfg.get("undefined_variables", "error"))
     if undefined not in {"error", "keep", "empty"}:
-        raise _project_error("PROJECT824", "undefined_variables must be error, keep, or empty.", path)
+        raise _project_error(
+            "PROJECT824", "undefined_variables must be error, keep, or empty.", path
+        )
     interval = float(watch_cfg.get("interval", 1.0))
     if interval < 0.1:
         interval = 0.1
@@ -335,7 +389,9 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
     )
 
 
-def compile_project(project: str | Path | ProjectManifest = ".", config: RenderConfig | None = None) -> ProjectCompilation:
+def compile_project(
+    project: str | Path | ProjectManifest = ".", config: RenderConfig | None = None
+) -> ProjectCompilation:
     manifest = project if isinstance(project, ProjectManifest) else load_project(project)
     return ProjectCompiler(manifest, config=config).compile()
 
@@ -376,7 +432,9 @@ def build_project(
 
     dependencies = set(compiled.dependencies)
     dependencies.update(_render_dependencies(manifest, cfg))
-    dependency_tuple = tuple(sorted((p.resolve() for p in dependencies), key=lambda p: str(p).casefold()))
+    dependency_tuple = tuple(
+        sorted((p.resolve() for p in dependencies), key=lambda p: str(p).casefold())
+    )
     fingerprint = _fingerprint(manifest.path, dependency_tuple)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     output_sha256 = hashlib.sha256(blob).hexdigest()
@@ -433,7 +491,13 @@ def watch_project(
     while True:
         time.sleep(delay)
         after = _watch_snapshot(manifest.root, ignore={watched_output})
-        changed = tuple(sorted(set(before) ^ set(after) | {p for p in before.keys() & after.keys() if before[p] != after[p]}, key=lambda p: str(p).casefold()))
+        changed = tuple(
+            sorted(
+                set(before) ^ set(after)
+                | {p for p in before.keys() & after.keys() if before[p] != after[p]},
+                key=lambda p: str(p).casefold(),
+            )
+        )
         if not changed:
             continue
         before = after
@@ -441,7 +505,9 @@ def watch_project(
         try:
             # Reload because the manifest itself may have changed.
             manifest = load_project(manifest.path)
-            watched_output = Path(output).resolve() if output is not None else manifest.output.resolve()
+            watched_output = (
+                Path(output).resolve() if output is not None else manifest.output.resolve()
+            )
             result = build_project(manifest, config=config, output=output)
             before = _watch_snapshot(manifest.root, ignore={watched_output})
             emit(ProjectWatchEvent("build", result=result, changed=changed))
@@ -507,7 +573,12 @@ def _config_from_manifest(manifest: ProjectManifest, explicit: RenderConfig | No
     render = manifest.render
     if explicit is None:
         if "template" in render and render["template"]:
-            cfg.template = _resolve_manifest_path(manifest.root, str(render["template"]), "PROJECT825", "Template path escapes the project root")
+            cfg.template = _resolve_manifest_path(
+                manifest.root,
+                str(render["template"]),
+                "PROJECT825",
+                "Template path escapes the project root",
+            )
         if "font" in render:
             cfg.fonts.body = str(render["font"])
         if "heading_font" in render:
@@ -527,11 +598,14 @@ def _config_from_manifest(manifest: ProjectManifest, explicit: RenderConfig | No
             cfg.header.different_odd_even = bool(render["different_odd_even"])
             cfg.footer.different_odd_even = bool(render["different_odd_even"])
         if "header" in render:
-            cfg.header.text = str(render["header"]); cfg.header.enabled = True
+            cfg.header.text = str(render["header"])
+            cfg.header.enabled = True
         if "footer" in render:
-            cfg.footer.text = str(render["footer"]); cfg.footer.enabled = True
+            cfg.footer.text = str(render["footer"])
+            cfg.footer.enabled = True
         if "num_pages" in render:
-            cfg.footer.num_pages = bool(render["num_pages"]); cfg.footer.enabled = cfg.footer.enabled or cfg.footer.num_pages
+            cfg.footer.num_pages = bool(render["num_pages"])
+            cfg.footer.enabled = cfg.footer.enabled or cfg.footer.num_pages
         if "auto_bibliography" in render:
             cfg.citations.auto_bibliography = bool(render["auto_bibliography"])
         if "bibliography" in render and render["bibliography"]:
@@ -671,7 +745,9 @@ def _ensure_within(root: Path, candidate: Path, code: str, message: str) -> None
         raise _project_error(code, message, candidate) from exc
 
 
-def _project_error(code: str, message: str, source: Path | None = None, line: int | None = None) -> MddocxError:
+def _project_error(
+    code: str, message: str, source: Path | None = None, line: int | None = None
+) -> MddocxError:
     return MddocxError(Diagnostic("error", code, message, str(source) if source else None, line))
 
 
@@ -690,7 +766,9 @@ def _fingerprint(manifest_path: Path, dependencies: Iterable[Path]) -> str:
     return digest.hexdigest()
 
 
-def _try_current_state(manifest: ProjectManifest, state_path: Path, output_path: Path) -> tuple[tuple[Path, ...], str, str] | None:
+def _try_current_state(
+    manifest: ProjectManifest, state_path: Path, output_path: Path
+) -> tuple[tuple[Path, ...], str, str] | None:
     if not state_path.is_file() or not output_path.is_file():
         return None
     try:
@@ -706,7 +784,10 @@ def _try_current_state(manifest: ProjectManifest, state_path: Path, output_path:
         if fingerprint != state.get("fingerprint"):
             return None
         expected_output_hash = str(state.get("output_sha256") or "")
-        if not expected_output_hash or hashlib.sha256(output_path.read_bytes()).hexdigest() != expected_output_hash:
+        if (
+            not expected_output_hash
+            or hashlib.sha256(output_path.read_bytes()).hexdigest() != expected_output_hash
+        ):
             return None
         return deps, fingerprint, expected_output_hash
     except (OSError, ValueError, TypeError, json.JSONDecodeError):

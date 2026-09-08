@@ -6,6 +6,30 @@ on:
 
 jobs:
   quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m compileall -q src
+      - run: pytest --collect-only -q
+      - run: pytest -m "not visual"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: mypy src/mddocx/compiler.py src/mddocx/layout.py src/mddocx/math/preflight.py src/mddocx/normalize/normalizer.py --ignore-missing-imports --follow-imports=skip --check-untyped-defs
+      - run: mddocx doctor
+      - run: mddocx benchmark --sections 20 --max-seconds 30 --max-peak-mb 512
+
+  visual-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -13,11 +37,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -m pip install --upgrade pip
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y libreoffice-writer poppler-utils fonts-dejavu-core
       - run: python -m pip install -e ".[dev]"
-      - run: python -m compileall -q src
-      - run: mddocx doctor
-      - run: mddocx benchmark --sections 20 --max-seconds 30 --max-peak-mb 512
+      - run: pytest -m visual
 
   package:
     runs-on: ubuntu-latest
@@ -29,3 +52,21 @@ jobs:
       - run: python -m pip install --upgrade build twine
       - run: python -m build
       - run: python -m twine check dist/*
+      - name: Smoke-test built wheel in a clean environment
+        shell: bash
+        run: |
+          python -m venv /tmp/mddocx-wheel
+          /tmp/mddocx-wheel/bin/python -m pip install dist/*.whl
+          /tmp/mddocx-wheel/bin/mddocx --version
+          /tmp/mddocx-wheel/bin/mddocx doctor
+          /tmp/mddocx-wheel/bin/mddocx tests/fixtures/ai_markdown/chatgpt_sphere_equations.md -o /tmp/ai-math.docx
+          /tmp/mddocx-wheel/bin/mddocx inspect /tmp/ai-math.docx --strict
+          /tmp/mddocx-wheel/bin/mddocx math-check tests/fixtures/ai_markdown/chatgpt_sphere_equations.md --strict
+          /tmp/mddocx-wheel/bin/mddocx api --json > /tmp/public-api.json
+          /tmp/mddocx-wheel/bin/python -c "import json; p=json.load(open('/tmp/public-api.json')); assert p['api_version']=='1'"
+      - name: Smoke-test source distribution in a clean environment
+        shell: bash
+        run: |
+          python -m venv /tmp/mddocx-sdist
+          /tmp/mddocx-sdist/bin/python -m pip install dist/*.tar.gz
+          /tmp/mddocx-sdist/bin/python -c "import importlib.metadata as md, mddocx; assert mddocx.__version__ == md.version('mddocx-native')"

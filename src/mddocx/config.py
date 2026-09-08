@@ -21,8 +21,6 @@ class PageConfig:
     margins: Margins = field(default_factory=Margins)
 
 
-
-
 @dataclass(slots=True)
 class MetadataConfig:
     """Controls removal of AI/chat export metadata before Markdown parsing.
@@ -31,6 +29,7 @@ class MetadataConfig:
     strip: remove recognized metadata/provenance even without a strong export marker.
     keep: preserve source metadata exactly as supplied.
     """
+
     ai_export: Literal["auto", "strip", "keep"] = "auto"
     strip_front_matter_provenance: bool = True
     strip_boundary_metadata: bool = True
@@ -55,7 +54,10 @@ class ResourcePolicy:
 
 @dataclass(slots=True)
 class MathFailurePolicy:
-    mode: Literal["error", "plain_text", "warning"] = "error"
+    # AI-generated Markdown frequently contains provider- or package-specific
+    # TeX. Keep the rest of the document usable by default, while reporting the
+    # exact conversion problem and preserving the equation as editable text.
+    mode: Literal["error", "plain_text", "warning"] = "warning"
 
 
 @dataclass(slots=True)
@@ -81,8 +83,6 @@ class FooterConfig:
     different_odd_even: bool = False
     first_page_text: str | None = None
     even_page_text: str | None = None
-
-
 
 
 @dataclass(slots=True)
@@ -122,10 +122,16 @@ class CodeConfig:
 @dataclass(slots=True)
 class CalloutConfig:
     enabled: bool = True
-    labels: dict[str, str] = field(default_factory=lambda: {
-        "note": "Note", "tip": "Tip", "important": "Important",
-        "warning": "Warning", "caution": "Caution", "example": "Example",
-    })
+    labels: dict[str, str] = field(
+        default_factory=lambda: {
+            "note": "Note",
+            "tip": "Tip",
+            "important": "Important",
+            "warning": "Warning",
+            "caution": "Caution",
+            "example": "Example",
+        }
+    )
 
 
 @dataclass(slots=True)
@@ -201,7 +207,6 @@ class MermaidConfig:
     max_edges: int = 1_000
 
 
-
 @dataclass(slots=True)
 class ChartConfig:
     enabled: bool = True
@@ -266,7 +271,6 @@ class PluginConfig:
     entrypoint_group: str = "mddocx.extensions"
 
 
-
 @dataclass(slots=True)
 class ReferenceConfig:
     enabled: bool = True
@@ -309,6 +313,7 @@ class FigureConfig:
     default_align: Literal["left", "center", "right"] = "center"
     default_width_percent: float = 100.0
     caption_keep_with_figure: bool = True
+
 
 @dataclass(slots=True)
 class RenderConfig:

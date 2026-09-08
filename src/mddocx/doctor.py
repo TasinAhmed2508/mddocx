@@ -94,7 +94,7 @@ def run_doctor() -> DoctorReport:
         from . import __version__ as mddocx_version
     except (ImportError, AttributeError):
         try:
-            mddocx_version = metadata.version("mddocx")
+            mddocx_version = metadata.version("mddocx-native")
         except metadata.PackageNotFoundError:
             mddocx_version = "source checkout"
 

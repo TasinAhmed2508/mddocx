@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 — Packaging and release improvements
+
+- Published the project under the unique PyPI distribution name `mddocx-native` while preserving the `mddocx` import package and command-line interface.
+- Added secure PyPI Trusted Publishing through GitHub Actions.
+- Expanded installation documentation for PyPI, downloaded wheels, GitHub source installs, and local development.
+- Added professional package metadata, project links, classifiers, and MIT licensing.
+- Removed generated package metadata from source control and improved release discoverability.
+
 ## 1.2.0 — AI/chat export metadata sanitization
 
 - Added provider-agnostic AI/chat export metadata sanitization before Markdown parsing, enabled by default with the conservative `auto` policy.

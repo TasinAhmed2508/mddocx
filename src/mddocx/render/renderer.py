@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
-from math import sqrt
 from pathlib import Path
-import re
 from lxml import etree
 
 from docx import Document as WordDocument
@@ -58,7 +56,7 @@ from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
 from mddocx.diagrams import MermaidRenderer, MermaidRenderError
 from mddocx.extensions.base import render_custom_block, render_custom_inline
 from mddocx.math import DefaultMathConverter
-from mddocx.layout import LayoutPlan, LayoutPlanner
+from mddocx.layout import LayoutPlan, LayoutPlanner, allocate_table_widths_mm
 from mddocx.ooxml.fields import (
     add_bookmark,
     add_hyperlink,
@@ -92,8 +90,10 @@ from mddocx.ooxml.utils import (
     set_row_cant_split,
 )
 from mddocx.resources import ResourceResolver
-from mddocx.styles import ensure_styles, get_theme
+from mddocx.styles import ensure_styles, get_theme, resolve_style_name, validate_style_mapping
 from mddocx.validation import validate_docx_package
+from .context import RenderContext
+from .math_renderer import NativeMathRenderer
 
 
 class DocxRenderer:
@@ -120,6 +120,8 @@ class DocxRenderer:
         self._heading_num_id: int | None = None
         self._chart_entries: list[ChartEntry] = []
         self._layout_plan = LayoutPlan()
+        self.context: RenderContext | None = None
+        self._math_renderer: NativeMathRenderer | None = None
 
     def render(
         self,
@@ -131,6 +133,7 @@ class DocxRenderer:
         self._layout_plan = layout_plan or LayoutPlanner(self.config).plan(document)
         self._theme = get_theme(self.config.theme)
         self.document = self._open_document()
+        validate_style_mapping(self.document, self.config, self.reporter)
         ensure_styles(self.document, self.config)
         self._configure_document()
         self.numbering = NumberingEngine(
@@ -151,6 +154,16 @@ class DocxRenderer:
             self.config.references.equation_number_format,
             self.config.references.caption_number_format,
         )
+        self.context = RenderContext(
+            word_document=self.document,
+            config=self.config,
+            reporter=self.reporter,
+            math=self.math,
+            numbering=self.numbering,
+            references=self.references,
+            resolver=self.resolver,
+        )
+        self._math_renderer = NativeMathRenderer(self.context)
         bib_path = self.config.citations.bibliography
         if bib_path is not None and not Path(bib_path).is_absolute():
             bib_path = Path(self.config.base_dir or ".") / bib_path
@@ -206,6 +219,17 @@ class DocxRenderer:
         finally:
             self.resolver.close()
 
+    def _style(self, canonical: str) -> str:
+        return resolve_style_name(self.document, self.config, canonical)
+
+    def _apply_planned_paragraph_layout(self, paragraph, node) -> None:
+        decision = self._layout_plan.for_node(node)
+        if decision is None:
+            return
+        paragraph.paragraph_format.keep_with_next = decision.keep_with_next
+        paragraph.paragraph_format.keep_together = decision.keep_together
+        paragraph.paragraph_format.page_break_before = decision.page_break_before
+
     def _open_document(self):
         if self.config.template is None:
             return WordDocument()
@@ -247,23 +271,23 @@ class DocxRenderer:
         cfg = self.config.title_page
         if not self.config.title and not cfg.subtitle and not cfg.organization:
             return
-        p = self.document.add_paragraph(style="MD Title")
+        p = self.document.add_paragraph(style=self._style("MD Title"))
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Mm(42)
         p.add_run(clean_xml_text(self.config.title or "Untitled Document"))
         if cfg.subtitle:
-            sp = self.document.add_paragraph(style="MD Subtitle")
+            sp = self.document.add_paragraph(style=self._style("MD Subtitle"))
             sp.alignment = WD_ALIGN_PARAGRAPH.CENTER
             sp.add_run(clean_xml_text(cfg.subtitle))
         if self.config.author:
-            ap = self.document.add_paragraph(style="MD Normal")
+            ap = self.document.add_paragraph(style=self._style("MD Normal"))
             ap.alignment = WD_ALIGN_PARAGRAPH.CENTER
             ap.add_run(clean_xml_text(self.config.author))
         if cfg.organization:
-            op = self.document.add_paragraph(style="MD Normal")
+            op = self.document.add_paragraph(style=self._style("MD Normal"))
             op.alignment = WD_ALIGN_PARAGRAPH.CENTER
             op.add_run(clean_xml_text(cfg.organization))
-        dp = self.document.add_paragraph(style="MD Normal")
+        dp = self.document.add_paragraph(style=self._style("MD Normal"))
         dp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if cfg.date:
             render_field_template(dp, cfg.date, {"AUTHOR": self.config.author or ""})
@@ -275,12 +299,12 @@ class DocxRenderer:
     def _render_abstract(self) -> None:
         cfg = self.config.abstract
         if cfg.text:
-            hp = self.document.add_paragraph(style="MD Heading 1")
+            hp = self.document.add_paragraph(style=self._style("MD Heading 1"))
             hp.add_run(clean_xml_text(cfg.title))
-            bp = self.document.add_paragraph(style="MD Abstract")
+            bp = self.document.add_paragraph(style=self._style("MD Abstract"))
             bp.add_run(clean_xml_text(cfg.text))
         if cfg.keywords:
-            kp = self.document.add_paragraph(style="MD Abstract")
+            kp = self.document.add_paragraph(style=self._style("MD Abstract"))
             r = kp.add_run(clean_xml_text(cfg.keywords_label) + ": ")
             r.bold = True
             kp.add_run(clean_xml_text(", ".join(cfg.keywords)))
@@ -343,7 +367,7 @@ class DocxRenderer:
             if include_defaults and header_cfg.section_title:
                 if pieces:
                     p.add_run(" — ")
-                add_style_ref(p, "MD Heading 1")
+                add_style_ref(p, self._style("MD Heading 1"))
 
         def render_footer(footer, text: str | None, include_defaults: bool = True) -> None:
             footer.is_linked_to_previous = False
@@ -399,14 +423,14 @@ class DocxRenderer:
 
     def _render_toc(self) -> None:
         if self.config.toc.title:
-            p = self.document.add_paragraph(style="MD Normal")
+            p = self.document.add_paragraph(style=self._style("MD Normal"))
             r = p.add_run(clean_xml_text(self.config.toc.title))
             r.bold = True
             r.font.size = Mm(5.5)
             p.paragraph_format.keep_with_next = True
-        p = self.document.add_paragraph(style="MD Normal")
+        p = self.document.add_paragraph(style=self._style("MD Normal"))
         add_toc(p, self.config.toc.min_level, self.config.toc.max_level)
-        self.document.add_paragraph(style="MD Normal")
+        self.document.add_paragraph(style=self._style("MD Normal"))
 
     def _request_field_updates(self) -> None:
         if not self.config.fields.update_on_open:
@@ -422,7 +446,8 @@ class DocxRenderer:
         if render_custom_block(self.config.extensions, self, node):
             return
         if isinstance(node, Heading):
-            p = self.document.add_paragraph(style=f"MD Heading {node.level}")
+            p = self.document.add_paragraph(style=self._style(f"MD Heading {node.level}"))
+            self._apply_planned_paragraph_layout(p, node)
             if (
                 self._heading_num_id is not None
                 and node.level <= self.config.heading_numbering.max_level
@@ -455,7 +480,7 @@ class DocxRenderer:
                     or self.config.references.caption_number_format == "section"
                 )
             ):
-                counter_p = self.document.add_paragraph(style="MD Normal")
+                counter_p = self.document.add_paragraph(style=self._style("MD Normal"))
                 counter_p.paragraph_format.space_before = 0
                 counter_p.paragraph_format.space_after = 0
                 counter_p.paragraph_format.line_spacing = 0.01
@@ -467,7 +492,7 @@ class DocxRenderer:
                     for label in ("Figure", "Table", "Listing"):
                         add_hidden_field(counter_p, f" SEQ {label} \r 0 ", "0")
         elif isinstance(node, Paragraph):
-            p = self.document.add_paragraph(style="MD Normal")
+            p = self.document.add_paragraph(style=self._style("MD Normal"))
             self._render_inlines(p, node.children)
             self._apply_paragraph_direction(p, self._plain_inline_text(node.children))
         elif isinstance(node, Callout):
@@ -477,7 +502,7 @@ class DocxRenderer:
                 before = len(self.document.paragraphs)
                 self._render_block(child)
                 for p in self.document.paragraphs[before:]:
-                    p.style = "MD Quote"
+                    p.style = self._style("MD Quote")
         elif isinstance(node, CodeBlock):
             if (node.language or "").strip().lower() == "mermaid" and self.config.mermaid.enabled:
                 renderer = MermaidRenderer(
@@ -508,7 +533,7 @@ class DocxRenderer:
                         and self.config.references.figure_caption_position == "above"
                     ):
                         self._render_caption("Figure", diagram_caption, node.identifier)
-                    p = self.document.add_paragraph(style="MD Normal")
+                    p = self.document.add_paragraph(style=self._style("MD Normal"))
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     p.paragraph_format.keep_together = True
                     self._add_image_path(
@@ -544,12 +569,12 @@ class DocxRenderer:
             ):
                 self._render_numbered_equation(node)
             else:
-                p = self.document.add_paragraph(style="MD Equation")
+                p = self.document.add_paragraph(style=self._style("MD Equation"))
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.paragraph_format.keep_together = True
+                self._apply_planned_paragraph_layout(p, node)
                 self._append_math(p, node.source_text, display=True, source=node.source)
             if node.caption:
-                cp = self.document.add_paragraph(style="MD Caption")
+                cp = self.document.add_paragraph(style=self._style("MD Caption"))
                 cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 cp.add_run(clean_xml_text(node.caption))
         elif isinstance(node, (BulletList, OrderedList)):
@@ -577,12 +602,11 @@ class DocxRenderer:
             )
             if caption and self.config.references.figure_caption_position == "above":
                 self._render_caption("Figure", caption, node.identifier)
-            p = self.document.add_paragraph(style="MD Normal")
+            p = self.document.add_paragraph(style=self._style("MD Normal"))
+            self._apply_planned_paragraph_layout(p, node)
             p.alignment = {"left": WD_ALIGN_PARAGRAPH.LEFT, "right": WD_ALIGN_PARAGRAPH.RIGHT}.get(
                 node.align or self.config.figures.default_align, WD_ALIGN_PARAGRAPH.CENTER
             )
-            if caption:
-                p.paragraph_format.keep_with_next = True
             self._add_image(
                 p,
                 node.src,
@@ -601,14 +625,14 @@ class DocxRenderer:
             self._render_bibliography()
         elif isinstance(node, DefinitionList):
             for item in node.items:
-                tp = self.document.add_paragraph(style="MD Normal")
+                tp = self.document.add_paragraph(style=self._style("MD Normal"))
                 tp.paragraph_format.keep_with_next = True
                 self._render_inlines(tp, item.term, bold=True)
-                dp = self.document.add_paragraph(style="MD Normal")
+                dp = self.document.add_paragraph(style=self._style("MD Normal"))
                 dp.paragraph_format.left_indent = Mm(8)
                 self._render_inlines(dp, item.definition)
         elif isinstance(node, HorizontalRule):
-            p = self.document.add_paragraph(style="MD Normal")
+            p = self.document.add_paragraph(style=self._style("MD Normal"))
             set_paragraph_bottom_border(p)
         elif isinstance(node, PageBreak):
             self.document.add_page_break()
@@ -666,7 +690,7 @@ class DocxRenderer:
         token = f"MDDOCX_CHART_{len(self._chart_entries) + 1}_PLACEHOLDER"
         entry.token = token
         self._chart_entries.append(entry)
-        p = self.document.add_paragraph(style="MD Normal")
+        p = self.document.add_paragraph(style=self._style("MD Normal"))
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.keep_together = True
         if caption and self.config.references.figure_caption_position == "below":
@@ -900,7 +924,9 @@ class DocxRenderer:
         for child in node.children or [Paragraph(children=[])]:
             if isinstance(child, Paragraph):
                 p = self.document.add_paragraph(
-                    style=style_name if style_name in self.document.styles else "MD Quote"
+                    style=self._style(style_name)
+                    if style_name in self.document.styles
+                    else self._style("MD Quote")
                 )
                 if first_paragraph:
                     r = p.add_run(
@@ -913,7 +939,9 @@ class DocxRenderer:
             elif isinstance(child, (BulletList, OrderedList)):
                 if first_paragraph:
                     p = self.document.add_paragraph(
-                        style=style_name if style_name in self.document.styles else "MD Quote"
+                        style=self._style(style_name)
+                        if style_name in self.document.styles
+                        else self._style("MD Quote")
                     )
                     r = p.add_run(clean_xml_text(node.title or label))
                     r.bold = True
@@ -931,7 +959,7 @@ class DocxRenderer:
         }.get(kind, kind)
 
     def _render_caption(self, label: str, caption: str, identifier: str | None) -> None:
-        p = self.document.add_paragraph(style="MD Caption")
+        p = self.document.add_paragraph(style=self._style("MD Caption"))
         p.paragraph_format.keep_together = True
         p.paragraph_format.keep_with_next = True
         target = self.references.get(identifier) if identifier and self.references else None
@@ -963,7 +991,7 @@ class DocxRenderer:
         table.columns[1].width = int(usable * 0.12)
         self._remove_table_borders(table)
         p = table.cell(0, 0).paragraphs[0]
-        p.style = "MD Equation"
+        p.style = self._style("MD Equation")
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.keep_together = True
         self._append_math(p, node.source_text, display=True, source=node.source)
@@ -1069,14 +1097,14 @@ class DocxRenderer:
             and (last.style.name or "").startswith(("MD Heading", "Heading"))
         )
         if not has_explicit_heading:
-            p = self.document.add_paragraph(style="MD Heading 1")
+            p = self.document.add_paragraph(style=self._style("MD Heading 1"))
             p.add_run(title)
         entries = self.bibliography.formatted_entries(self.config.citations.style)
         cited = set(self._cited_keys)
         for key, text in entries:
             if cited and key not in cited:
                 continue
-            bp = self.document.add_paragraph(style="MD Normal")
+            bp = self.document.add_paragraph(style=self._style("MD Normal"))
             bp.paragraph_format.left_indent = Mm(6)
             bp.paragraph_format.first_line_indent = Mm(-6)
             run = bp.add_run(clean_xml_text(text))
@@ -1089,7 +1117,7 @@ class DocxRenderer:
             numbered = False
             for child in item.children:
                 if isinstance(child, Paragraph) and not numbered:
-                    p = self.document.add_paragraph(style="MD Normal")
+                    p = self.document.add_paragraph(style=self._style("MD Normal"))
                     if item.task_checked is None:
                         self.numbering.apply(p, num_id, level)
                     else:
@@ -1111,7 +1139,7 @@ class DocxRenderer:
                 else:
                     self._render_block(child, list_ctx=num_id, list_level=level)
             if not numbered:
-                p = self.document.add_paragraph(style="MD Normal")
+                p = self.document.add_paragraph(style=self._style("MD Normal"))
                 if item.task_checked is None:
                     self.numbering.apply(p, num_id, level)
                 else:
@@ -1173,8 +1201,10 @@ class DocxRenderer:
             return True
         sec = self.document.sections[-1]
         available_mm = float(sec.page_width - sec.left_margin - sec.right_margin) / 36000.0
-        intrinsic = sum(self._column_intrinsic_width_mm(node, i) for i in range(cols))
-        return intrinsic > available_mm * self.config.table.landscape_width_ratio
+        allocation = allocate_table_widths_mm(node, self.config, available_mm)
+        return (
+            allocation.intrinsic_total_mm > available_mm * self.config.table.landscape_width_ratio
+        )
 
     def _render_table(self, node: Table):
         if not node.rows:
@@ -1201,7 +1231,7 @@ class DocxRenderer:
                 cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
                 set_cell_margins(cell, *(self.config.table.cell_padding_twips for _ in range(4)))
                 p = cell.paragraphs[0]
-                p.style = "MD Normal"
+                p.style = self._style("MD Normal")
                 self._render_inlines(p, cell_node.children)
                 self._apply_paragraph_direction(p, self._plain_inline_text(cell_node.children))
                 if cell_node.header:
@@ -1215,54 +1245,12 @@ class DocxRenderer:
                 elif cell_node.alignment == "left":
                     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    def _column_intrinsic_width_mm(self, node: Table, idx: int) -> float:
-        texts = [
-            self._plain_inline_text(r.cells[idx].children) for r in node.rows if idx < len(r.cells)
-        ]
-        if not texts:
-            return self.config.table.min_column_width_mm
-        max_word = max(
-            (len(word) for text in texts for word in re.split(r"\s+", text) if word), default=1
-        )
-        peak = max(map(len, texts), default=1)
-        average = sum(map(len, texts)) / max(len(texts), 1)
-        estimated = 5.0 + max_word * 1.75 + sqrt(peak) * 1.1 + sqrt(average) * 0.7
-        return max(
-            self.config.table.min_column_width_mm,
-            min(self.config.table.max_column_width_mm, estimated),
-        )
-
     def _table_widths(self, node: Table, cols: int):
         sec = self.document.sections[-1]
         usable_emu = int(sec.page_width - sec.left_margin - sec.right_margin)
         available_mm = usable_emu / 36000.0
-        intrinsic = [self._column_intrinsic_width_mm(node, idx) for idx in range(cols)]
-        min_mm = min(self.config.table.min_column_width_mm, available_mm / max(cols, 1))
-        max_mm = max(min_mm, self.config.table.max_column_width_mm)
-        widths = [max(min_mm, min(max_mm, value)) for value in intrinsic]
-        total = sum(widths) or 1.0
-        if total > available_mm:
-            # Preserve minimum widths first, then distribute remaining width by intrinsic demand.
-            base = [min(min_mm, available_mm / cols) for _ in widths]
-            remaining = max(0.0, available_mm - sum(base))
-            demand = [max(0.1, w - b) for w, b in zip(widths, base)]
-            demand_total = sum(demand)
-            widths = [b + remaining * d / demand_total for b, d in zip(base, demand)]
-        elif total < available_mm:
-            remaining = available_mm - total
-            flexible = [i for i, w in enumerate(widths) if w < max_mm]
-            while remaining > 0.05 and flexible:
-                add = remaining / len(flexible)
-                next_flexible = []
-                for i in flexible:
-                    room = max_mm - widths[i]
-                    delta = min(add, room)
-                    widths[i] += delta
-                    remaining -= delta
-                    if widths[i] < max_mm - 0.05:
-                        next_flexible.append(i)
-                flexible = next_flexible
-        return [Mm(max(3.0, w)) for w in widths]
+        allocation = allocate_table_widths_mm(node, self.config, available_mm)
+        return [Mm(width) for width in allocation.allocated_widths_mm[:cols]]
 
     def _render_inlines(self, paragraph, nodes, bold=False, italic=False, strike=False):
         for node in nodes:
@@ -1387,29 +1375,9 @@ class DocxRenderer:
         return "".join(out)
 
     def _append_math(self, paragraph, latex: str, display: bool, source=None):
-        try:
-            omath = self.math.latex_to_omml(latex, display)
-            if display:
-                para = OxmlElement("m:oMathPara")
-                para.append(omath)
-                paragraph._p.append(para)
-            else:
-                paragraph._p.append(omath)
-        except Exception as exc:
-            line = source.line if source else None
-            file = source.file if source else None
-            mode = self.config.math_failure.mode
-            diag = Diagnostic(
-                "error" if mode == "error" else "warning",
-                "MATH201",
-                f"Unable to convert LaTeX equation with {self.math.engine_name}: {exc}",
-                file,
-                line,
-            )
-            if mode == "error":
-                raise MddocxError(diag) from exc
-            self.reporter.diagnostics.append(diag)
-            paragraph.add_run(clean_xml_text(latex))
+        if self._math_renderer is None:
+            raise RuntimeError("Math renderer is unavailable before render context initialization.")
+        self._math_renderer.append(paragraph, latex, display=display, source=source)
 
     def _render_code_block(self, node: CodeBlock) -> None:
         line_numbers = (
@@ -1423,7 +1391,7 @@ class DocxRenderer:
         highlighted = set(self.config.code.highlight_lines) | set(node.highlight_lines)
         language = (node.language or "text").strip() or "text"
         if show_label and language.lower() not in {"text", "plain", "plaintext"}:
-            lp = self.document.add_paragraph(style="MD Code Label")
+            lp = self.document.add_paragraph(style=self._style("MD Code Label"))
             lp.add_run(clean_xml_text(language))
 
         lexer = None
@@ -1442,8 +1410,8 @@ class DocxRenderer:
         lines = node.code.splitlines() or [""]
         width = len(str(len(lines)))
         for line_no, raw_line in enumerate(lines, 1):
-            p = self.document.add_paragraph(style="MD Code")
-            p.paragraph_format.keep_together = True
+            p = self.document.add_paragraph(style=self._style("MD Code"))
+            self._apply_planned_paragraph_layout(p, node)
             p.paragraph_format.space_before = 0
             p.paragraph_format.space_after = 0
             ppr = p._p.get_or_add_pPr()

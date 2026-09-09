@@ -15,14 +15,26 @@ class DiagnosticReporter:
             raise MddocxError(diagnostic)
 
     def warn(
-        self, code: str, message: str, source_file: str | None = None, line: int | None = None
+        self,
+        code: str,
+        message: str,
+        source_file: str | None = None,
+        line: int | None = None,
+        remediation: str | None = None,
     ) -> None:
-        self.diagnostics.append(Diagnostic("warning", code, message, source_file, line))
+        self.diagnostics.append(
+            Diagnostic("warning", code, message, source_file, line, remediation)
+        )
 
     def info(
-        self, code: str, message: str, source_file: str | None = None, line: int | None = None
+        self,
+        code: str,
+        message: str,
+        source_file: str | None = None,
+        line: int | None = None,
+        remediation: str | None = None,
     ) -> None:
-        self.diagnostics.append(Diagnostic("info", code, message, source_file, line))
+        self.diagnostics.append(Diagnostic("info", code, message, source_file, line, remediation))
 
     def summary(self) -> dict[str, int]:
         counts = {"error": 0, "warning": 0, "info": 0}
@@ -62,6 +74,8 @@ class DiagnosticReporter:
                 if region:
                     location["physicalLocation"]["region"] = region  # type: ignore[index]
                 result["locations"] = [location]
+            if diagnostic.remediation:
+                result["properties"] = {"remediation": diagnostic.remediation}
             results.append(result)
         payload = {
             "$schema": "https://json.schemastore.org/sarif-2.1.0.json",

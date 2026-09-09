@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
+from pathlib import Path
 from zipfile import ZipFile
 
 from lxml import etree
@@ -56,6 +58,17 @@ def test_public_manifest_names_exist_on_package():
 
     assert manifest.api_version == "1"
     assert all(hasattr(mddocx, name) for name in manifest.names)
+
+
+def test_public_manifest_retains_the_frozen_v1_snapshot():
+    snapshot = json.loads(
+        (Path(__file__).parent / "fixtures" / "public_api_v1.json").read_text(encoding="utf-8")
+    )
+    manifest = mddocx.get_public_api_manifest()
+
+    assert snapshot["api_version"] == manifest.api_version
+    assert set(snapshot["names"]).issubset(manifest.names)
+    assert len(manifest.names) == len(set(manifest.names))
 
 
 def test_warning_fallback_still_produces_valid_docx_package():

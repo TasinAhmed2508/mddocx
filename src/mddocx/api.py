@@ -12,8 +12,8 @@ from .ast.base import Document
 from .cache import AstCache
 from .config import RenderConfig
 from .config_validation import validate_render_config
-from .diagnostics import Diagnostic, DiagnosticReporter, MddocxError
-from .extensions.base import call_transform_document
+from .diagnostics import DiagnosticReporter, MddocxError
+from .extensions.base import call_transform_document, call_transform_layout
 from .extensions.discovery import load_entrypoint_extensions
 from .limits import enforce_ast_limits, enforce_input_limit
 from .layout import LayoutPlan, LayoutPlanner
@@ -28,6 +28,7 @@ from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
 from .render import DocxRenderer
 from .reproducibility import make_reproducible_docx
+from .source import acquire_markdown_source
 from .validation import validate_docx_package
 
 
@@ -62,9 +63,7 @@ class MarkdownWord:
         input_path = Path(input_path)
         output_path = Path(output_path)
         try:
-            if input_path.stat().st_size > self.config.limits.max_input_bytes:
-                raise _input_limit_error(self.config.limits.max_input_bytes)
-            markdown = input_path.read_text(encoding="utf-8-sig")
+            markdown = acquire_markdown_source(input_path, self.config.limits.max_input_bytes).text
             blob = self._compile(markdown, input_path.parent, source_file=str(input_path))
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(blob)
@@ -90,7 +89,9 @@ class MarkdownWord:
             )
             enforce_ast_limits(transformed, cfg.limits)
             plan_start = perf_counter()
-            self.last_layout_plan = LayoutPlanner(cfg).plan(transformed)
+            self.last_layout_plan = call_transform_layout(
+                cfg.extensions, transformed, LayoutPlanner(cfg).plan(transformed)
+            )
             plan_ms = (perf_counter() - plan_start) * 1000
             renderer = DocxRenderer(self.reporter)
             blob = renderer.render(transformed, cfg, self.last_layout_plan)
@@ -112,9 +113,7 @@ class MarkdownWord:
         self.reporter.diagnostics.clear()
         input_path = Path(input_path)
         try:
-            if input_path.stat().st_size > self.config.limits.max_input_bytes:
-                raise _input_limit_error(self.config.limits.max_input_bytes)
-            markdown = input_path.read_text(encoding="utf-8-sig")
+            markdown = acquire_markdown_source(input_path, self.config.limits.max_input_bytes).text
             enforce_input_limit(markdown, self.config.limits)
             sanitized = sanitize_markdown_metadata(markdown, self.config.metadata)
             self._report_metadata_sanitization(sanitized.report, str(input_path))
@@ -192,7 +191,9 @@ class MarkdownWord:
             normalize_ms += (perf_counter() - transform_start) * 1000
 
             plan_start = perf_counter()
-            self.last_layout_plan = LayoutPlanner(cfg).plan(ast)
+            self.last_layout_plan = call_transform_layout(
+                cfg.extensions, ast, LayoutPlanner(cfg).plan(ast)
+            )
             plan_ms = (perf_counter() - plan_start) * 1000
             render_start = perf_counter()
             renderer = DocxRenderer(self.reporter)
@@ -265,7 +266,13 @@ class MarkdownWord:
 
     def _report_math_syntax_issues(self, markdown: str, source_file: str | None) -> None:
         for issue in find_math_syntax_issues(markdown):
-            self.reporter.warn("MATH101", issue.message, source_file, issue.line)
+            self.reporter.warn(
+                "MATH101",
+                issue.message,
+                source_file,
+                issue.line,
+                "Close the explicit math delimiter/fence or escape it when literal text is intended.",
+            )
 
     def _record_error(self, exc: MddocxError) -> None:
         if not self.reporter.diagnostics or self.reporter.diagnostics[-1] != exc.diagnostic:
@@ -276,12 +283,6 @@ class MarkdownWord:
         if cfg.base_dir is None:
             cfg.base_dir = base_dir
         return validate_render_config(_apply_front_matter(cfg, metadata, self._config_was_provided))
-
-
-def _input_limit_error(max_bytes: int) -> MddocxError:
-    return MddocxError(
-        Diagnostic("error", "LIMIT401", f"Markdown input exceeds {max_bytes} bytes.")
-    )
 
 
 def _apply_front_matter(

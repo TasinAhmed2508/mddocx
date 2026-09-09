@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.2.2 — Fidelity-first compiler and AI media compatibility
+
+- Safe public HTTPS images are now allowed by default; the interactive shell asks once whether to
+  block them with `RESOURCE201`, remembers the choice, and supports per-render overrides.
+- Added bounded local decoding of Base64 image data URIs, including MIME validation, invalid-data
+  diagnostics, format verification, deduplication, native DOCX embedding, and regression coverage.
+- Added native handling for common AI-generated `\tag`, `\checkmark`, and `\overrightarrow`
+  equations.
 - Added fence-aware AI math normalization for `\\(...\\)`, `$...$`, `\\[...\\]`, `$$...$$`, and `math`/`latex`/`tex` fenced blocks.
 - Prevented currency ranges, inline code, and non-math code fences from being misclassified as equations.
 - Prevented an unmatched display delimiter from consuming the remaining document.
@@ -28,6 +36,19 @@
 - Added a machine-readable feature/fidelity matrix and release-contract tests linking supported constructs to tracked evidence.
 - Added round-trip, images/alt-text, Unicode/RTL/XML safety, templates, CLI exit-code, and paths-with-spaces regressions.
 - Added a Linux LibreOffice/Poppler visual smoke job and clean wheel/source-distribution install and CLI smoke gates.
+- Added the exact Fidelity-First v2 program to the repository, plus a machine-readable feature matrix and staged migration guide.
+- Expanded layout planning to cover heading pagination, short/long code treatment, captions, figures, charts, tables, equations, and explicit page/section-break intent.
+- Added a renderer-independent semantic index for stable heading/target IDs, citations, notes, and unresolved references.
+- Added a typed UTF-8 source-acquisition stage with stable `SOURCE401`/`SOURCE402` diagnostics and remediation text.
+- Added public, versioned AST/layout extension protocols with validated plugin results and isolated failures.
+- Added a template style-mapping layer with pre-render target validation and `TEMPLATE201`/`TEMPLATE401` diagnostics.
+- Added a shared typed render context and extracted native math rendering/fallback behavior into a focused component.
+- Migrated CLI, batch, project, and interactive conversion paths onto the same typed `Compiler` service.
+- Added remediation fields to diagnostics and SARIF properties for actionable machine-readable failures.
+- Added small/medium/large benchmark gates and recorded measured stabilization baselines.
+- Moved deterministic table-width allocation into the layout planner so renderers consume one
+  inspectable orientation-aware width decision.
+- Rejected incompatible layout plans returned by extensions with stable `PLUGIN409` diagnostics.
 
 ## 1.2.1 — Packaging and release improvements
 

@@ -1123,7 +1123,7 @@ Never silently clip an oversized image.
 Default:
 
 ```
-allow_remote_resources = False
+allow_remote_resources = True
 
 ```
 

@@ -25,6 +25,72 @@ flowchart TD
     I -. "validation failure" .-> K
 ```
 
+## Component architecture
+
+```mermaid
+flowchart LR
+    subgraph Entry["User entry points"]
+        CLI["CLI"]
+        SHELL["Interactive shell"]
+        API["Python API"]
+        BATCH["Batch / project mode"]
+    end
+
+    subgraph Core["Typed compiler services"]
+        ACQ["Source acquisition"]
+        PARSER["Markdown parser"]
+        AST["Canonical AST"]
+        NORM["Normalizer + semantic index"]
+        PLAN["Layout planner"]
+    end
+
+    subgraph Output["Native Word backend"]
+        CTX["Typed render context"]
+        MATH["OMML math renderer"]
+        MEDIA["Resource resolver + DrawingML"]
+        DOCX["OOXML package finalizer"]
+        VALIDATE["Structural / accessibility validation"]
+    end
+
+    CLI --> ACQ
+    SHELL --> ACQ
+    API --> ACQ
+    BATCH --> ACQ
+    ACQ --> PARSER --> AST --> NORM --> PLAN --> CTX
+    CTX --> MATH --> DOCX
+    CTX --> MEDIA --> DOCX
+    CTX --> DOCX --> VALIDATE
+```
+
+## Image-resource decision flow
+
+```mermaid
+flowchart TD
+    SRC["Markdown image source"] --> KIND{"Source kind?"}
+    KIND -->|"data:image/...;base64"| DATA["Preflight encoded size"]
+    DATA --> DECODE["Strict Base64 decode"]
+    DECODE --> MIME["Validate declared MIME and actual image"]
+    KIND -->|"Local path"| CONTAIN["Resolve beneath document/project root"]
+    CONTAIN --> MIME
+    KIND -->|"HTTPS"| PREF{"Remote resources allowed?"}
+    PREF -->|"No"| R201["RESOURCE201 with remediation"]
+    PREF -->|"Yes"| HOST["Validate scheme, host, DNS and redirects"]
+    HOST --> SIZE["Stream with hard size limit"]
+    SIZE --> MIME
+    MIME --> FORMAT{"Word-compatible raster?"}
+    FORMAT -->|"PNG/JPEG/GIF/BMP/TIFF"| EMBED["Embed native DrawingML"]
+    FORMAT -->|"WebP/SVG enabled"| CONVERT["Hardened local conversion"]
+    CONVERT --> EMBED
+    EMBED --> FIT["Preserve aspect ratio and fit usable page width"]
+    FIT --> ALT["Attach alt text / decorative metadata"]
+```
+
+The `data:` branch is always local and never consults the network preference. Public HTTPS is
+allowed by the library and ordinary CLI by default. On the first interactive-shell launch, the
+user can choose to block it; the shell stores only that boolean preference. Even when HTTPS is
+allowed, private/reserved addresses, unsafe redirects, invalid MIME types, oversized downloads,
+and external SVG references remain blocked.
+
 ## Stages
 
 1. **Clean and prepare** removes high-confidence AI/chat export metadata,

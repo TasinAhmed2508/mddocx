@@ -159,7 +159,8 @@ Project mode adds no code execution. In addition to the existing renderer protec
 - project variables are inert scalar text;
 - local resources referenced by project Markdown cannot escape the root;
 - project YAML is parsed with `yaml.safe_load`;
-- remote resources remain disabled unless explicitly enabled by the normal resource policy.
+- remote resources follow the normal resource policy, which allows validated public HTTPS by
+  default and can be explicitly blocked.
 
 ## Deliberate limitations
 

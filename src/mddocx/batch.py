@@ -5,8 +5,9 @@ import hashlib
 from pathlib import Path
 from typing import Iterable
 
-from .api import MarkdownWord
+from .compiler import Compiler
 from .config import RenderConfig
+from .diagnostics import Diagnostic, MddocxError
 
 
 @dataclass(slots=True)
@@ -15,6 +16,7 @@ class BatchResult:
     output_path: Path | None
     ok: bool
     error: str | None = None
+    diagnostics: tuple[Diagnostic, ...] = ()
 
 
 def collect_markdown_inputs(paths: Iterable[str | Path], recursive: bool = False) -> list[Path]:
@@ -51,10 +53,14 @@ def render_many(
             base = f"{source.stem}-{suffix}.docx"
         names[base.casefold()] = source
         target = target_root / base
-        converter = MarkdownWord(config)
+        compiler = Compiler(config)
         try:
-            converter.render_file(source, target)
-            results.append(BatchResult(source, target, True))
+            result = compiler.compile_file(source, target)
+            results.append(BatchResult(source, target, True, diagnostics=result.diagnostics))
+        except MddocxError as exc:
+            results.append(BatchResult(source, None, False, str(exc), (exc.diagnostic,)))
+            if fail_fast:
+                break
         except Exception as exc:
             results.append(BatchResult(source, None, False, str(exc)))
             if fail_fast:

@@ -56,11 +56,11 @@
     },
     {
       "id": "images-and-figures",
-      "syntax": "Markdown images plus documented captions/attributes",
+      "syntax": "Markdown images using local paths, HTTPS URLs, or Base64 data:image URIs, plus documented captions/attributes",
       "ast": "Image and ImageBlock",
       "ooxml": "native DrawingML image, docPr alternative text, caption and bookmark",
       "malformed_diagnostic": "RESOURCE/IMAGE/A11Y diagnostic families",
-      "word365": "implemented; manual release-corpus review required",
+      "word365": "qualified in Word 365 with a nine-image Base64 AI conversation fixture",
       "libreoffice": "supported",
       "tests": ["tests/test_security_and_metadata.py", "tests/test_release_contract.py"]
     },

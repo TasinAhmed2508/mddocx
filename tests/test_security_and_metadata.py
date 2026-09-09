@@ -15,6 +15,11 @@ from mddocx.resources.resolver import _SafeRedirectHandler
 from mddocx.validation import validate_docx_package
 
 
+ONE_PIXEL_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+
 def _package(extra_name: str | None = None, extra_data: bytes = b"x") -> bytes:
     stream = BytesIO()
     with ZipFile(stream, "w", ZIP_DEFLATED) as package:
@@ -50,13 +55,49 @@ def test_local_resource_path_cannot_escape_markdown_directory(tmp_path: Path):
         resolver.close()
 
 
-def test_remote_resources_are_disabled_by_default(tmp_path: Path):
-    resolver = ResourceResolver(tmp_path, ResourcePolicy(), ImageConfig())
+def test_remote_resources_can_be_explicitly_blocked(tmp_path: Path):
+    resolver = ResourceResolver(
+        tmp_path, ResourcePolicy(allow_remote_resources=False), ImageConfig()
+    )
 
     try:
         with pytest.raises(MddocxError) as exc:
             resolver.resolve("https://example.com/image.png")
         assert exc.value.diagnostic.code == "RESOURCE201"
+    finally:
+        resolver.close()
+
+
+def test_safe_public_remote_resources_are_allowed_by_default():
+    assert ResourcePolicy().allow_remote_resources is True
+
+
+def test_base64_image_data_uri_is_local_bounded_and_validated(tmp_path: Path):
+    resolver = ResourceResolver(tmp_path, ResourcePolicy(), ImageConfig())
+
+    try:
+        resolved = resolver.resolve(f"data:image/png;base64,{ONE_PIXEL_PNG}")
+        assert resolved.suffix == ".png"
+        assert resolved.is_file()
+
+        with pytest.raises(MddocxError) as invalid:
+            resolver.resolve("data:image/png;base64,not-valid-@@@")
+        assert invalid.value.diagnostic.code == "IMAGE210"
+
+        with pytest.raises(MddocxError) as unsupported:
+            resolver.resolve("data:text/plain;base64,SGVsbG8=")
+        assert unsupported.value.diagnostic.code == "IMAGE201"
+    finally:
+        resolver.close()
+
+
+def test_base64_image_data_uri_obeys_resource_size_limit(tmp_path: Path):
+    resolver = ResourceResolver(tmp_path, ResourcePolicy(max_resource_size=4), ImageConfig())
+
+    try:
+        with pytest.raises(MddocxError) as oversized:
+            resolver.resolve(f"data:image/png;base64,{ONE_PIXEL_PNG}")
+        assert oversized.value.diagnostic.code == "RESOURCE205"
     finally:
         resolver.close()
 

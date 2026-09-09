@@ -41,3 +41,18 @@ For each document:
 
 LibreOffice visual regression remains a secondary compatibility signal and is not a replacement for
 this Word 365 qualification.
+
+## Recorded qualification evidence
+
+On 2026-09-09, Microsoft Word 365 desktop on Windows opened both current generated packages without
+repair and exported them to PDF:
+
+| Corpus | Word pages | Word paragraphs | Native equations | Structural result |
+|---|---:|---:|---:|---|
+| AI sphere/equation fixture | 2 | 43 | 22 | PASS |
+| Technical report (chart, workbook, fields, notes, references) | 2 | 36 | 2 | PASS |
+
+The AI fixture PDF was visually inspected: all equations were present and centered; fractions,
+boxes, scripts, and Greek symbols were readable; `\\text{...}` content was upright; and no raw
+Markdown math delimiters appeared. This evidence is host/version-specific and should be repeated
+for each release candidate.

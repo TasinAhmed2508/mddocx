@@ -35,8 +35,14 @@ from .config import (
     CommentConfig,
     FieldConfig,
     MetadataConfig,
+    StyleMapConfig,
 )
-from .extensions import MddocxExtension, load_entrypoint_extensions
+from .extensions import (
+    AstTransformExtension,
+    LayoutTransformExtension,
+    MddocxExtension,
+    load_entrypoint_extensions,
+)
 from .profiling import RenderStats
 from .validation import validate_docx_package
 from .inspection import DocxInspection, inspect_docx, inspect_docx_bytes
@@ -53,7 +59,17 @@ from .metadata import MetadataSanitizationReport, SanitizedMarkdown, sanitize_ma
 from .math.preflight import EquationCheck, MathPreflightReport, inspect_math, inspect_math_file
 from .compiler import CompilationResult, Compiler, DocumentStageResult, LayoutStageResult
 from .config_validation import validate_render_config
-from .layout import LayoutPlan, LayoutPlanner, TableLayoutDecision
+from .layout import (
+    LAYOUT_SCHEMA_VERSION,
+    BlockLayoutDecision,
+    LayoutPlan,
+    LayoutPlanner,
+    TableLayoutDecision,
+    TableWidthAllocation,
+    allocate_table_widths_mm,
+)
+from .normalize import SemanticIndex, build_semantic_index
+from .source import SourceDocument, acquire_markdown_source
 from .project import (
     ProjectManifest,
     ProjectCompilation,
@@ -103,6 +119,7 @@ __all__ = [
     "CommentConfig",
     "FieldConfig",
     "MetadataConfig",
+    "StyleMapConfig",
     "MetadataSanitizationReport",
     "SanitizedMarkdown",
     "sanitize_markdown_metadata",
@@ -118,8 +135,18 @@ __all__ = [
     "LayoutPlan",
     "LayoutPlanner",
     "TableLayoutDecision",
+    "TableWidthAllocation",
+    "allocate_table_widths_mm",
+    "BlockLayoutDecision",
+    "LAYOUT_SCHEMA_VERSION",
+    "SemanticIndex",
+    "build_semantic_index",
+    "SourceDocument",
+    "acquire_markdown_source",
     "RenderStats",
     "MddocxExtension",
+    "AstTransformExtension",
+    "LayoutTransformExtension",
     "load_entrypoint_extensions",
     "BatchResult",
     "collect_markdown_inputs",
@@ -152,4 +179,4 @@ __all__ = [
     "PUBLIC_API_VERSION",
     "get_public_api_manifest",
 ]
-__version__ = "1.2.1"
+__version__ = "1.2.2"

@@ -11,7 +11,8 @@ import time
 from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 
-from .api import MarkdownWord, _apply_front_matter
+from .api import _apply_front_matter
+from .compiler import Compiler
 from .ast.base import Document, Node
 from .ast.block import ImageBlock, ChartBlock, DataTableBlock
 from .ast.inline import Image
@@ -425,8 +426,8 @@ def build_project(
     compiled = compiler.compile()
     cfg = compiler.config
     cfg.base_dir = manifest.root
-    converter = MarkdownWord(cfg)
-    blob = converter.render_ast(compiled.document, base_dir=manifest.root)
+    result = Compiler(cfg).render(compiled.document, base_dir=manifest.root)
+    blob = result.output_bytes
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(blob)
 

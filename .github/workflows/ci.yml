@@ -25,9 +25,11 @@ jobs:
       - run: pytest -m "not visual"
       - run: ruff check src tests
       - run: ruff format --check src tests
-      - run: mypy src/mddocx/compiler.py src/mddocx/layout.py src/mddocx/math/preflight.py src/mddocx/normalize/normalizer.py --ignore-missing-imports --follow-imports=skip --check-untyped-defs
+      - run: mypy src/mddocx/source.py src/mddocx/compiler.py src/mddocx/batch.py src/mddocx/config_validation.py src/mddocx/extensions/base.py src/mddocx/layout.py src/mddocx/math/preflight.py src/mddocx/normalize/semantic.py src/mddocx/normalize/normalizer.py src/mddocx/render/context.py src/mddocx/render/math_renderer.py --ignore-missing-imports --follow-imports=skip --check-untyped-defs
       - run: mddocx doctor
+      - run: mddocx benchmark --sections 1 --max-seconds 30 --max-peak-mb 512
       - run: mddocx benchmark --sections 20 --max-seconds 30 --max-peak-mb 512
+      - run: mddocx benchmark --sections 100 --max-seconds 30 --max-peak-mb 512
 
   visual-linux:
     runs-on: ubuntu-latest

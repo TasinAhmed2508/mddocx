@@ -109,6 +109,7 @@ SYMBOLS = {
     "ell": "ℓ",
     "Re": "ℜ",
     "Im": "ℑ",
+    "checkmark": "✓",
 }
 NARY = {"sum": "∑", "prod": "∏", "int": "∫", "iint": "∬", "iiint": "∭", "oint": "∮"}
 FUNCTIONS = {
@@ -151,6 +152,7 @@ ACCENTS = {
     "bar": "̅",
     "overline": "̅",
     "vec": "⃗",
+    "overrightarrow": "→",
     "tilde": "̃",
     "dot": "̇",
     "ddot": "̈",
@@ -470,6 +472,15 @@ class _Parser:
             return _e("mtext", " mod ")
         if cmd == "pmod":
             return _e("mfenced", None, _e("mtext", "mod "), self.parse_required_arg())
+        if cmd == "tag":
+            # Equation numbering remains editable math. Word will display the tag
+            # on the same equation line even though it is not a SEQ field.
+            return _e(
+                "mrow",
+                None,
+                _e("mspace", None, width="1em"),
+                _e("mfenced", None, self.parse_required_arg(), open="(", close=")"),
+            )
         if cmd == "limits" or cmd == "nolimits":
             return _e("mspace", None, width="0em")
         raise UnsupportedLatexError(cmd)

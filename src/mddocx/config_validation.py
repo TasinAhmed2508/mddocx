@@ -9,8 +9,39 @@ def validate_render_config(config: RenderConfig) -> RenderConfig:
 
     def require(condition: bool, message: str) -> None:
         if not condition:
-            raise MddocxError(Diagnostic("error", "CONFIG401", message))
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "CONFIG401",
+                    message,
+                    remediation="Correct the invalid configuration value before compiling.",
+                )
+            )
 
+    require(config.page.size in {"A4", "Letter"}, "Page size must be A4 or Letter.")
+    require(
+        config.page.orientation in {"portrait", "landscape"},
+        "Page orientation must be portrait or landscape.",
+    )
+    require(config.rtl in {"off", "auto", "force"}, "RTL mode must be off, auto, or force.")
+    require(
+        config.math_failure.mode in {"error", "plain_text", "warning"},
+        "Math failure mode must be error, plain_text, or warning.",
+    )
+    require(
+        config.notes.style in {"footnote", "endnote"},
+        "Notes style must be footnote or endnote.",
+    )
+    require(
+        config.style_map.missing in {"error", "warning"},
+        "Missing mapped-style policy must be error or warning.",
+    )
+    require(
+        config.references.figure_caption_position in {"above", "below"}
+        and config.references.table_caption_position in {"above", "below"}
+        and config.references.listing_caption_position in {"above", "below"},
+        "Caption positions must be above or below.",
+    )
     page_width = 210.0 if config.page.size == "A4" else 215.9
     page_height = 297.0 if config.page.size == "A4" else 279.4
     margins = config.page.margins
@@ -68,5 +99,15 @@ def validate_render_config(config: RenderConfig) -> RenderConfig:
     require(
         all(scheme in {"http", "https"} for scheme in config.resources.allowed_schemes),
         "Remote resource schemes are limited to HTTP and HTTPS.",
+    )
+    require(
+        all(
+            isinstance(canonical, str)
+            and bool(canonical.strip())
+            and isinstance(target, str)
+            and bool(target.strip())
+            for canonical, target in config.style_map.mapping.items()
+        ),
+        "Style-map names must be non-empty strings.",
     )
     return config

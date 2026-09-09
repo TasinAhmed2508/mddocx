@@ -40,7 +40,7 @@ class MetadataConfig:
 
 @dataclass(slots=True)
 class ResourcePolicy:
-    allow_remote_resources: bool = False
+    allow_remote_resources: bool = True
     allowed_schemes: tuple[str, ...] = ("https",)
     allowed_domains: tuple[str, ...] | None = None
     allow_private_hosts: bool = False
@@ -144,6 +144,14 @@ class CommentConfig:
 @dataclass(slots=True)
 class FieldConfig:
     update_on_open: bool = True
+
+
+@dataclass(slots=True)
+class StyleMapConfig:
+    """Map canonical mddocx paragraph styles to styles supplied by a template."""
+
+    mapping: dict[str, str] = field(default_factory=dict)
+    missing: Literal["error", "warning"] = "error"
 
 
 @dataclass(slots=True)
@@ -350,6 +358,7 @@ class RenderConfig:
     callouts: CalloutConfig = field(default_factory=CalloutConfig)
     native_comments: CommentConfig = field(default_factory=CommentConfig)
     fields: FieldConfig = field(default_factory=FieldConfig)
+    style_map: StyleMapConfig = field(default_factory=StyleMapConfig)
     base_dir: Path | None = None
     template: Path | None = None
     preserve_template_page_setup: bool = True

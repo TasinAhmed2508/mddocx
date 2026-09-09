@@ -8,12 +8,19 @@ these hooks:
 - `parse_block(parser, tokens, index)` — consume a block token and return `(node, next_index)`;
 - `parse_inline(parser, tokens, index)` — consume an inline token and return `(node, next_index)`;
 - `transform_document(document)` — normalize/augment the canonical AST after parsing;
+- `transform_layout(document, plan)` — return an updated immutable, versioned `LayoutPlan`;
 - `render_block(renderer, node)` — render a custom block AST node and return `True` when handled;
 - `render_inline(renderer, paragraph, node, state)` — render a custom inline node and return `True`.
 
-Parsing hooks must advance the token index. Render hooks should use the renderer's current Word
-`document` and should keep custom OOXML localized to the extension instead of mutating parser
-objects with `python-docx` state.
+Parsing hooks must advance the token index. New extensions should implement the public
+`AstTransformExtension` and/or `LayoutTransformExtension` protocols, which operate on the
+versioned canonical AST and `LAYOUT_SCHEMA_VERSION`. Returned values are validated before
+rendering; transform failures use stable `PLUGIN405`–`PLUGIN408` diagnostics, while an
+incompatible returned layout schema uses `PLUGIN409`.
+
+The renderer hooks remain available for v1 compatibility, but they expose implementation details
+and are not the preferred v2 integration boundary. Extensions that still require custom OOXML
+should keep it localized and must not place `python-docx` objects inside the canonical AST.
 
 ## Custom AST example
 

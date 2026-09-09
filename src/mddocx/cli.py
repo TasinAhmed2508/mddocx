@@ -5,8 +5,8 @@ from pathlib import Path
 import sys
 
 from . import __version__
-from .api import MarkdownWord
 from .batch import collect_markdown_inputs, render_many
+from .compiler import Compiler
 from .config import (
     CacheConfig,
     CompilationLimits,
@@ -187,9 +187,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail conversion when an equation cannot be rendered as native Word math",
     )
-    p.add_argument(
-        "--allow-remote-resources", action="store_true", help="Allow safe HTTPS image downloads"
+    remote_group = p.add_mutually_exclusive_group()
+    remote_group.add_argument(
+        "--allow-remote-resources",
+        dest="allow_remote_resources",
+        action="store_true",
+        help="Allow safe HTTPS image downloads (default)",
     )
+    remote_group.add_argument(
+        "--block-remote-resources",
+        dest="allow_remote_resources",
+        action="store_false",
+        help="Block HTTPS image downloads with RESOURCE201",
+    )
+    p.set_defaults(allow_remote_resources=None)
     p.add_argument(
         "--allow-domain",
         action="append",
@@ -324,7 +335,11 @@ def _config_from_args(args: argparse.Namespace) -> RenderConfig:
         ),
         math_failure=MathFailurePolicy(mode="error" if args.strict_math else "warning"),
         resources=ResourcePolicy(
-            allow_remote_resources=args.allow_remote_resources,
+            allow_remote_resources=(
+                ResourcePolicy().allow_remote_resources
+                if args.allow_remote_resources is None
+                else args.allow_remote_resources
+            ),
             allowed_domains=tuple(args.allow_domain) or None,
         ),
         metadata=MetadataConfig(ai_export=args.ai_metadata),
@@ -878,9 +893,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             status = 0
             for source in sources:
-                converter = MarkdownWord(config)
+                compiler = Compiler(config)
                 try:
-                    converter.check_file(source)
+                    compiler.check_file(source)
                     print(source)
                 except MddocxError as exc:
                     print(exc, file=sys.stderr)
@@ -908,9 +923,9 @@ def main(argv: list[str] | None = None) -> int:
             return status
 
         source = sources[0]
-        converter = MarkdownWord(config)
+        compiler = Compiler(config)
         output = args.output or source.with_suffix(".docx")
-        converter.render_file(source, output)
+        result = compiler.compile_file(source, output)
         print(output)
         add_recent(
             source=source,
@@ -921,10 +936,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.open:
             open_path(output)
-        _write_text_target(args.diagnostics_json, converter.diagnostics_json())
-        _write_text_target(args.diagnostics_sarif, converter.diagnostics_sarif())
+        _write_text_target(args.diagnostics_json, result.diagnostics_json())
+        _write_text_target(args.diagnostics_sarif, result.diagnostics_sarif())
         if args.profile or args.profile_memory:
-            print(converter.last_stats.to_json())
+            print(result.stats.to_json())
         return 0
     except MddocxError as exc:
         print(exc, file=sys.stderr)

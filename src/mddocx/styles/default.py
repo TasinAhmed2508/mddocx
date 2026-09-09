@@ -6,6 +6,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from mddocx.config import RenderConfig
+from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
 from .themes import get_theme
 
 
@@ -137,6 +138,27 @@ def ensure_styles(document, config: RenderConfig) -> None:
         va.set(qn("w:val"), "superscript")
 
     ensure_professional_styles(document, config)
+
+
+def validate_style_mapping(document, config: RenderConfig, reporter: DiagnosticReporter) -> None:
+    """Validate template style targets before content emission begins."""
+    for canonical, target in config.style_map.mapping.items():
+        if target in document.styles:
+            continue
+        diagnostic = Diagnostic(
+            "error" if config.style_map.missing == "error" else "warning",
+            "TEMPLATE401" if config.style_map.missing == "error" else "TEMPLATE201",
+            f"Mapped template style '{target}' for '{canonical}' was not found.",
+            remediation="Add the mapped style to the template or remove/correct the style mapping.",
+        )
+        if diagnostic.severity == "error":
+            raise MddocxError(diagnostic)
+        reporter.diagnostics.append(diagnostic)
+
+
+def resolve_style_name(document, config: RenderConfig, canonical: str) -> str:
+    target = config.style_map.mapping.get(canonical)
+    return target if target and target in document.styles else canonical
 
 
 def _set_paragraph_shading(style, fill: str) -> None:

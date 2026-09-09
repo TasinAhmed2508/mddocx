@@ -16,7 +16,8 @@ service or network request is used during conversion.
 
 Inline code and non-math fenced code are never scanned for equations. Escaped dollar signs and
 common currency ranges remain text. An unmatched display delimiter is preserved as source text and
-does not absorb the rest of the document.
+does not absorb the rest of the document. Unterminated explicit display/inline delimiters and
+math-labelled fences produce a source-located `MATH101` warning.
 
 ## Conversion engines and failure policy
 
@@ -30,7 +31,8 @@ underlying conversion error.
 
 Use `mddocx math-check FILE.md` for a non-writing preflight. It reports the active engine, total
 equation count, native conversions, and required fallbacks. `--json` emits a machine-readable
-equation-by-equation report, and `--strict` returns exit code 3 if a fallback would be required.
+equation-by-equation report plus delimiter syntax issues, and `--strict` returns exit code 3 if a
+fallback or explicit delimiter issue would be encountered.
 
 ## Current regression case
 

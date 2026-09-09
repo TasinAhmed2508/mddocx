@@ -9,12 +9,12 @@ from pathlib import Path
 import re
 import sys
 import time
-from typing import Callable
+from typing import Callable, Literal
 from urllib.parse import urlparse
 
 from .. import __version__
 from ..accessibility import audit_docx_accessibility
-from ..api import MarkdownWord
+from ..compiler import Compiler
 from ..benchmark import run_performance_gate
 from ..config import RenderConfig, ResourcePolicy, MetadataConfig
 from ..data import load_tabular_data
@@ -32,7 +32,14 @@ from ..project import (
 from ..styles import THEMES
 from ..template_inspection import inspect_template
 from ..metadata import sanitize_markdown_metadata
-from .history import add_recent, load_recent, repl_history_path
+from .history import (
+    ShellPreferences,
+    add_recent,
+    load_recent,
+    load_shell_preferences,
+    repl_history_path,
+    save_shell_preferences,
+)
 from .fonts import discover_fonts, font_display_name
 from .opening import open_path
 from .tokenize import split_command
@@ -100,6 +107,7 @@ class InteractiveConsole:
         self.opener = opener
         self.last_output: Path | None = self._discover_last_output()
         self.last_diagnostics: list[str] = []
+        self.preferences = load_shell_preferences()
         self._refresh()
 
     def _refresh(self) -> None:
@@ -262,6 +270,7 @@ class InteractiveConsole:
 
     def run(self, *, show_menu: bool = True) -> int:
         self.banner()
+        self._ensure_resource_preference()
         if show_menu:
             self.show_menu()
         while True:
@@ -276,6 +285,18 @@ class InteractiveConsole:
             result = self.execute_line(line)
             if result.should_exit:
                 return result.exit_code
+
+    def _ensure_resource_preference(self) -> None:
+        if self.preferences.initialized:
+            state = "allowed" if self.preferences.allow_remote_resources else "blocked"
+            self.println(f"Remote HTTPS resources: {state} by saved preference.")
+            return
+        block = self.confirm("Block remote HTTPS images by default (RESOURCE201)?", default=False)
+        self.preferences = ShellPreferences(initialized=True, allow_remote_resources=not block)
+        save_shell_preferences(self.preferences)
+        state = "blocked" if block else "allowed"
+        self.println(f"Remote HTTPS resources are now {state} by default.")
+        self.println("You can override this for an individual render.")
 
     def execute_line(self, line: str) -> ShellResult:
         line = line.strip()
@@ -372,7 +393,14 @@ class InteractiveConsole:
         parser.add_argument("-o", "--output")
         parser.add_argument("--theme", choices=sorted(THEMES))
         parser.add_argument("--open", action="store_true")
-        parser.add_argument("--allow-remote-resources", action="store_true")
+        remote_group = parser.add_mutually_exclusive_group()
+        remote_group.add_argument(
+            "--allow-remote-resources", dest="allow_remote_resources", action="store_true"
+        )
+        remote_group.add_argument(
+            "--block-remote-resources", dest="allow_remote_resources", action="store_false"
+        )
+        parser.set_defaults(allow_remote_resources=None)
         parser.add_argument("--ai-metadata", choices=["auto", "strip", "keep"], default="auto")
         ns = _parse_interactive(parser, args, self.println)
         if ns is None:
@@ -399,7 +427,11 @@ class InteractiveConsole:
             theme = themes[self.choose("Theme:", themes, themes.index("default") + 1) - 1]
         theme = theme or "default"
         remote_hosts = _remote_hosts(source)
-        allow_remote = bool(ns.allow_remote_resources)
+        allow_remote = (
+            self.preferences.allow_remote_resources
+            if ns.allow_remote_resources is None
+            else bool(ns.allow_remote_resources)
+        )
         allowed_domains: tuple[str, ...] | None = None
         if remote_hosts and not allow_remote:
             self.println("Remote resources detected:")
@@ -439,13 +471,13 @@ class InteractiveConsole:
         output.parent.mkdir(parents=True, exist_ok=True)
         self.println(f"Rendering {display_path(source, self.workspace)}")
         self.println("  [..] Compiling Markdown into native Word structures")
-        converter = MarkdownWord(config)
+        compiler = Compiler(config)
         started = time.perf_counter()
-        converter.render_file(source, output)
+        result = compiler.compile_file(source, output)
         elapsed = time.perf_counter() - started
         report = inspect_docx(output)
         try:
-            self.last_diagnostics = json.loads(converter.diagnostics_json())
+            self.last_diagnostics = json.loads(result.diagnostics_json())
         except (ValueError, TypeError):
             self.last_diagnostics = []
         size = output.stat().st_size
@@ -484,8 +516,7 @@ class InteractiveConsole:
         )
         if source is None:
             return 0
-        converter = MarkdownWord(RenderConfig())
-        converter.check_file(source)
+        Compiler(RenderConfig()).check_file(source)
         self.println(f"OK {source}")
         return 0
 
@@ -743,7 +774,7 @@ class InteractiveConsole:
         return 0
 
     def cmd_metadata(self, args: list[str]) -> int:
-        policy = "auto"
+        policy: Literal["auto", "strip", "keep"] = "auto"
         if "--keep" in args:
             policy = "keep"
         elif "--strip" in args:
@@ -851,7 +882,7 @@ class InteractiveConsole:
             self.println("Usage: explain CODE (for example: explain RESOURCE201)")
             return 2
         exact = {
-            "RESOURCE201": "Remote resources are disabled. Keep the resource local, or explicitly allow HTTPS resources for that render. The interactive render wizard can allow only the detected hosts.",
+            "RESOURCE201": "Remote resources were explicitly blocked. Allow them in the saved shell preference or use --allow-remote-resources for this render. Public-host, redirect, MIME, and size validation still apply.",
             "RESOURCE203": "A local resource path escaped the Markdown/project root. Move the asset inside the allowed root and use a relative path.",
             "RESOURCE209": "The remote host is not in the explicit allow-list for this render.",
             "RESOURCE211": "Private, loopback, link-local and other non-global network targets are blocked even when remote resources are enabled.",

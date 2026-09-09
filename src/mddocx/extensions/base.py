@@ -4,6 +4,19 @@ from typing import Any, Protocol
 
 from mddocx.ast.base import Document
 from mddocx.diagnostics import Diagnostic, MddocxError
+from mddocx.layout import LAYOUT_SCHEMA_VERSION, LayoutPlan
+
+
+class AstTransformExtension(Protocol):
+    """Stable extension boundary for canonical AST transformations."""
+
+    def transform_document(self, document: Document) -> Document | None: ...
+
+
+class LayoutTransformExtension(Protocol):
+    """Stable extension boundary for immutable pre-render layout plans."""
+
+    def transform_layout(self, document: Document, plan: LayoutPlan) -> LayoutPlan | None: ...
 
 
 class MddocxExtension(Protocol):
@@ -83,6 +96,51 @@ def call_transform_document(extensions: tuple[Any, ...], document: Any) -> Any:
                         )
                     )
                 current = updated
+    return current
+
+
+def call_transform_layout(
+    extensions: tuple[Any, ...], document: Document, plan: LayoutPlan
+) -> LayoutPlan:
+    current = plan
+    for extension in extensions:
+        hook = getattr(extension, "transform_layout", None)
+        if hook is None:
+            continue
+        name = type(extension).__name__
+        try:
+            updated = hook(document, current)
+        except MddocxError:
+            raise
+        except Exception as exc:
+            raise MddocxError(
+                Diagnostic("error", "PLUGIN407", f"Extension layout transform failed: {name}")
+            ) from exc
+        if updated is not None:
+            if not isinstance(updated, LayoutPlan):
+                raise MddocxError(
+                    Diagnostic(
+                        "error",
+                        "PLUGIN408",
+                        f"Extension layout transform must return a LayoutPlan or None: {name}",
+                    )
+                )
+            if updated.schema_version != LAYOUT_SCHEMA_VERSION:
+                raise MddocxError(
+                    Diagnostic(
+                        "error",
+                        "PLUGIN409",
+                        (
+                            "Extension layout transform returned incompatible schema "
+                            f"version {updated.schema_version}; expected {LAYOUT_SCHEMA_VERSION}: "
+                            f"{name}"
+                        ),
+                        remediation=(
+                            "Return a LayoutPlan using the installed LAYOUT_SCHEMA_VERSION."
+                        ),
+                    )
+                )
+            current = updated
     return current
 
 

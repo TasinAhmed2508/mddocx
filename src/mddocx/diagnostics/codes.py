@@ -13,6 +13,7 @@ class Diagnostic:
     message: str
     source_file: str | None = None
     line: int | None = None
+    remediation: str | None = None
 
     def __str__(self) -> str:
         location = ""
@@ -20,7 +21,8 @@ class Diagnostic:
             location = f" {self.source_file}"
             if self.line is not None:
                 location += f":{self.line}"
-        return f"{self.severity.upper()} {self.code} {self.message}{location}"
+        remediation = f" Remediation: {self.remediation}" if self.remediation else ""
+        return f"{self.severity.upper()} {self.code} {self.message}{location}{remediation}"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

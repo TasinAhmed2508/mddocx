@@ -127,7 +127,8 @@ render "D:\My Project\report.md" -o "D:\Output Files\report.docx"
 
 The shell does not weaken compiler security:
 
-- remote resources remain opt-in;
+- safe public HTTPS resources are allowed by default; on first launch the shell asks whether to
+  block them with `RESOURCE201` and persists the choice in `preferences.json`;
 - private/non-global remote hosts stay blocked;
 - local resource/project path confinement remains active;
 - code blocks are never executed;

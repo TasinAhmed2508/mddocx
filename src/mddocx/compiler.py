@@ -8,15 +8,16 @@ from .api import MarkdownWord
 from .ast.base import Document
 from .config import RenderConfig
 from .config_validation import validate_render_config
-from .diagnostics import Diagnostic, MddocxError
-from .extensions.base import call_transform_document
+from .diagnostics import Diagnostic, DiagnosticReporter
+from .extensions.base import call_transform_document, call_transform_layout
 from .layout import LayoutPlan
 from .limits import enforce_ast_limits, enforce_input_limit
 from .metadata import sanitize_markdown_metadata
-from .normalize import Normalizer
+from .normalize import Normalizer, SemanticIndex, build_semantic_index
 from .parser import MarkdownParser
 from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
+from .source import SourceDocument, acquire_markdown_source
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,14 @@ class CompilationResult:
     def completed_with_fallbacks(self) -> bool:
         return any(item.code == "MATH201" for item in self.diagnostics)
 
+    def diagnostics_json(self, indent: int | None = 2) -> str:
+        reporter = DiagnosticReporter(list(self.diagnostics))
+        return reporter.to_json(indent)
+
+    def diagnostics_sarif(self, indent: int | None = 2) -> str:
+        reporter = DiagnosticReporter(list(self.diagnostics))
+        return reporter.to_sarif(indent)
+
 
 @dataclass(frozen=True, slots=True)
 class DocumentStageResult:
@@ -44,6 +53,7 @@ class DocumentStageResult:
 
     document: Document
     diagnostics: tuple[Diagnostic, ...] = ()
+    semantic_index: SemanticIndex | None = None
 
     @property
     def success(self) -> bool:
@@ -97,34 +107,40 @@ class Compiler:
                 )
             )
         diagnostics.extend(
-            Diagnostic("warning", "MATH101", issue.message, source_file, issue.line)
+            Diagnostic(
+                "warning",
+                "MATH101",
+                issue.message,
+                source_file,
+                issue.line,
+                "Close the explicit math delimiter/fence or escape it when literal text is intended.",
+            )
             for issue in find_math_syntax_issues(sanitized.markdown)
         )
         return DocumentStageResult(document, tuple(diagnostics))
 
     def parse_file(self, input_path: str | Path) -> DocumentStageResult:
-        source = Path(input_path)
-        if source.stat().st_size > self.config.limits.max_input_bytes:
-            raise MddocxError(
-                Diagnostic(
-                    "error",
-                    "LIMIT401",
-                    f"Markdown input exceeds {self.config.limits.max_input_bytes} bytes.",
-                    str(source),
-                )
-            )
+        source = self.acquire_file(input_path)
         return self.parse_string(
-            source.read_text(encoding="utf-8-sig"),
-            source_file=str(source),
+            source.text,
+            source_file=source.source_file,
         )
+
+    def acquire_file(self, input_path: str | Path) -> SourceDocument:
+        return acquire_markdown_source(input_path, self.config.limits.max_input_bytes)
 
     def normalize(self, document: Document) -> DocumentStageResult:
         """Normalize and validate a parsed AST without rendering it."""
         service = MarkdownWord(self.config)
-        normalized = Normalizer(service.reporter).normalize(deepcopy(document))
+        normalizer = Normalizer(service.reporter)
+        normalized = normalizer.normalize(deepcopy(document))
         normalized = call_transform_document(service.config.extensions, normalized)
         enforce_ast_limits(normalized, self.config.limits)
-        return DocumentStageResult(normalized, service.diagnostics)
+        return DocumentStageResult(
+            normalized,
+            service.diagnostics,
+            build_semantic_index(normalized),
+        )
 
     def plan(
         self,
@@ -138,7 +154,9 @@ class Compiler:
         cfg = service._config_for_document(base, document.metadata)
         from .layout import LayoutPlanner
 
-        layout_plan = LayoutPlanner(cfg).plan(document)
+        layout_plan = call_transform_layout(
+            cfg.extensions, document, LayoutPlanner(cfg).plan(document)
+        )
         return LayoutStageResult(document, layout_plan, service.diagnostics)
 
     def render(
@@ -169,6 +187,7 @@ class Compiler:
         return DocumentStageResult(
             normalized.document,
             parsed.diagnostics + normalized.diagnostics,
+            normalized.semantic_index,
         )
 
     def compile_string(
@@ -209,4 +228,5 @@ class Compiler:
         return DocumentStageResult(
             normalized.document,
             parsed.diagnostics + normalized.diagnostics,
+            normalized.semantic_index,
         )

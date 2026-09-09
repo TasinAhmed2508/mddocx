@@ -95,10 +95,30 @@ def test_compiler_exposes_parse_normalize_plan_and_render_stages():
 
     assert parsed.document.children[0].source.file == "stage.md"
     assert normalized.success
+    assert normalized.semantic_index is not None
+    assert normalized.semantic_index.heading_ids == ("stage",)
     assert isinstance(planned, LayoutStageResult)
     assert planned.success
     assert rendered.success and rendered.output_bytes.startswith(b"PK")
     assert checked.success
+
+
+def test_semantic_index_records_targets_citations_notes_and_unresolved_references():
+    markdown = """# Target {#sec-target}
+
+See @sec-target and @sec-missing [@source]. A note.[^known] Missing.[^absent]
+
+[^known]: Defined.
+"""
+    result = Compiler().check_string(markdown)
+    index = result.semantic_index
+
+    assert index is not None
+    assert index.heading_ids == ("sec-target",)
+    assert index.citation_keys == ("source",)
+    assert index.note_labels == ("known",)
+    assert index.unresolved_crossrefs == ("sec-missing",)
+    assert index.unresolved_notes == ("absent",)
 
 
 def test_compiler_file_result_includes_output_path(tmp_path: Path):
@@ -117,6 +137,9 @@ def test_compiler_file_result_includes_output_path(tmp_path: Path):
     checked = Compiler().check_file(source)
     assert checked.success
     assert checked.document.source.file == str(source)
+    acquired = Compiler().acquire_file(source)
+    assert acquired.source_file == str(source)
+    assert acquired.base_dir == tmp_path
 
 
 def test_ast_serialization_is_versioned_and_rejects_incompatible_cache():

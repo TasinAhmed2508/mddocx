@@ -57,6 +57,8 @@ def test_layout_plan_exposes_the_reason_before_ooxml_rendering():
     assert decision.reason == "column threshold"
     assert decision.columns == 6
     assert decision.available_width_mm > 0
+    assert len(decision.column_widths_mm) == 6
+    assert sum(decision.column_widths_mm) <= decision.available_width_mm + 0.01
     assert result.stats.plan_ms >= 0
 
 
@@ -71,3 +73,26 @@ def test_table_header_repeats_and_rows_cannot_split():
 
     assert rows[0].xpath("./w:trPr/w:tblHeader[@w:val='true']", namespaces=NS)
     assert all(row.xpath("./w:trPr/w:cantSplit", namespaces=NS) for row in rows)
+
+
+def test_layout_plan_covers_heading_code_caption_and_break_intent():
+    markdown = """# Heading
+
+```python
+print('short')
+```
+
+$$x^2$$
+{caption="Equation caption"}
+
+<!-- pagebreak -->
+"""
+    parsed = Compiler().parse_string(markdown)
+    normalized = Compiler().normalize(parsed.document)
+    planned = Compiler().plan(normalized.document)
+    decisions = {item.treatment: item for item in planned.layout_plan.blocks}
+
+    assert decisions["heading"].keep_with_next
+    assert decisions["keep"].keep_together
+    assert decisions["native-equation"].keep_together
+    assert decisions["page-break"].page_break_before

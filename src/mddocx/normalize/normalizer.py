@@ -8,6 +8,7 @@ from mddocx.ast.base import Document, Node
 from mddocx.ast.block import Heading, MathBlock, Table
 from mddocx.ast.inline import InlineMath, Text
 from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
+from .semantic import SemanticIndex, build_semantic_index
 
 
 class Normalizer:
@@ -21,6 +22,7 @@ class Normalizer:
     def __init__(self, reporter: DiagnosticReporter | None = None) -> None:
         self.reporter = reporter or DiagnosticReporter()
         self._identifiers: dict[str, Node] = {}
+        self.index = SemanticIndex()
 
     def normalize(self, document: Document) -> Document:
         if not isinstance(document, Document):
@@ -29,6 +31,7 @@ class Normalizer:
         document.children = self._normalize_list(document.children)
         for label, nodes in list(document.footnotes.items()):
             document.footnotes[label] = self._normalize_list(nodes)
+        self.index = build_semantic_index(document)
         return document
 
     def _stable_heading_identifier(self, heading: Heading) -> str:

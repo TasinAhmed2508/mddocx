@@ -1,9 +1,11 @@
+from dataclasses import replace
 from io import BytesIO
 import json
 from pathlib import Path
 from zipfile import ZipFile
 
 from docx import Document as WordDocument
+from docx.enum.style import WD_STYLE_TYPE
 from lxml import etree
 from PIL import Image
 import pytest
@@ -11,9 +13,11 @@ import pytest
 from mddocx import (
     MarkdownWord,
     RenderConfig,
+    StyleMapConfig,
     TableConfig,
     audit_docx_accessibility_bytes,
     inspect_docx_bytes,
+    render_many,
 )
 from mddocx.cli import main
 from mddocx.diagnostics import MddocxError
@@ -127,6 +131,14 @@ def test_plugin_transform_failures_are_isolated_with_stable_diagnostics():
         def transform_document(self, _document):
             return "not an AST"
 
+    class InvalidLayoutExtension:
+        def transform_layout(self, _document, _plan):
+            return "not a layout plan"
+
+    class IncompatibleLayoutExtension:
+        def transform_layout(self, _document, plan):
+            return replace(plan, schema_version=plan.schema_version + 1)
+
     with pytest.raises(MddocxError) as raised:
         MarkdownWord(RenderConfig(extensions=(RaisingExtension(),))).render_string("# Input")
     assert raised.value.diagnostic.code == "PLUGIN405"
@@ -137,6 +149,18 @@ def test_plugin_transform_failures_are_isolated_with_stable_diagnostics():
     assert invalid.value.diagnostic.code == "PLUGIN406"
     assert "InvalidExtension" in invalid.value.diagnostic.message
 
+    with pytest.raises(MddocxError) as invalid_layout:
+        MarkdownWord(RenderConfig(extensions=(InvalidLayoutExtension(),))).render_string("# Input")
+    assert invalid_layout.value.diagnostic.code == "PLUGIN408"
+    assert "InvalidLayoutExtension" in invalid_layout.value.diagnostic.message
+
+    with pytest.raises(MddocxError) as incompatible_layout:
+        MarkdownWord(RenderConfig(extensions=(IncompatibleLayoutExtension(),))).render_string(
+            "# Input"
+        )
+    assert incompatible_layout.value.diagnostic.code == "PLUGIN409"
+    assert "IncompatibleLayoutExtension" in incompatible_layout.value.diagnostic.message
+
 
 def test_invalid_configuration_fails_at_the_compiler_boundary():
     config = RenderConfig(table=TableConfig(min_column_width_mm=50, max_column_width_mm=10))
@@ -146,3 +170,61 @@ def test_invalid_configuration_fails_at_the_compiler_boundary():
 
     assert error.value.diagnostic.code == "CONFIG401"
     assert "Maximum table column width" in error.value.diagnostic.message
+
+
+def test_template_style_mapping_uses_existing_semantic_targets(tmp_path: Path):
+    template = WordDocument()
+    template.styles.add_style("Company Body", WD_STYLE_TYPE.PARAGRAPH)
+    template.styles.add_style("Company Heading", WD_STYLE_TYPE.PARAGRAPH)
+    template_path = tmp_path / "company.docx"
+    template.save(template_path)
+    config = RenderConfig(
+        template=template_path,
+        style_map=StyleMapConfig(
+            mapping={
+                "MD Normal": "Company Body",
+                "MD Heading 1": "Company Heading",
+            }
+        ),
+    )
+
+    blob = MarkdownWord(config).render_string("# Heading\n\nBody text.")
+    reopened = WordDocument(BytesIO(blob))
+
+    assert reopened.paragraphs[0].style.name == "Company Heading"
+    assert reopened.paragraphs[1].style.name == "Company Body"
+
+
+def test_missing_mapped_template_style_is_actionable(tmp_path: Path):
+    template_path = tmp_path / "base.docx"
+    WordDocument().save(template_path)
+
+    with pytest.raises(MddocxError) as error:
+        MarkdownWord(
+            RenderConfig(
+                template=template_path,
+                style_map=StyleMapConfig(mapping={"MD Normal": "Absent Company Style"}),
+            )
+        ).render_string("Body")
+
+    assert error.value.diagnostic.code == "TEMPLATE401"
+    assert "Absent Company Style" in error.value.diagnostic.message
+
+
+def test_source_acquisition_has_stable_missing_and_encoding_diagnostics(tmp_path: Path):
+    missing = tmp_path / "missing.md"
+    with pytest.raises(MddocxError) as missing_error:
+        MarkdownWord().check_file(missing)
+    assert missing_error.value.diagnostic.code == "SOURCE401"
+    assert missing_error.value.diagnostic.remediation
+
+    invalid = tmp_path / "invalid.md"
+    invalid.write_bytes(b"\xff\xfe\x00")
+    with pytest.raises(MddocxError) as encoding_error:
+        MarkdownWord().check_file(invalid)
+    assert encoding_error.value.diagnostic.code == "SOURCE402"
+    assert "UTF-8" in (encoding_error.value.diagnostic.remediation or "")
+
+    batch_result = render_many([invalid], tmp_path / "output")[0]
+    assert not batch_result.ok
+    assert batch_result.diagnostics[0].code == "SOURCE402"

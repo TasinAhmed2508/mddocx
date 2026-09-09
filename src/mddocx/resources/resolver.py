@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import ipaddress
 import mimetypes
@@ -18,6 +20,10 @@ from mddocx.diagnostics import Diagnostic, MddocxError
 _IMAGE_MIMES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tiff",
     "image/webp": ".webp",
     "image/svg+xml": ".svg",
 }
@@ -58,9 +64,55 @@ class ResourceResolver:
 
     def resolve(self, source: str) -> Path:
         parsed = urlparse(source)
+        if parsed.scheme.lower() == "data":
+            return self._resolve_data_uri(source)
         if parsed.scheme or parsed.netloc:
             return self._resolve_remote(source)
         return self._resolve_local(source)
+
+    def _resolve_data_uri(self, source: str) -> Path:
+        """Decode a bounded inline image without treating it as a remote resource."""
+        try:
+            metadata, payload = source.split(",", 1)
+        except ValueError as exc:
+            raise MddocxError(
+                Diagnostic("error", "IMAGE210", "Malformed image data URI: missing payload.")
+            ) from exc
+
+        parts = metadata[5:].split(";")
+        mime = parts[0].lower()
+        parameters = {part.lower() for part in parts[1:] if part}
+        if mime not in _IMAGE_MIMES:
+            raise MddocxError(
+                Diagnostic("error", "IMAGE201", f"Unsupported inline image MIME type: {mime}")
+            )
+        if "base64" not in parameters:
+            raise MddocxError(
+                Diagnostic("error", "IMAGE210", "Inline images must use Base64-encoded data URIs.")
+            )
+
+        compact = "".join(payload.split())
+        # Check the maximum possible decoded length before allocating the byte buffer.
+        if (len(compact) * 3) // 4 > self.policy.max_resource_size + 2:
+            raise MddocxError(
+                Diagnostic("error", "RESOURCE205", "Inline image exceeds configured size limit.")
+            )
+        try:
+            data = base64.b64decode(compact, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise MddocxError(
+                Diagnostic("error", "IMAGE210", "Inline image contains invalid Base64 data.")
+            ) from exc
+        if len(data) > self.policy.max_resource_size:
+            raise MddocxError(
+                Diagnostic("error", "RESOURCE205", "Inline image exceeds configured size limit.")
+            )
+
+        suffix = _IMAGE_MIMES[mime]
+        target = self.temp_dir / f"{hashlib.sha256(data).hexdigest()}{suffix}"
+        if not target.exists():
+            target.write_bytes(data)
+        return self._prepare_image(target, source_hint=mime)
 
     def _resolve_local(self, source: str) -> Path:
         candidate = (self.base_dir / source).resolve()
@@ -80,7 +132,17 @@ class ResourceResolver:
 
     def _resolve_remote(self, source: str) -> Path:
         if not self.policy.allow_remote_resources:
-            raise MddocxError(Diagnostic("error", "RESOURCE201", "Remote resources are disabled."))
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "RESOURCE201",
+                    "Remote resources are blocked by the active resource policy.",
+                    remediation=(
+                        "Allow remote resources in configuration or use "
+                        "--allow-remote-resources for this render."
+                    ),
+                )
+            )
         self._validate_remote_url(source)
         cache_key = hashlib.sha256(source.encode("utf-8")).hexdigest()
         if self.cache_dir and self.policy.cache_remote_resources:
@@ -183,7 +245,7 @@ class ResourceResolver:
 
     def _prepare_image(self, path: Path, source_hint: str) -> Path:
         suffix = path.suffix.lower()
-        if suffix in {".png", ".jpg", ".jpeg"}:
+        if suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}:
             self._verify_raster(path)
             return path
         if suffix == ".webp":

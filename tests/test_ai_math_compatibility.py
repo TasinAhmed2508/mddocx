@@ -114,6 +114,7 @@ def test_unclosed_display_delimiter_does_not_consume_document_tail():
     assert compiler.diagnostics[0].code == "MATH101"
     assert compiler.diagnostics[0].line == 3
     assert "Unterminated" in compiler.diagnostics[0].message
+    assert compiler.diagnostics[0].remediation
 
     report = inspect_math(markdown, source_file="broken.md")
     assert not report.ok
@@ -149,6 +150,7 @@ def test_unsupported_ai_macro_preserves_document_and_reports_reason():
     assert len(compiler.diagnostics) == 1
     assert compiler.diagnostics[0].code == "MATH201"
     assert "inventedmacro" in compiler.diagnostics[0].message
+    assert "math-check" in (compiler.diagnostics[0].remediation or "")
 
 
 def test_strict_math_rejects_unsupported_ai_macro():
@@ -206,6 +208,28 @@ Inline $x \pmod{n}$ and \(\textnormal{done}\).
     root = _document_xml(MarkdownWord().render_string(markdown))
     assert root.xpath(".//m:m", namespaces=NS)
     assert root.xpath(".//m:f[m:fPr/m:type[@m:val='noBar']]", namespaces=NS)
+
+
+def test_ai_equation_tags_checks_and_vector_arrows_are_native():
+    markdown = r"""
+$$\boxed{2u+d=-1}\tag{1}$$
+
+$$6=6\quad\checkmark$$
+
+$$\overrightarrow{ON}=\text{normal}$$
+"""
+    report = inspect_math(markdown)
+
+    assert report.total == 3
+    assert report.native == 3
+    assert report.fallbacks == 0
+    assert report.ok
+
+    root = _document_xml(MarkdownWord().render_string(markdown))
+    equation_text = "".join(root.xpath(".//m:t/text()", namespaces=NS))
+    assert "✓" in equation_text
+    assert root.xpath(".//m:accPr/m:chr[@m:val='⃗']", namespaces=NS)
+    assert "1" in equation_text
 
 
 def test_external_math_engine_cannot_hide_unconverted_commands():

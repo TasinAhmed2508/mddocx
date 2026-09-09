@@ -18,6 +18,12 @@ class RecentDocument:
     settings: dict[str, Any]
 
 
+@dataclass(slots=True)
+class ShellPreferences:
+    initialized: bool = False
+    allow_remote_resources: bool = True
+
+
 def state_directory() -> Path:
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
@@ -35,6 +41,37 @@ def recent_path() -> Path:
 
 def repl_history_path() -> Path:
     return state_directory() / "shell-history.txt"
+
+
+def preferences_path() -> Path:
+    return state_directory() / "preferences.json"
+
+
+def load_shell_preferences() -> ShellPreferences:
+    try:
+        raw = json.loads(preferences_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ShellPreferences()
+    if not isinstance(raw, dict):
+        return ShellPreferences()
+    return ShellPreferences(
+        initialized=bool(raw.get("initialized", False)),
+        allow_remote_resources=bool(raw.get("allow_remote_resources", True)),
+    )
+
+
+def save_shell_preferences(preferences: ShellPreferences) -> None:
+    """Persist non-sensitive shell choices without ever blocking shell startup."""
+    path = preferences_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(asdict(preferences), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        temporary.replace(path)
+    except OSError:
+        return
 
 
 def load_recent(limit: int = 20) -> list[RecentDocument]:

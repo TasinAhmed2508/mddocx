@@ -18,7 +18,8 @@ mddocx converts Markdown into native Word structures instead of screenshots or f
 - Produces editable Word equations using OMML rather than images.
 - Creates editable Office charts backed by embedded Excel workbooks.
 - Supports CSV and JSON data for charts and native Word tables.
-- Handles images, captions, bookmarks, cross-references, footnotes, endnotes, and citations.
+- Handles local, HTTPS, and Base64 `data:image/...;base64,...` images, plus captions, bookmarks,
+  cross-references, footnotes, endnotes, and citations.
 - Supports themes, fonts, templates, right-to-left text, headers, footers, tables of contents, and page fields.
 - Provides project mode for compiling multiple Markdown chapters into one document.
 - Includes diagnostics, document inspection, accessibility checks, and profiling utilities.
@@ -49,25 +50,25 @@ mddocx doctor
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.2.1-py3-none-any.whl
+python -m pip install ./mddocx_native-1.2.2-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.2.1-py3-none-any.whl
+python -m pip install .\mddocx_native-1.2.2-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.2.1 GitHub Release:
+You can also install the wheel directly from the v1.2.2 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.2.1/mddocx_native-1.2.1-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.2.2/mddocx_native-1.2.2-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.2.1"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.2.2"
 ```
 
 ### Install for local development
@@ -146,6 +147,8 @@ Run mddocx --help for the complete command reference.
         file.write(document)
 
 The public API is documented in docs/API_STABILITY.md and can also be inspected with mddocx api --json.
+The additive compiler-stage mapping and behavioral changes are documented in
+`docs/V2_MIGRATION.md`.
 
 For callers that need the output, diagnostics, and profiling data together, use the staged-v2
 compiler service:
@@ -193,8 +196,13 @@ Document settings can be defined at the top of a Markdown file:
 
 ## Privacy and security defaults
 
-- Remote resources are disabled by default.
+- Safe public HTTPS resources are allowed by default. The interactive shell asks on first launch
+  whether they should instead be blocked with `RESOURCE201`, and remembers that preference.
+- Base64 image data URIs are decoded locally, never sent over the network, and remain subject to
+  the configured per-resource size limit and image validation.
 - HTTPS image downloads can be explicitly enabled and restricted by domain.
+- Use `--block-remote-resources` for a single noninteractive conversion, or
+  `--allow-remote-resources` to override a saved shell block for one render.
 - Local resource paths cannot escape the document or project directory.
 - Download size, MIME type, redirects, and network destinations are constrained.
 - SVG parsing rejects external references and uses hardened XML handling.
@@ -215,6 +223,9 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
+See the [1.2.2 release notes](docs/RELEASE_NOTES_1.2.2.md) for the Base64-image,
+AI-math, compiler, layout, security-policy, and migration summary.
+
 The compiler stages and system architecture are described in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The machine-readable supported
 feature contract is [docs/feature-matrix.json](docs/feature-matrix.json).
@@ -222,6 +233,10 @@ feature contract is [docs/feature-matrix.json](docs/feature-matrix.json).
 The machine-readable fidelity contract is `docs/feature-matrix.json`; every listed feature links
 its accepted syntax, canonical AST, native Word representation, diagnostic behavior, host status,
 and tracked regression evidence.
+
+The complete staged engineering program is preserved in
+`docs/FIDELITY_FIRST_V2_PLAN.md`; progress and compatibility notes remain additive until a
+qualified 2.x release is ready.
 
 Microsoft Word 365 release qualification, including the reusable Windows automation script, is
 documented in `docs/WORD365_QA.md`.

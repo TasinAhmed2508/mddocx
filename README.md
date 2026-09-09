@@ -50,25 +50,25 @@ mddocx doctor
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.2.2-py3-none-any.whl
+python -m pip install ./mddocx_native-1.2.3-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.2.2-py3-none-any.whl
+python -m pip install .\mddocx_native-1.2.3-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.2.2 GitHub Release:
+You can also install the wheel directly from the v1.2.3 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.2.2/mddocx_native-1.2.2-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.2.3/mddocx_native-1.2.3-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.2.2"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.2.3"
 ```
 
 ### Install for local development
@@ -223,7 +223,7 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
-See the [1.2.2 release notes](docs/RELEASE_NOTES_1.2.2.md) for the Base64-image,
+See the [1.2.3 release notes](docs/RELEASE_NOTES_1.2.3.md) for the Base64-image,
 AI-math, compiler, layout, security-policy, and migration summary.
 
 The compiler stages and system architecture are described in

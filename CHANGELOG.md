@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.2.3 — Cross-platform SVG security validation
+
+- Made unsafe SVG reference validation use the required hardened `lxml` parser so security checks
+  run consistently in clean Windows, Linux, and macOS installations before optional conversion.
+
 ## 1.2.2 — Fidelity-first compiler and AI media compatibility
 
 - Safe public HTTPS images are now allowed by default; the interactive shell asks once whether to

@@ -300,13 +300,16 @@ class ResourceResolver:
     def _convert_svg(self, path: Path) -> Path:
         data = path.read_bytes()
         try:
-            from defusedxml import ElementTree as DET
-        except ImportError as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE208", "SVG conversion requires the mddocx[images] extra.")
-            ) from exc
-        try:
-            root = DET.fromstring(data)
+            from lxml import etree
+
+            parser = etree.XMLParser(
+                resolve_entities=False,
+                no_network=True,
+                load_dtd=False,
+                recover=False,
+                huge_tree=False,
+            )
+            root = etree.fromstring(data, parser=parser)
         except Exception as exc:
             raise MddocxError(
                 Diagnostic("error", "IMAGE206", f"Unsafe or invalid SVG: {path.name}")

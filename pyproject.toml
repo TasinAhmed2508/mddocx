@@ -48,7 +48,7 @@ Changelog = "https://github.com/TasinAhmed2508/mddocx/blob/main/CHANGELOG.md"
 math = ["latex2mathml>=3.81.0"]
 frontmatter = ["PyYAML>=6.0"]
 images = ["Pillow>=10.0", "CairoSVG>=2.7", "defusedxml>=0.7"]
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "build>=1.2", "twine>=5.0"]
+dev = ["pytest>=8", "ruff==0.15.10", "mypy>=1.10", "build>=1.2", "twine>=5.0"]
 
 [project.scripts]
 mddocx = "mddocx.cli:main"

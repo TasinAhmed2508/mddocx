@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pinned Ruff 0.15.10 in the development toolchain so local and hosted CI enforce the same
+  established lint contract instead of changing behavior when a new Ruff release appears.
+
 ## 1.2.3 — Cross-platform SVG security validation
 
 - Made unsafe SVG reference validation use the required hardened `lxml` parser so security checks

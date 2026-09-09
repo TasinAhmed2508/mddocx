@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Upgraded the GitHub Release action to its supported Node 24-based v3 line, eliminating the
+  Node 20 deprecation annotation in future releases.
+
 ## 1.2.4 — Reproducible release quality gates
 
 - Pinned Ruff 0.15.10 in the development toolchain so local and hosted CI enforce the same

@@ -6,7 +6,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m compileall -q src
+      - run: pytest -m "not visual"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: mypy src/mddocx/source.py src/mddocx/compiler.py src/mddocx/batch.py src/mddocx/config_validation.py src/mddocx/extensions/base.py src/mddocx/layout.py src/mddocx/math/preflight.py src/mddocx/normalize/semantic.py src/mddocx/normalize/normalizer.py src/mddocx/render/context.py src/mddocx/render/math_renderer.py --ignore-missing-imports --follow-imports=skip --check-untyped-defs
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write

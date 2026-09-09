@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mddocx-native"
-version = "1.2.3"
+version = "1.2.4"
 description = "Deterministic Markdown to native, editable Microsoft Word DOCX compiler"
 readme = "README.md"
 requires-python = ">=3.11"

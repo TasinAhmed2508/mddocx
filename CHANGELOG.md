@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+## 1.2.4 — Reproducible release quality gates
+
 - Pinned Ruff 0.15.10 in the development toolchain so local and hosted CI enforce the same
   established lint contract instead of changing behavior when a new Ruff release appears.
+- Added a mandatory release-candidate verification job; GitHub Release and PyPI publishing now
+  wait for tests, compilation, lint, formatting, and targeted type checks to pass.
 
 ## 1.2.3 — Cross-platform SVG security validation
 

@@ -29,6 +29,7 @@ NS = {
 )
 def test_builtin_math_conformance_corpus_is_native(latex: str, native_xpath: str):
     converter = DefaultMathConverter(cache=False)
+    converter._sidecar.executable = None
     converter._external = None
 
     omml = converter.latex_to_omml(latex, display=True)

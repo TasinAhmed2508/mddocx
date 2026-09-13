@@ -52,7 +52,7 @@
       "malformed_diagnostic": "MATH101 for unmatched explicit delimiters; MATH201 for conversion fallback",
       "word365": "qualified in Word 365 with 22-equation AI fixture",
       "libreoffice": "automated visual smoke",
-      "tests": ["tests/test_ai_math_compatibility.py", "tests/test_fidelity_corpora.py", "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"]
+      "tests": ["tests/test_ai_math_compatibility.py", "tests/test_smart_math_pipeline.py", "tests/test_equation_conformance_corpus.py", "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"]
     },
     {
       "id": "images-and-figures",
@@ -62,7 +62,7 @@
       "malformed_diagnostic": "RESOURCE/IMAGE/A11Y diagnostic families",
       "word365": "qualified in Word 365 with a nine-image Base64 AI conversation fixture",
       "libreoffice": "supported",
-      "tests": ["tests/test_security_and_metadata.py", "tests/test_release_contract.py"]
+      "tests": ["tests/test_security_and_metadata.py", "tests/test_resilient_resources.py", "tests/test_release_contract.py"]
     },
     {
       "id": "equation-figure-table-references",
@@ -82,7 +82,7 @@
       "malformed_diagnostic": "CITE201/CITE202 for missing database or key",
       "word365": "implemented; structural regression tested",
       "libreoffice": "supported",
-      "tests": ["tests/test_technical_report.py", "tests/test_diagnostic_locations.py", "tests/test_fidelity_corpora.py"]
+      "tests": ["tests/test_technical_report.py", "tests/test_diagnostic_locations.py", "tests/test_academic_references.py"]
     },
     {
       "id": "notes",

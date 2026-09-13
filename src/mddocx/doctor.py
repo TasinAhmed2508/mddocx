@@ -19,6 +19,8 @@ class DoctorReport:
     dependencies: dict[str, str] = field(default_factory=dict)
     executables: dict[str, str | None] = field(default_factory=dict)
     temp_directory_writable: bool = False
+    mathjax_sidecar: str | None = None
+    mathjax_protocol: int = 1
 
     @property
     def visual_qa_ready(self) -> bool:
@@ -61,6 +63,8 @@ class DoctorReport:
             f"Python: {self.python}",
             f"Platform: {self.platform} ({self.machine})",
             f"Temporary directory writable: {'yes' if self.temp_directory_writable else 'no'}",
+            f"MathJax sidecar: {self.mathjax_sidecar or 'not found; Python engines will be used'}",
+            f"MathJax protocol: {self.mathjax_protocol}",
             "Dependencies:",
         ]
         for name, value in self.dependencies.items():
@@ -77,6 +81,8 @@ class DoctorReport:
 
 
 def run_doctor() -> DoctorReport:
+    from .math.sidecar import MathJaxSidecar
+
     dependency_packages = {
         "markdown-it-py": "markdown-it-py",
         "python-docx": "python-docx",
@@ -128,6 +134,7 @@ def run_doctor() -> DoctorReport:
     except OSError:
         temp_ok = False
 
+    sidecar = MathJaxSidecar()
     return DoctorReport(
         python=platform.python_version(),
         platform=f"{platform.system()} {platform.release()}",
@@ -136,4 +143,6 @@ def run_doctor() -> DoctorReport:
         dependencies=deps,
         executables={name: shutil.which(name) for name in ("libreoffice", "soffice", "pdftoppm")},
         temp_directory_writable=temp_ok,
+        mathjax_sidecar=str(sidecar.executable) if sidecar.available else None,
+        mathjax_protocol=sidecar.protocol_version,
     )

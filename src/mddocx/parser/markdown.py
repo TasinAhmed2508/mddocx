@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from html import unescape
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
@@ -66,6 +67,42 @@ from mddocx.metadata import MetadataSanitizationReport, sanitize_markdown_metada
 
 
 class MarkdownParser:
+    _HTML_IMG_RE = re.compile(r"^\s*<img\b(?P<attrs>[^>]*)/?>\s*$", re.I | re.S)
+    _HTML_IMG_FIND_RE = re.compile(r"<img\b[^>]*?/?>", re.I | re.S)
+    _HTML_ATTR_RE = re.compile(
+        r"(?P<name>[A-Za-z_:][\w:.-]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)",
+        re.S,
+    )
+
+    @classmethod
+    def _html_image(cls, value: str) -> Image | None:
+        """Recognize a standalone safe HTML ``img`` element.
+
+        Markdown exported by browsers and office tools commonly uses ``<img>``
+        for data-URI figures.  Raw HTML remains non-executable; only the image's
+        inert attributes are translated to the same AST node as Markdown image
+        syntax so the normal bounded resource resolver still validates it.
+        """
+        match = cls._HTML_IMG_RE.match(value)
+        if not match:
+            return None
+        attrs = {
+            item.group("name").lower(): unescape(item.group("value"))
+            for item in cls._HTML_ATTR_RE.finditer(match.group("attrs"))
+        }
+        src = attrs.get("src", "").strip()
+        if not src:
+            return None
+        return Image(src=src, alt=attrs.get("alt", ""), title=attrs.get("title"))
+
+    @classmethod
+    def _html_images(cls, value: str) -> list[Image]:
+        return [
+            image
+            for match in cls._HTML_IMG_FIND_RE.finditer(value)
+            if (image := cls._html_image(match.group(0))) is not None
+        ]
+
     def __init__(
         self, extensions: tuple[object, ...] = (), metadata_config: MetadataConfig | None = None
     ) -> None:
@@ -407,6 +444,26 @@ class MarkdownParser:
                     nodes.append(PageBreak(source=self._pos(t)))
                 elif directive == "<!-- sectionbreak -->":
                     nodes.append(SectionBreak(source=self._pos(t)))
+                elif images := self._html_images(t.content):
+                    nodes.extend(
+                        ImageBlock(
+                            src=image.src,
+                            alt=image.alt,
+                            title=image.title,
+                            source=self._pos(t),
+                        )
+                        for image in images
+                    )
+                elif directive in {"<details>", "</details>"}:
+                    # Disclosure containers have no Word equivalent. Their
+                    # contents still render normally instead of becoming a
+                    # multi-megabyte literal HTML paragraph.
+                    pass
+                elif directive.startswith("<summary>") and directive.endswith("</summary>"):
+                    summary = re.sub(r"^\s*<summary>|</summary>\s*$", "", t.content, flags=re.I)
+                    nodes.append(
+                        Paragraph(children=[Text(text=unescape(summary))], source=self._pos(t))
+                    )
                 else:
                     # Raw HTML execution/rendering is intentionally unsupported.
                     # Preserve authored source visibly instead of silently dropping it.
@@ -776,7 +833,8 @@ class MarkdownParser:
                 nodes.append(Image(src=t.attrGet("src") or "", alt=alt, title=t.attrGet("title")))
                 i += 1
             elif t.type == "html_inline":
-                nodes.append(Text(text=t.content))
+                image = self._html_image(t.content)
+                nodes.append(image if image is not None else Text(text=t.content))
                 i += 1
             else:
                 i += 1

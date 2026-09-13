@@ -72,7 +72,7 @@ flowchart TD
     DECODE --> MIME["Validate declared MIME and actual image"]
     KIND -->|"Local path"| CONTAIN["Resolve beneath document/project root"]
     CONTAIN --> MIME
-    KIND -->|"HTTPS"| PREF{"Remote resources allowed?"}
+    KIND -->|"HTTP(S) image syntax"| PREF{"Remote resources allowed?"}
     PREF -->|"No"| R201["RESOURCE201 with remediation"]
     PREF -->|"Yes"| HOST["Validate scheme, host, DNS and redirects"]
     HOST --> SIZE["Stream with hard size limit"]
@@ -85,11 +85,12 @@ flowchart TD
     FIT --> ALT["Attach alt text / decorative metadata"]
 ```
 
-The `data:` branch is always local and never consults the network preference. Public HTTPS is
+The `data:` branch is always local and never consults the network preference. Public HTTP(S) is
 allowed by the library and ordinary CLI by default. On the first interactive-shell launch, the
 user can choose to block it; the shell stores only that boolean preference. Even when HTTPS is
 allowed, private/reserved addresses, unsafe redirects, invalid MIME types, oversized downloads,
-and external SVG references remain blocked.
+and external SVG references remain blocked. Non-image responses and acquisition failures become
+clickable figure fallbacks unless strict-image mode is selected; ordinary links never enter this flow.
 
 ## Stages
 
@@ -106,7 +107,7 @@ and external SVG references remain blocked.
 4. **Plan layout** makes page-sensitive decisions before OOXML is written. For
    example, a wide table can receive a deterministic landscape section and the
    following content can return to portrait orientation.
-5. **Render** maps the AST to editable Word structures: OMML equations,
+5. **Render** maps the AST to editable Word structures: MathJax-validated OMML equations,
    DrawingML images, ChartML charts, Word numbering, fields, bookmarks,
    footnotes/endnotes, citations, headers, footers, and tables.
 6. **Finalize and validate** scrubs generated metadata when configured,

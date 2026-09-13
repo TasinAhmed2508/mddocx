@@ -2,8 +2,55 @@
 
 ## Unreleased
 
-- Upgraded the GitHub Release action to its supported Node 24-based v3 line, eliminating the
-  Node 20 deprecation annotation in future releases.
+No unreleased changes.
+
+## 1.3.0 — Resilient resources, smart equations, and academic references
+
+This release fixes the main failure modes seen when converting AI-generated, technical, and
+academic Markdown into editable Word documents.
+
+### Resilient resources and layout
+
+- Fixed standalone HTML `<img>` elements, including validated Base64 data URIs and images inside
+  `<details>` exports, so they use the native DOCX image pipeline instead of appearing as literal
+  HTML.
+- Fixed remote-image handling with bounded HTTP(S) downloads, redirect checks, content-based image
+  validation, successful-resource caching, timeout diagnostics, and readable clickable fallbacks
+  when an image cannot be embedded.
+- Fixed the resource policy so ordinary Markdown links remain Word hyperlinks and are never
+  downloaded as images.
+- Fixed static and animated GIF handling so GIF media is embedded unchanged, with client playback
+  behavior documented.
+- Fixed wide-table layout drift by emitting fixed Word table-layout metadata with synchronized
+  grid and cell widths for Microsoft Word and LibreOffice.
+
+### Smart equations
+
+- Fixed common AI-generated LaTeX wrapper and delimiter variants through conservative,
+  renderer-safe normalization without algebraically rewriting expressions.
+- Added a pinned MathJax 4.1.3 sidecar as the first equation engine, with native editable Office
+  Math output when structural and semantic validation succeeds.
+- Fixed equation fallback behavior so unsupported expressions remain readable and editable source
+  text; `--strict-math` is available when fallback must fail the conversion.
+- Added `mddocx math-check FILE.md --json` with engine, normalization, validation, warning, and
+  fallback details, plus a deterministic 250-equation conformance corpus.
+
+### Academic references and links
+
+- Added APA as the default citation style while retaining IEEE, numeric, author-year, and Chicago
+  author-date compatibility choices.
+- Added optional arbitrary local CSL style processing through `mddocx-native[academic]`.
+- Fixed DOI normalization to produce canonical `https://doi.org/` hyperlinks and added citation
+  and bibliography cross-links inside the generated DOCX.
+- Added cited-only or all-entry bibliography inclusion and `mddocx link-check` for separate
+  ordinary-link and bibliography-link validation.
+
+### Compatibility and release quality
+
+- Preserved the stable v1 Python entry points and legacy remote-resource and citation options.
+- Added regression coverage for resilient resources, smart equations, academic references,
+  HTML images, table widths, and the complete release contract.
+- Updated the GitHub Release action to the supported Node 24-based v3 line.
 
 ## 1.2.4 — Reproducible release quality gates
 

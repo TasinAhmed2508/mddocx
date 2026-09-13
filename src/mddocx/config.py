@@ -41,7 +41,7 @@ class MetadataConfig:
 @dataclass(slots=True)
 class ResourcePolicy:
     allow_remote_resources: bool = True
-    allowed_schemes: tuple[str, ...] = ("https",)
+    allowed_schemes: tuple[str, ...] = ("http", "https")
     allowed_domains: tuple[str, ...] | None = None
     allow_private_hosts: bool = False
     max_resource_size: int = 10_000_000
@@ -50,6 +50,7 @@ class ResourcePolicy:
     validate_mime: bool = True
     cache_remote_resources: bool = True
     cache_directory: Path | None = None
+    image_failure: Literal["clickable_fallback", "literal", "error"] = "clickable_fallback"
 
 
 @dataclass(slots=True)
@@ -305,7 +306,12 @@ class NotesConfig:
 @dataclass(slots=True)
 class CitationConfig:
     bibliography: Path | None = None
-    style: Literal["author-year", "apa", "ieee", "numeric"] = "author-year"
+    style: Literal["author-year", "apa", "ieee", "numeric", "chicago-author-date"] = "apa"
+    style_file: Path | None = None
+    locale: str = "en-US"
+    bibliography_include: Literal["cited", "all"] = "cited"
+    hyperlink_citations: bool = True
+    hyperlink_doi_and_url: bool = True
     auto_bibliography: bool = False
     bibliography_title: str = "References"
 

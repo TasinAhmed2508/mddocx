@@ -4,6 +4,24 @@ from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
+from typing import Iterable
+from xml.etree import ElementTree
+
+from mddocx.csl import CslProcessor, CslUnavailable
+
+_DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$", re.I)
+
+
+def canonical_doi(value: str) -> str:
+    doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", value.strip(), flags=re.I)
+    doi = doi.rstrip(".,; ")
+    return f"https://doi.org/{doi}" if _DOI_RE.fullmatch(doi) else ""
+
+
+@dataclass(slots=True, frozen=True)
+class BibliographySegment:
+    text: str
+    href: str | None = None
 
 
 @dataclass(slots=True)
@@ -21,34 +39,53 @@ class BibliographyEntry:
     def author_short(self) -> str:
         if not self.authors:
             return self.key
-        first = self.authors[0]
-        surname = first.split(",", 1)[0].strip() if "," in first else first.split()[-1]
-        if len(self.authors) == 1:
-            return surname
-        if len(self.authors) == 2:
-            second = (
-                self.authors[1].split(",", 1)[0].strip()
-                if "," in self.authors[1]
-                else self.authors[1].split()[-1]
-            )
-            return f"{surname} & {second}"
-        return f"{surname} et al."
+        surnames = [a.split(",", 1)[0].strip() if "," in a else a.split()[-1] for a in self.authors]
+        if len(surnames) == 1:
+            return surnames[0]
+        if len(surnames) == 2:
+            return f"{surnames[0]} & {surnames[1]}"
+        return f"{surnames[0]} et al."
 
 
 class BibliographyDatabase:
     def __init__(self, entries: dict[str, BibliographyEntry] | None = None):
         self.entries = entries or {}
+        self.diagnostics: list[str] = []
+        self._citation_order: list[str] = []
+        self._csl: CslProcessor | None = None
+        self._find_doi_conflicts()
+
+    def resolve_style(self, requested: str, style_file: str | Path | None = None) -> str:
+        """Validate a local CSL file and select its supported bundled rendering profile."""
+        if style_file is None:
+            return requested
+        path = Path(style_file)
+        if not path.is_file():
+            self.diagnostics.append(f"CITE205 CSL style file not found: {path}")
+            return requested
+        try:
+            root = ElementTree.fromstring(path.read_text(encoding="utf-8"))
+        except (OSError, ElementTree.ParseError) as exc:
+            self.diagnostics.append(f"CITE205 Invalid CSL style {path}: {exc}")
+            return requested
+        if root.tag.rsplit("}", 1)[-1] != "style":
+            self.diagnostics.append(f"CITE205 Invalid CSL style root in {path}")
+            return requested
+        try:
+            self._csl = CslProcessor(path, self.entries.values())
+            return "csl-local"
+        except (CslUnavailable, ValueError, OSError) as exc:
+            self.diagnostics.append(f"CITE206 Could not activate CSL style {path}: {exc}")
+        return requested
 
     @classmethod
     def load(cls, path: str | Path | None) -> "BibliographyDatabase":
-        if path is None:
+        if path is None or not Path(path).is_file():
             return cls()
-        path = Path(path)
-        if not path.is_file():
-            return cls()
-        if path.suffix.lower() in {".json", ".csljson"}:
-            return cls._from_csl_json(json.loads(path.read_text(encoding="utf-8")))
-        return cls._from_bibtex(path.read_text(encoding="utf-8"))
+        source = Path(path)
+        if source.suffix.lower() in {".json", ".csljson"}:
+            return cls._from_csl_json(json.loads(source.read_text(encoding="utf-8")))
+        return cls._from_bibtex(source.read_text(encoding="utf-8"))
 
     @classmethod
     def _from_csl_json(cls, data) -> "BibliographyDatabase":
@@ -59,22 +96,21 @@ class BibliographyDatabase:
             if isinstance(data, dict)
             else []
         )
-        entries = {}
+        entries: dict[str, BibliographyEntry] = {}
         for item in items:
             key = str(item.get("id") or item.get("citation-key") or "").strip()
             if not key:
                 continue
-            authors = []
-            for a in item.get("author", []) or []:
-                family, given = a.get("family", ""), a.get("given", "")
-                authors.append(f"{family}, {given}".strip(", "))
+            authors = [
+                f"{a.get('family', '')}, {a.get('given', '')}".strip(", ")
+                for a in item.get("author", []) or []
+            ]
             issued = item.get("issued", {}).get("date-parts", [["n.d."]])
-            year = str(issued[0][0]) if issued and issued[0] else "n.d."
             entries[key] = BibliographyEntry(
                 key,
                 str(item.get("title", "")),
                 authors,
-                year,
+                str(issued[0][0]) if issued and issued[0] else "n.d.",
                 str(item.get("container-title", "")),
                 str(item.get("publisher", "")),
                 str(item.get("DOI", "")),
@@ -85,94 +121,154 @@ class BibliographyDatabase:
     @classmethod
     def _from_bibtex(cls, text: str) -> "BibliographyDatabase":
         entries: dict[str, BibliographyEntry] = {}
+        header = re.compile(r"@(\w+)\s*\{\s*([^,]+),", re.S)
         pos = 0
-        while True:
-            m = re.search(r"@(\w+)\s*\{\s*([^,]+),", text[pos:], re.S)
-            if not m:
-                break
-            absolute_start = pos + m.start()
-            body_start = pos + m.end()
-            depth = 1
-            i = body_start
-            in_quote = False
-            escaped = False
+        while match := header.search(text, pos):
+            start, depth, quoted, escaped, i = match.end(), 1, False, False, match.end()
             while i < len(text) and depth:
-                ch = text[i]
+                char = text[i]
                 if escaped:
                     escaped = False
-                elif ch == "\\":
+                elif char == "\\":
                     escaped = True
-                elif ch == '"':
-                    in_quote = not in_quote
-                elif not in_quote:
-                    if ch == "{":
-                        depth += 1
-                    elif ch == "}":
-                        depth -= 1
+                elif char == '"':
+                    quoted = not quoted
+                elif not quoted:
+                    depth += char == "{"
+                    depth -= char == "}"
                 i += 1
-            body = text[body_start : i - 1] if depth == 0 else text[body_start:]
-            key = m.group(2).strip()
-            fields: dict[str, str] = {}
-            fm_re = re.compile(
-                r"(\w[\w-]*)\s*=\s*(?:\{((?:[^{}]|\{[^{}]*\})*)\}|\"([^\"]*)\"|([^,\n]+))\s*,?",
-                re.S,
-            )
-            for fm in fm_re.finditer(body):
-                fields[fm.group(1).lower()] = (
-                    (fm.group(2) or fm.group(3) or fm.group(4) or "").strip().replace("\n", " ")
-                )
+            fields = cls._bib_fields(text[start : i - 1] if depth == 0 else text[start:])
+            key = match.group(2).strip()
             authors = [
                 a.strip()
                 for a in re.split(r"\s+and\s+", fields.get("author", ""), flags=re.I)
                 if a.strip()
             ]
             entries[key] = BibliographyEntry(
-                key=key,
-                title=fields.get("title", "").strip("{}"),
-                authors=authors,
-                year=fields.get("year", "n.d."),
-                journal=fields.get("journal", fields.get("booktitle", "")),
-                publisher=fields.get("publisher", ""),
-                doi=fields.get("doi", ""),
-                url=fields.get("url", ""),
+                key,
+                fields.get("title", "").strip("{}"),
+                authors,
+                fields.get("year", "n.d."),
+                fields.get("journal", fields.get("booktitle", "")),
+                fields.get("publisher", ""),
+                fields.get("doi", ""),
+                fields.get("url", ""),
             )
-            pos = i if i > absolute_start else absolute_start + 1
+            pos = max(i, match.end())
         return cls(entries)
 
+    @staticmethod
+    def _bib_fields(body: str) -> dict[str, str]:
+        pattern = re.compile(
+            r"(\w[\w-]*)\s*=\s*(?:\{((?:[^{}]|\{[^{}]*\})*)\}|\"([^\"]*)\"|([^,\n]+))\s*,?", re.S
+        )
+        return {
+            m.group(1).lower(): (m.group(2) or m.group(3) or m.group(4) or "")
+            .strip()
+            .replace("\n", " ")
+            for m in pattern.finditer(body)
+        }
+
+    def _find_doi_conflicts(self) -> None:
+        seen: dict[str, BibliographyEntry] = {}
+        for entry in self.entries.values():
+            doi = canonical_doi(entry.doi)
+            if doi and doi in seen and seen[doi].key != entry.key:
+                self.diagnostics.append(
+                    f"CITE203 DOI {doi} is shared by {seen[doi].key} and {entry.key}"
+                )
+            elif doi:
+                seen[doi] = entry
+            if entry.doi and not doi:
+                self.diagnostics.append(f"CITE204 Invalid DOI for {entry.key}: {entry.doi}")
+
     def cite(self, keys: list[str], style: str = "author-year", suffix: str | None = None) -> str:
-        found = [self.entries.get(k) for k in keys]
+        for key in keys:
+            if key in self.entries and key not in self._citation_order:
+                self._citation_order.append(key)
+        if style == "csl-local" and self._csl is not None:
+            return self._csl.cite(keys, suffix)
         if style in {"ieee", "numeric"}:
             values = [
-                str(list(self.entries).index(k) + 1) if k in self.entries else "?" for k in keys
+                str(self._citation_order.index(k) + 1) if k in self._citation_order else "?"
+                for k in keys
             ]
             text = "[" + ", ".join(values) + "]"
         else:
-            pieces = [f"{e.author_short}, {e.year}" if e else k for k, e in zip(keys, found)]
-            text = "(" + "; ".join(pieces) + ")"
-        if suffix:
-            text = text[:-1] + f", {suffix}" + text[-1]
-        return text
+            text = (
+                "("
+                + "; ".join(
+                    f"{e.author_short}, {e.year}" if (e := self.entries.get(k)) else k for k in keys
+                )
+                + ")"
+            )
+        return text[:-1] + f", {suffix}" + text[-1] if suffix else text
 
-    def formatted_entries(self, style: str = "author-year") -> list[tuple[str, str]]:
-        items = list(self.entries.values())
-        if style in {"ieee", "numeric"}:
-            return [(e.key, f"[{i}] {self._format_entry(e)}") for i, e in enumerate(items, 1)]
-        items.sort(key=lambda e: (e.author_short.lower(), e.year, e.title.lower()))
-        return [(e.key, self._format_entry(e)) for e in items]
+    def formatted_entries(
+        self, style: str = "author-year", keys: Iterable[str] | None = None
+    ) -> list[tuple[str, str]]:
+        return [
+            (key, "".join(s.text for s in parts))
+            for key, parts in self.formatted_segments(style, keys)
+        ]
+
+    def formatted_segments(
+        self, style: str = "author-year", keys: Iterable[str] | None = None
+    ) -> list[tuple[str, tuple[BibliographySegment, ...]]]:
+        selected = [
+            self.entries[k] for k in dict.fromkeys(keys or self.entries) if k in self.entries
+        ]
+        if style == "csl-local" and self._csl is not None:
+            return [
+                (key, self._linkify(text))
+                for key, text in self._csl.bibliography(entry.key for entry in selected)
+            ]
+        numeric = style in {"ieee", "numeric"}
+        if numeric:
+            order = self._citation_order + [
+                e.key for e in selected if e.key not in self._citation_order
+            ]
+            selected.sort(key=lambda e: order.index(e.key))
+        else:
+            selected.sort(
+                key=lambda e: (e.author_short.casefold(), e.year, e.title.casefold(), e.key)
+            )
+        return [
+            (e.key, self._segments(e, style, i if numeric else None))
+            for i, e in enumerate(selected, 1)
+        ]
 
     @staticmethod
-    def _format_entry(e: BibliographyEntry) -> str:
+    def _linkify(text: str) -> tuple[BibliographySegment, ...]:
+        parts: list[BibliographySegment] = []
+        pos = 0
+        for match in re.finditer(r"https?://[^\s]+", text):
+            if match.start() > pos:
+                parts.append(BibliographySegment(text[pos : match.start()]))
+            target = match.group(0).rstrip(".,;)")
+            parts.append(BibliographySegment(target, target))
+            if suffix := match.group(0)[len(target) :]:
+                parts.append(BibliographySegment(suffix))
+            pos = match.end()
+        if pos < len(text):
+            parts.append(BibliographySegment(text[pos:]))
+        return tuple(parts) or (BibliographySegment(""),)
+
+    @staticmethod
+    def _segments(
+        e: BibliographyEntry, style: str, number: int | None
+    ) -> tuple[BibliographySegment, ...]:
         authors = "; ".join(e.authors) if e.authors else e.key
-        parts = [
-            f"{authors} ({e.year}).",
-            e.title + ("." if e.title and not e.title.endswith(".") else ""),
-        ]
-        if e.journal:
-            parts.append(e.journal + ".")
-        elif e.publisher:
-            parts.append(e.publisher + ".")
-        if e.doi:
-            parts.append("https://doi.org/" + e.doi)
-        elif e.url:
-            parts.append(e.url)
-        return " ".join(p for p in parts if p).strip()
+        if style in {"ieee", "numeric"}:
+            lead = f"[{number}] {authors}, “{e.title}.”"
+        elif style in {"chicago", "chicago-author-date"}:
+            lead = f"{authors}. {e.year}. “{e.title}.”"
+        else:
+            lead = f"{authors} ({e.year}). {e.title}{'' if e.title.endswith('.') else '.'}"
+        venue = e.journal or e.publisher
+        lead += f" {venue}." if venue else ""
+        target = canonical_doi(e.doi) or e.url.strip()
+        parts = [BibliographySegment(lead.strip())]
+        if target:
+            parts += [BibliographySegment(" "), BibliographySegment(target, target)]
+        return tuple(parts)

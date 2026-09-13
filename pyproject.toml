@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mddocx-native"
-version = "1.2.4"
+version = "1.3.0"
 description = "Deterministic Markdown to native, editable Microsoft Word DOCX compiler"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,6 +48,7 @@ Changelog = "https://github.com/TasinAhmed2508/mddocx/blob/main/CHANGELOG.md"
 math = ["latex2mathml>=3.81.0"]
 frontmatter = ["PyYAML>=6.0"]
 images = ["Pillow>=10.0", "CairoSVG>=2.7", "defusedxml>=0.7"]
+academic = ["citeproc-py>=0.10.3,<0.11"]
 dev = ["pytest>=8", "ruff==0.15.10", "mypy>=1.10", "build>=1.2", "twine>=5.0"]
 
 [project.scripts]
@@ -55,6 +56,9 @@ mddocx = "mddocx.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mddocx = ["math/bin/*.mjs", "math/README.md", "resources/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

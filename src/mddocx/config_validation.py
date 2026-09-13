@@ -101,6 +101,14 @@ def validate_render_config(config: RenderConfig) -> RenderConfig:
         "Remote resource schemes are limited to HTTP and HTTPS.",
     )
     require(
+        config.resources.image_failure in {"clickable_fallback", "literal", "error"},
+        "Unknown image failure policy.",
+    )
+    require(
+        config.citations.bibliography_include in {"cited", "all"},
+        "Unknown bibliography inclusion policy.",
+    )
+    require(
         all(
             isinstance(canonical, str)
             and bool(canonical.strip())

@@ -63,6 +63,8 @@ from .interactive.history import add_recent, load_recent
 from .interactive.opening import open_path
 from .metadata import sanitize_markdown_metadata
 from .math.preflight import inspect_math_file
+from .bibliography import BibliographyDatabase
+from .linkcheck import LinkChecker, collect_links, results_json, results_text
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -134,7 +136,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--bibliography", type=Path, help="BibTeX or CSL-JSON bibliography file")
     p.add_argument(
-        "--citation-style", choices=["author-year", "apa", "ieee", "numeric"], default="author-year"
+        "--citation-style",
+        choices=["author-year", "apa", "ieee", "numeric", "chicago-author-date"],
+        default="apa",
+    )
+    p.add_argument("--citation-style-file", type=Path, help="Use a local CSL style file")
+    p.add_argument(
+        "--bibliography-include",
+        choices=["cited", "all"],
+        default="cited",
+        help="Include only cited works (default) or all bibliography entries",
     )
     p.add_argument(
         "--auto-bibliography",
@@ -187,18 +198,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail conversion when an equation cannot be rendered as native Word math",
     )
+    p.add_argument(
+        "--strict-images",
+        action="store_true",
+        help="Fail conversion when an image cannot be embedded",
+    )
     remote_group = p.add_mutually_exclusive_group()
     remote_group.add_argument(
         "--allow-remote-resources",
         dest="allow_remote_resources",
         action="store_true",
-        help="Allow safe HTTPS image downloads (default)",
+        help="Allow bounded public HTTP(S) image downloads (default)",
     )
     remote_group.add_argument(
         "--block-remote-resources",
         dest="allow_remote_resources",
         action="store_false",
-        help="Block HTTPS image downloads with RESOURCE201",
+        help="Block remote image downloads with RESOURCE201",
     )
     p.set_defaults(allow_remote_resources=None)
     p.add_argument(
@@ -341,6 +357,7 @@ def _config_from_args(args: argparse.Namespace) -> RenderConfig:
                 else args.allow_remote_resources
             ),
             allowed_domains=tuple(args.allow_domain) or None,
+            image_failure="error" if args.strict_images else "clickable_fallback",
         ),
         metadata=MetadataConfig(ai_export=args.ai_metadata),
         performance=PerformanceConfig(
@@ -358,6 +375,8 @@ def _config_from_args(args: argparse.Namespace) -> RenderConfig:
         citations=CitationConfig(
             bibliography=args.bibliography,
             style=args.citation_style,
+            style_file=args.citation_style_file,
+            bibliography_include=args.bibliography_include,
             auto_bibliography=args.auto_bibliography,
         ),
         references=ReferenceConfig(
@@ -786,6 +805,33 @@ def _main_math_check(argv: list[str]) -> int:
     return 3 if args.strict and not report.ok else 0
 
 
+def _main_link_check(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="mddocx link-check",
+        description="Check ordinary Markdown and bibliography links without changing the document.",
+    )
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--bibliography", type=Path)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--strict", action="store_true", help="Fail for confirmed broken links")
+    parser.add_argument(
+        "--offline", action="store_true", help="Collect links without network access"
+    )
+    parser.add_argument("--timeout", type=float, default=8.0)
+    args = parser.parse_args(argv)
+    try:
+        markdown = args.input.read_text(encoding="utf-8-sig")
+        bibliography = BibliographyDatabase.load(args.bibliography)
+        results = LinkChecker(timeout=args.timeout, offline=args.offline).check_all(
+            collect_links(markdown, bibliography)
+        )
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(results_json(results) if args.json else results_text(results))
+    return 3 if args.strict and any(item.broken for item in results) else 0
+
+
 def _main_shell(argv: list[str]) -> int:
     p = argparse.ArgumentParser(
         prog="mddocx shell", description="Open the interactive mddocx console."
@@ -879,6 +925,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_metadata(raw[1:])
     if raw and raw[0] == "math-check":
         return _main_math_check(raw[1:])
+    if raw and raw[0] == "link-check":
+        return _main_link_check(raw[1:])
     args = build_parser().parse_args(raw)
     config = _config_from_args(args)
     try:

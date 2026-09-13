@@ -50,25 +50,25 @@ mddocx doctor
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.2.4-py3-none-any.whl
+python -m pip install ./mddocx_native-1.3.0-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.2.4-py3-none-any.whl
+python -m pip install .\mddocx_native-1.3.0-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.2.4 GitHub Release:
+You can also install the wheel directly from the v1.3.0 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.2.4/mddocx_native-1.2.4-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.3.0/mddocx_native-1.3.0-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.2.4"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.3.0"
 ```
 
 ### Install for local development
@@ -85,6 +85,9 @@ Optional features:
 python -m pip install "mddocx-native[math]"
 python -m pip install "mddocx-native[images]"
 python -m pip install "mddocx-native[math,images]"
+
+# Add arbitrary local CSL style support
+python -m pip install "mddocx-native[academic]"
 ```
 
 ## Quick start
@@ -196,8 +199,8 @@ Document settings can be defined at the top of a Markdown file:
 
 ## Privacy and security defaults
 
-- Safe public HTTPS resources are allowed by default. The interactive shell asks on first launch
-  whether they should instead be blocked with `RESOURCE201`, and remembers that preference.
+- Bounded public HTTP(S) image resources are allowed by default. Failed image syntax becomes a
+  clickable fallback; ordinary Markdown links are never downloaded.
 - Base64 image data URIs are decoded locally, never sent over the network, and remain subject to
   the configured per-resource size limit and image validation.
 - HTTPS image downloads can be explicitly enabled and restricted by domain.
@@ -223,7 +226,8 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
-See the [1.2.4 release notes](docs/RELEASE_NOTES_1.2.4.md) for the Base64-image,
+See the [1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md) for resilient resources, smart equations,
+academic references, and the existing [1.2.4 release notes](docs/RELEASE_NOTES_1.2.4.md) for Base64-image,
 AI-math, compiler, layout, security-policy, and migration summary.
 
 The compiler stages and system architecture are described in

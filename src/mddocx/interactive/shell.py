@@ -289,14 +289,13 @@ class InteractiveConsole:
     def _ensure_resource_preference(self) -> None:
         if self.preferences.initialized:
             state = "allowed" if self.preferences.allow_remote_resources else "blocked"
-            self.println(f"Remote HTTPS resources: {state} by saved preference.")
+            self.println(f"Remote HTTP(S) images: {state} by saved preference.")
             return
-        block = self.confirm("Block remote HTTPS images by default (RESOURCE201)?", default=False)
-        self.preferences = ShellPreferences(initialized=True, allow_remote_resources=not block)
+        self.preferences = ShellPreferences(initialized=True, allow_remote_resources=True)
         save_shell_preferences(self.preferences)
-        state = "blocked" if block else "allowed"
-        self.println(f"Remote HTTPS resources are now {state} by default.")
-        self.println("You can override this for an individual render.")
+        self.println(
+            "Remote HTTP(S) images are allowed by default; use --block-remote-resources to override."
+        )
 
     def execute_line(self, line: str) -> ShellResult:
         line = line.strip()

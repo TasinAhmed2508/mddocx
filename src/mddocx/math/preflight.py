@@ -18,10 +18,26 @@ from .converter import DefaultMathConverter
 class EquationCheck:
     mode: Literal["inline", "display"]
     source: str
-    status: Literal["native", "fallback"]
+    status: Literal["native", "repaired", "fallback", "error"]
     source_file: str | None = None
     line: int | None = None
     error: str | None = None
+    normalized_text: str | None = None
+    engine: str | None = None
+    repairs: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    structural_valid: bool = False
+    semantic_valid: bool = False
+    semantic_fingerprint: str | None = None
+    fallback_reason: str | None = None
+
+    @property
+    def source_text(self) -> str:
+        return self.source
+
+    @property
+    def display(self) -> bool:
+        return self.mode == "display"
 
 
 @dataclass(slots=True)
@@ -37,7 +53,7 @@ class MathPreflightReport:
 
     @property
     def native(self) -> int:
-        return sum(item.status == "native" for item in self.equations)
+        return sum(item.status in {"native", "repaired"} for item in self.equations)
 
     @property
     def fallbacks(self) -> int:
@@ -75,7 +91,7 @@ class MathPreflightReport:
             location = self.source_file or "<string>"
             lines.append(f"WARNING {location}:{issue.line}: {issue.message}")
         for item in self.equations:
-            if item.status == "native":
+            if item.status in {"native", "repaired"}:
                 continue
             location = item.source_file or "<string>"
             if item.line is not None:
@@ -105,12 +121,13 @@ def inspect_math(
         source = getattr(node, "source", None)
         error: str | None
         try:
-            converter.latex_to_omml(node.source_text, display)
+            conversion = converter.convert(node.source_text, display)
         except Exception as exc:
-            status: Literal["native", "fallback"] = "fallback"
+            status: Literal["native", "repaired", "fallback", "error"] = "fallback"
             error = str(exc)
+            conversion = None
         else:
-            status = "native"
+            status = "repaired" if conversion.repairs else "native"
             error = None
         report.equations.append(
             EquationCheck(
@@ -120,6 +137,14 @@ def inspect_math(
                 source_file=getattr(source, "file", source_file),
                 line=getattr(source, "line", None),
                 error=error,
+                normalized_text=(conversion.normalized_text if conversion else node.source_text),
+                engine=(conversion.engine if conversion else None),
+                repairs=(conversion.repairs if conversion else ()),
+                warnings=(conversion.warnings if conversion else ()),
+                structural_valid=bool(conversion and conversion.structural_valid),
+                semantic_valid=bool(conversion and conversion.semantic_valid),
+                semantic_fingerprint=(conversion.semantic_fingerprint if conversion else None),
+                fallback_reason=error,
             )
         )
     return report

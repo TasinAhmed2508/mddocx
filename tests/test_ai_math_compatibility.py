@@ -172,7 +172,7 @@ def test_math_preflight_reports_engine_counts_and_fallbacks():
     assert report.native == 22
     assert report.fallbacks == 0
     assert report.ok
-    assert report.engine in {"mddocx-basic", "latex2mathml"}
+    assert report.engine in {"mathjax-sidecar", "mddocx-basic", "latex2mathml"}
 
     failed = inspect_math("$$\\inventedmacro{x}$$")
     assert failed.total == 1

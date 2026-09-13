@@ -28,6 +28,31 @@ def set_cell_margins(cell, top: int = 90, start: int = 90, bottom: int = 90, end
         node.set(qn("w:type"), "dxa")
 
 
+def set_table_fixed_layout(table) -> None:
+    """Make explicit grid/cell widths authoritative in Word and LibreOffice."""
+    tbl_pr = table._tbl.tblPr
+    layout = tbl_pr.find(qn("w:tblLayout"))
+    if layout is None:
+        layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(layout)
+    layout.set(qn("w:type"), "fixed")
+
+
+def set_table_grid_widths(table, widths_twips: list[int]) -> None:
+    grid = table._tbl.tblGrid
+    for grid_col, width in zip(grid.findall(qn("w:gridCol")), widths_twips):
+        grid_col.set(qn("w:w"), str(width))
+    for row in table.rows:
+        for cell, width in zip(row.cells, widths_twips):
+            tc_pr = cell._tc.get_or_add_tcPr()
+            tc_w = tc_pr.find(qn("w:tcW"))
+            if tc_w is None:
+                tc_w = OxmlElement("w:tcW")
+                tc_pr.append(tc_w)
+            tc_w.set(qn("w:w"), str(width))
+            tc_w.set(qn("w:type"), "dxa")
+
+
 def set_repeat_table_header(row) -> None:
     tr_pr = row._tr.get_or_add_trPr()
     existing = tr_pr.find(qn("w:tblHeader"))

@@ -85,36 +85,13 @@ def render_docx_pages(docx_path: str | Path, output_dir: str | Path, dpi: int = 
     output_dir.mkdir(parents=True, exist_ok=True)
     office = shutil.which("libreoffice") or shutil.which("soffice")
     pdftoppm = shutil.which("pdftoppm")
-    if not office or not pdftoppm:
-        raise VisualQAUnavailable("Visual QA requires LibreOffice/soffice and pdftoppm.")
+    if not pdftoppm:
+        raise VisualQAUnavailable("Visual QA requires pdftoppm.")
 
     with tempfile.TemporaryDirectory(prefix="mddocx-visual-") as tmp:
         tmp_path = Path(tmp)
-        profile = tmp_path / "lo-profile"
-        home = tmp_path / "home"
-        profile.mkdir()
-        home.mkdir()
-        env = os.environ.copy()
-        env["HOME"] = str(home)
-        cmd = [
-            office,
-            "--headless",
-            f"-env:UserInstallation={profile.as_uri()}",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(tmp_path),
-            str(docx_path),
-        ]
-        completed = subprocess.run(
-            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120
-        )
         pdf = tmp_path / (docx_path.stem + ".pdf")
-        if completed.returncode != 0 or not pdf.is_file():
-            detail = (
-                completed.stderr or completed.stdout or "LibreOffice conversion failed"
-            ).strip()
-            raise VisualQAUnavailable(detail)
+        _convert_to_pdf(docx_path, pdf, tmp_path, office)
         prefix = output_dir / "page"
         completed = subprocess.run(
             [pdftoppm, "-png", "-r", str(dpi), str(pdf), str(prefix)],
@@ -126,6 +103,46 @@ def render_docx_pages(docx_path: str | Path, output_dir: str | Path, dpi: int = 
         if completed.returncode != 0:
             raise VisualQAUnavailable((completed.stderr or "pdftoppm failed").strip())
     return _sorted_pages(output_dir)
+
+
+def _convert_to_pdf(docx: Path, pdf: Path, temp_dir: Path, office: str | None) -> None:
+    env = os.environ.copy()
+    if office:
+        profile, local_home = temp_dir / "lo-profile", temp_dir / "home"
+        profile.mkdir()
+        local_home.mkdir()
+        env["HOME"] = str(local_home)
+        command = [
+            office,
+            "--headless",
+            f"-env:UserInstallation={profile.as_uri()}",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(temp_dir),
+            str(docx),
+        ]
+    elif os.name == "nt":
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if not powershell:
+            raise VisualQAUnavailable("Visual QA requires LibreOffice or Microsoft Word.")
+        env["MDDOCX_VISUAL_INPUT"] = str(docx)
+        env["MDDOCX_VISUAL_PDF"] = str(pdf)
+        script = (
+            "$word=New-Object -ComObject Word.Application; $word.Visible=$false; "
+            "try {$doc=$word.Documents.Open($env:MDDOCX_VISUAL_INPUT,$false,$true); "
+            "$doc.ExportAsFixedFormat($env:MDDOCX_VISUAL_PDF,17); $doc.Close(0)} "
+            "finally {$word.Quit()}"
+        )
+        command = [powershell, "-NoProfile", "-NonInteractive", "-Command", script]
+    else:
+        raise VisualQAUnavailable("Visual QA requires LibreOffice/soffice or Microsoft Word.")
+    completed = subprocess.run(
+        command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120
+    )
+    if completed.returncode != 0 or not pdf.is_file():
+        detail = (completed.stderr or completed.stdout or "Office PDF conversion failed").strip()
+        raise VisualQAUnavailable(detail)
 
 
 def compare_visual_pages(

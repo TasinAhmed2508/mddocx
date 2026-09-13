@@ -3,18 +3,18 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
-import ipaddress
-import mimetypes
 import socket
-import re
 import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-
 from mddocx.config import ImageConfig, ResourcePolicy
 from mddocx.diagnostics import Diagnostic, MddocxError
+from .media import MediaInfo
+from .models import ResourceFallback, ResourceRequest, ResourceResolution, ResolvedImage
+from .network import validate_remote_url
+from .preparation import convert_svg, prepare_image
 
 
 _IMAGE_MIMES = {
@@ -63,12 +63,61 @@ class ResourceResolver:
         self._temp.cleanup()
 
     def resolve(self, source: str) -> Path:
+        """Compatibility API: resolve an image or raise its diagnostic."""
+        result = self.resolve_image(ResourceRequest(source=source))
+        if isinstance(result, ResourceFallback):
+            raise MddocxError(result.diagnostic)
+        return result.path
+
+    def resolve_image(self, request: ResourceRequest) -> ResourceResolution:
+        """Resolve an image without making ordinary conversion failures fatal."""
+        try:
+            path, source_url, from_cache = self._acquire(request.source)
+            path, info = self._prepare_image_info(path, source_hint=request.source)
+            return ResolvedImage(
+                path=path,
+                source_url=source_url,
+                media_type=info.media_type,
+                format=info.format,  # type: ignore[arg-type]
+                width_px=info.width,
+                height_px=info.height,
+                frame_count=info.frames,
+                from_cache=from_cache,
+            )
+        except MddocxError as exc:
+            diagnostic = exc.diagnostic
+            diagnostic.source_file = request.source_file
+            diagnostic.line = request.line
+            mode = getattr(self.policy, "image_failure", "clickable_fallback")
+            if mode == "error":
+                raise
+            diagnostic.severity = "warning"
+            return ResourceFallback(
+                request.source, self._fallback_reason(diagnostic.code), diagnostic
+            )
+
+    def _acquire(self, source: str) -> tuple[Path, str | None, bool]:
         parsed = urlparse(source)
         if parsed.scheme.lower() == "data":
-            return self._resolve_data_uri(source)
+            return self._resolve_data_uri(source), None, False
         if parsed.scheme or parsed.netloc:
             return self._resolve_remote(source)
-        return self._resolve_local(source)
+        return self._resolve_local(source), None, False
+
+    @staticmethod
+    def _fallback_reason(code: str) -> str:
+        return {
+            "RESOURCE201": "blocked",
+            "RESOURCE204": "not_found",
+            "RESOURCE205": "too_large",
+            "RESOURCE206": "not_image",
+            "RESOURCE207": "http_error",
+            "RESOURCE212": "timeout",
+            "IMAGE204": "invalid_image",
+            "IMAGE201": "unsupported_format",
+            "IMAGE202": "unsupported_format",
+            "IMAGE203": "unsupported_format",
+        }.get(code, "invalid_image")
 
     def _resolve_data_uri(self, source: str) -> Path:
         """Decode a bounded inline image without treating it as a remote resource."""
@@ -130,7 +179,7 @@ class ResourceResolver:
             )
         return self._prepare_image(candidate, source_hint=source)
 
-    def _resolve_remote(self, source: str) -> Path:
+    def _resolve_remote(self, source: str) -> tuple[Path, str, bool]:
         if not self.policy.allow_remote_resources:
             raise MddocxError(
                 Diagnostic(
@@ -148,7 +197,8 @@ class ResourceResolver:
         if self.cache_dir and self.policy.cache_remote_resources:
             matches = list(self.cache_dir.glob(f"{cache_key}.*"))
             if matches:
-                return self._prepare_image(matches[0], source_hint=source)
+                # Cache contains only content that passed full validation previously.
+                return matches[0], source, True
 
         handler = _SafeRedirectHandler(self)
         opener = build_opener(handler)
@@ -157,24 +207,7 @@ class ResourceResolver:
             with opener.open(req, timeout=self.policy.timeout_seconds) as response:
                 final_url = response.geturl()
                 self._validate_remote_url(final_url)
-                content_type = response.headers.get_content_type().lower()
-                if self.policy.validate_mime and content_type not in _IMAGE_MIMES:
-                    raise MddocxError(
-                        Diagnostic(
-                            "error", "RESOURCE206", f"Unsupported remote MIME type: {content_type}"
-                        )
-                    )
-                suffix = (
-                    _IMAGE_MIMES.get(content_type)
-                    or Path(urlparse(final_url).path).suffix.lower()
-                    or ".img"
-                )
-                target_dir = (
-                    self.cache_dir
-                    if self.cache_dir and self.policy.cache_remote_resources
-                    else self.temp_dir
-                )
-                target = target_dir / f"{cache_key}{suffix}"
+                target = self.temp_dir / f"{cache_key}.download"
                 total = 0
                 with target.open("wb") as f:
                     while True:
@@ -195,172 +228,43 @@ class ResourceResolver:
                         f.write(chunk)
         except MddocxError:
             raise
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        except (TimeoutError, socket.timeout) as exc:
+            raise MddocxError(
+                Diagnostic("error", "RESOURCE212", f"Remote image timed out: {source}")
+            ) from exc
+        except (HTTPError, URLError, OSError) as exc:
             raise MddocxError(
                 Diagnostic("error", "RESOURCE207", f"Unable to download remote resource: {source}")
             ) from exc
-        return self._prepare_image(target, source_hint=source)
+        try:
+            prepared, info = self._prepare_image_info(target, source_hint=source)
+        except MddocxError:
+            target.unlink(missing_ok=True)
+            raise
+        if self.cache_dir and self.policy.cache_remote_resources:
+            # Cache keys include the canonical final URL and response validators.
+            validators = "|".join(
+                (
+                    final_url,
+                    response.headers.get("ETag", ""),
+                    response.headers.get("Last-Modified", ""),
+                )
+            )
+            validated_key = hashlib.sha256(validators.encode("utf-8")).hexdigest()[:16]
+            cached = self.cache_dir / f"{cache_key}.{validated_key}{info.suffix}"
+            if not cached.exists():
+                cached.write_bytes(prepared.read_bytes())
+            prepared = cached
+        return prepared, final_url, False
 
     def _validate_remote_url(self, url: str) -> None:
-        parsed = urlparse(url)
-        scheme = parsed.scheme.lower()
-        if scheme not in {s.lower() for s in self.policy.allowed_schemes}:
-            raise MddocxError(
-                Diagnostic(
-                    "error",
-                    "RESOURCE208",
-                    f"Remote URL scheme is not allowed: {scheme or '(none)'}",
-                )
-            )
-        host = (parsed.hostname or "").rstrip(".").lower()
-        if not host:
-            raise MddocxError(Diagnostic("error", "RESOURCE208", "Remote URL has no host."))
-        if self.policy.allowed_domains:
-            allowed = tuple(d.lower().lstrip(".") for d in self.policy.allowed_domains)
-            if not any(host == d or host.endswith("." + d) for d in allowed):
-                raise MddocxError(
-                    Diagnostic(
-                        "error",
-                        "RESOURCE209",
-                        f"Remote host is not in the allowed domain list: {host}",
-                    )
-                )
-        if not self.policy.allow_private_hosts:
-            try:
-                infos = socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
-            except socket.gaierror as exc:
-                raise MddocxError(
-                    Diagnostic("error", "RESOURCE207", f"Unable to resolve remote host: {host}")
-                ) from exc
-            for info in infos:
-                address = ipaddress.ip_address(info[4][0])
-                if not address.is_global:
-                    raise MddocxError(
-                        Diagnostic(
-                            "error",
-                            "RESOURCE211",
-                            "Private, loopback, link-local, or non-global remote hosts are blocked.",
-                        )
-                    )
+        validate_remote_url(url, self.policy)
 
     def _prepare_image(self, path: Path, source_hint: str) -> Path:
-        suffix = path.suffix.lower()
-        if suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}:
-            self._verify_raster(path)
-            return path
-        if suffix == ".webp":
-            if not self.images.webp_conversion:
-                raise MddocxError(Diagnostic("error", "IMAGE202", "WebP conversion is disabled."))
-            return self._convert_webp(path)
-        if suffix == ".svg":
-            if not self.images.svg_conversion:
-                raise MddocxError(Diagnostic("error", "IMAGE203", "SVG conversion is disabled."))
-            return self._convert_svg(path)
-        guessed = mimetypes.guess_type(source_hint)[0]
-        raise MddocxError(
-            Diagnostic(
-                "error", "IMAGE201", f"Unsupported image type: {guessed or suffix or 'unknown'}"
-            )
-        )
+        return self._prepare_image_info(path, source_hint)[0]
 
-    @staticmethod
-    def _verify_raster(path: Path) -> None:
-        try:
-            from PIL import Image
-
-            with Image.open(path) as image:
-                image.verify()
-        except ImportError:
-            return
-        except Exception as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE204", f"Invalid raster image: {path.name}")
-            ) from exc
-
-    def _convert_webp(self, path: Path) -> Path:
-        try:
-            from PIL import Image
-        except ImportError as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE205", "WebP conversion requires Pillow.")
-            ) from exc
-        target = self.temp_dir / f"{hashlib.sha256(path.read_bytes()).hexdigest()}.png"
-        if target.exists():
-            return target
-        try:
-            with Image.open(path) as image:
-                image.load()
-                image.save(target, format="PNG")
-        except Exception as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE204", f"Unable to decode WebP image: {path.name}")
-            ) from exc
-        return target
+    def _prepare_image_info(self, path: Path, source_hint: str) -> tuple[Path, MediaInfo]:
+        return prepare_image(path, temp_dir=self.temp_dir, policy=self.policy, images=self.images)
 
     def _convert_svg(self, path: Path) -> Path:
-        data = path.read_bytes()
-        try:
-            from lxml import etree
-
-            parser = etree.XMLParser(
-                resolve_entities=False,
-                no_network=True,
-                load_dtd=False,
-                recover=False,
-                huge_tree=False,
-            )
-            root = etree.fromstring(data, parser=parser)
-        except Exception as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE206", f"Unsafe or invalid SVG: {path.name}")
-            ) from exc
-        for element in root.iter():
-            for key, value in element.attrib.items():
-                local = key.rsplit("}", 1)[-1].lower()
-                if local in {"href", "src"} and value and not value.startswith(("data:", "#")):
-                    raise MddocxError(
-                        Diagnostic(
-                            "error", "IMAGE207", "External references inside SVG are blocked."
-                        )
-                    )
-                for match in re.finditer(r"url\(\s*['\"]?([^)'\"]+)", value or "", flags=re.I):
-                    target = match.group(1).strip()
-                    if not target.startswith(("#", "data:")):
-                        raise MddocxError(
-                            Diagnostic(
-                                "error",
-                                "IMAGE207",
-                                "External CSS references inside SVG are blocked.",
-                            )
-                        )
-            text = element.text or ""
-            if "@import" in text.lower():
-                raise MddocxError(
-                    Diagnostic("error", "IMAGE207", "CSS imports inside SVG are blocked.")
-                )
-            for match in re.finditer(r"url\(\s*['\"]?([^)'\"]+)", text, flags=re.I):
-                target = match.group(1).strip()
-                if not target.startswith(("#", "data:")):
-                    raise MddocxError(
-                        Diagnostic(
-                            "error", "IMAGE207", "External CSS references inside SVG are blocked."
-                        )
-                    )
-        try:
-            import cairosvg
-        except ImportError as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE208", "SVG conversion requires the mddocx[images] extra.")
-            ) from exc
-        target = self.temp_dir / f"{hashlib.sha256(data).hexdigest()}.png"
-        if target.exists():
-            return target
-        try:
-            cairosvg.svg2png(
-                bytestring=data, write_to=str(target), dpi=self.images.svg_dpi, unsafe=False
-            )
-        except Exception as exc:
-            raise MddocxError(
-                Diagnostic("error", "IMAGE209", f"Unable to convert SVG: {path.name}")
-            ) from exc
-        return target
+        return convert_svg(path, self.temp_dir, self.images)

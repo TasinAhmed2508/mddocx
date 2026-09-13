@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 from lxml import etree
 
 from docx import Document as WordDocument
@@ -85,11 +86,13 @@ from mddocx.ooxml.text import clean_xml_text, configure_run_fonts, is_rtl_text, 
 from mddocx.ooxml.utils import (
     set_cell_margins,
     set_cell_shading,
+    set_table_fixed_layout,
+    set_table_grid_widths,
     set_paragraph_bottom_border,
     set_repeat_table_header,
     set_row_cant_split,
 )
-from mddocx.resources import ResourceResolver
+from mddocx.resources import ResourceFallback, ResourceRequest, ResourceResolver
 from mddocx.styles import ensure_styles, get_theme, resolve_style_name, validate_style_mapping
 from mddocx.validation import validate_docx_package
 from .context import RenderContext
@@ -168,6 +171,15 @@ class DocxRenderer:
         if bib_path is not None and not Path(bib_path).is_absolute():
             bib_path = Path(self.config.base_dir or ".") / bib_path
         self.bibliography = BibliographyDatabase.load(bib_path)
+        style_file = getattr(self.config.citations, "style_file", None)
+        if style_file is not None and not Path(style_file).is_absolute():
+            style_file = Path(self.config.base_dir or ".") / style_file
+        self._citation_style = self.bibliography.resolve_style(
+            self.config.citations.style, style_file
+        )
+        for diagnostic in self.bibliography.diagnostics:
+            code, _, message = diagnostic.partition(" ")
+            self.reporter.warn(code, message or diagnostic)
         self._cited_keys = []
         self._bibliography_rendered = False
         self._comment_entries = {}
@@ -614,6 +626,7 @@ class DocxRenderer:
                 title=node.title,
                 width_percent=node.width_percent,
                 decorative=node.decorative,
+                source=node.source,
             )
             if caption and self.config.references.figure_caption_position == "below":
                 self._render_caption("Figure", caption, node.identifier)
@@ -1099,16 +1112,26 @@ class DocxRenderer:
         if not has_explicit_heading:
             p = self.document.add_paragraph(style=self._style("MD Heading 1"))
             p.add_run(title)
-        entries = self.bibliography.formatted_entries(self.config.citations.style)
         cited = set(self._cited_keys)
-        for key, text in entries:
-            if cited and key not in cited:
-                continue
+        include_all = getattr(self.config.citations, "bibliography_include", "cited") == "all"
+        keys = None if include_all or not cited else self._cited_keys
+        entries = self.bibliography.formatted_segments(self._citation_style, keys)
+        for key, segments in entries:
             bp = self.document.add_paragraph(style=self._style("MD Normal"))
             bp.paragraph_format.left_indent = Mm(6)
             bp.paragraph_format.first_line_indent = Mm(-6)
-            run = bp.add_run(clean_xml_text(text))
-            self._configure_run(run, text)
+            for segment in segments:
+                text = clean_xml_text(segment.text)
+                if segment.href and getattr(self.config.citations, "hyperlink_doi_and_url", True):
+                    add_hyperlink(bp, text, segment.href, font_name=self._font_for_text(text))
+                else:
+                    run = bp.add_run(text)
+                    self._configure_run(run, text)
+            name = f"cite_{ReferenceRegistry.safe_bookmark(key)}"[:40]
+            if name not in self._bookmark_names:
+                self._bookmark_names.add(name)
+                add_bookmark(bp, name, self._bookmark_id)
+                self._bookmark_id += 1
 
     def _render_list(self, node, level: int = 0):
         kind = "bullet" if isinstance(node, BulletList) else "decimal"
@@ -1214,6 +1237,8 @@ class DocxRenderer:
         table.style = "Table Grid"
         table.autofit = False
         widths = self._table_widths(node, cols)
+        set_table_fixed_layout(table)
+        set_table_grid_widths(table, [int(width.mm * 56.6929133858) for width in widths])
         for c_idx, width in enumerate(widths):
             for row in table.rows:
                 row.cells[c_idx].width = width
@@ -1316,9 +1341,20 @@ class DocxRenderer:
                             getattr(node.source, "file", None),
                             getattr(node.source, "line", None),
                         )
-                text = self.bibliography.cite(node.keys, self.config.citations.style, node.suffix)
-                r = paragraph.add_run(clean_xml_text(text))
-                self._configure_run(r, text)
+                text = self.bibliography.cite(node.keys, self._citation_style, node.suffix)
+                if (
+                    getattr(self.config.citations, "hyperlink_citations", True)
+                    and len(node.keys) == 1
+                    and node.keys[0] in self.bibliography.entries
+                ):
+                    add_internal_hyperlink(
+                        paragraph,
+                        clean_xml_text(text),
+                        f"cite_{ReferenceRegistry.safe_bookmark(node.keys[0])}"[:40],
+                    )
+                else:
+                    r = paragraph.add_run(clean_xml_text(text))
+                    self._configure_run(r, text)
             elif isinstance(node, InlineMath):
                 self._append_math(paragraph, node.source_text, False, node.source)
             elif isinstance(node, FootnoteReference):
@@ -1353,7 +1389,7 @@ class DocxRenderer:
             elif isinstance(node, HardBreak):
                 paragraph.add_run().add_break()
             elif isinstance(node, Image):
-                self._add_image(paragraph, node.src, node.alt)
+                self._add_image(paragraph, node.src, node.alt, source=node.source)
 
     def _plain_inline_text(self, nodes) -> str:
         out = []
@@ -1462,10 +1498,37 @@ class DocxRenderer:
         title: str | None = None,
         width_percent: float | None = None,
         decorative: bool = False,
+        source=None,
     ):
+        result = self.resolver.resolve_image(
+            ResourceRequest(
+                source=src,
+                source_file=getattr(source, "file", None),
+                line=getattr(source, "line", None),
+                alt_text=alt,
+                title=title,
+            )
+        )
+        if isinstance(result, ResourceFallback):
+            self.reporter.emit(result.diagnostic)
+            label = alt or title or src
+            if getattr(self.config.resources, "image_failure", "clickable_fallback") == "literal":
+                paragraph.add_run(clean_xml_text(label))
+            elif urlparse(src).scheme.lower() in {"http", "https"}:
+                add_hyperlink(paragraph, clean_xml_text(label), src)
+            else:
+                paragraph.add_run(clean_xml_text(label))
+            return
+        if result.format == "gif" and result.frame_count > 1:
+            self.reporter.info(
+                "IMAGE211",
+                f"Animated GIF preserved ({result.frame_count} frames); playback depends on Word client.",
+                getattr(source, "file", None),
+                getattr(source, "line", None),
+            )
         self._add_image_path(
             paragraph,
-            self.resolver.resolve(src),
+            result.path,
             alt,
             title=title,
             width_percent=width_percent,

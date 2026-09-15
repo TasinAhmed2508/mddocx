@@ -189,6 +189,7 @@ class TableConfig:
 
 @dataclass(slots=True)
 class FontConfig:
+    bengali: str | None = "SutonnyMJ"
     body: str | None = None
     headings: str | None = None
     code: str | None = None

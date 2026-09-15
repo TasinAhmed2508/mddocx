@@ -227,7 +227,9 @@ class DocxRenderer:
                 )
             if self._chart_entries:
                 blob = inject_charts(blob, self._chart_entries)
-            return blob
+            from mddocx.ooxml.bangla import apply_bangla_font
+
+            return apply_bangla_font(blob, self.config.fonts.bengali)
         finally:
             self.resolver.close()
 
@@ -1416,6 +1418,10 @@ class DocxRenderer:
         self._math_renderer.append(paragraph, latex, display=display, source=source)
 
     def _render_code_block(self, node: CodeBlock) -> None:
+        from .text_layout import render_text_layout
+
+        if render_text_layout(self, node):
+            return
         line_numbers = (
             self.config.code.line_numbers if node.line_numbers is None else node.line_numbers
         )

@@ -676,3 +676,35 @@ def split_comment_markup(text: str) -> list[tuple[str, str]]:
     if pos < len(text):
         result.append(("text", text[pos:]))
     return result or [("text", text)]
+
+
+def normalize_export_citations(markdown: str, *, strip: bool = True) -> str:
+    """Repair citation-suffixed closing fences without changing code examples.
+
+    Gemini document exports append numeric citation markers to closing fences,
+    making CommonMark consume the rest of the document as code. Only matching
+    closers are repaired; citation-like text inside code remains literal.
+    """
+    citation = r"\[cite:\s*\d+(?:\s*,\s*\d+)*\]"
+    active = None
+    out = []
+    for line in markdown.splitlines(keepends=True):
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*?)(\r?\n)?$", line)
+        if active:
+            if match and match[1][0] == active[0] and len(match[1]) >= active[1]:
+                tail = match[2].strip()
+                if not tail or re.fullmatch(r"(?:" + citation + r"\s*)+", tail):
+                    active = None
+                    line = match[1] + (match[3] or "")
+                    if tail and not strip:
+                        line += tail + (match[3] or "\n")
+        elif match:
+            active = (match[1][0], len(match[1]))
+        elif strip:
+            # Protect literal inline code while removing numeric export tokens.
+            line = "".join(
+                part if i % 2 else re.sub(citation, "", part)
+                for i, part in enumerate(re.split(r"(`+[^`]*`+)", line))
+            )
+        out.append(line)
+    return "".join(out)

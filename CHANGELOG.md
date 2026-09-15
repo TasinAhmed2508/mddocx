@@ -4,6 +4,13 @@
 
 No unreleased changes.
 
+## 1.3.1 — Bangla documents and merged layout tables
+
+- Render Bengali runs in SutonnyMJ using Bijoy glyph encoding at the DOCX output boundary while preserving Unicode Markdown and Latin text.
+- Add the `bengali-document` theme, editable identity forms and photo boxes, and validated `layout-table` fences with horizontal and vertical cell merges.
+- Repair citation-suffixed closing fences from exported Markdown without changing code literals.
+- Add regression coverage for table geometry, font encoding, mixed-language runs and invalid merge definitions.
+
 ## 1.3.0 — Resilient resources, smart equations, and academic references
 
 This release fixes the main failure modes seen when converting AI-generated, technical, and

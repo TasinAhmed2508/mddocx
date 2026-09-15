@@ -83,9 +83,9 @@ def test_native_image_has_alternative_text_and_accessibility_passes(tmp_path: Pa
 
 
 def test_unicode_xml_safety_and_rtl_properties_are_preserved():
-    blob = MarkdownWord(RenderConfig(rtl="auto")).render_string(
-        "# Unicode\n\nمرحبا بالعالم — বাংলা — emoji 🧪\x00"
-    )
+    cfg = RenderConfig(rtl="auto")
+    cfg.fonts.bengali = None  # Exercise Unicode mode rather than the default legacy font.
+    blob = MarkdownWord(cfg).render_string("# Unicode\n\nمرحبا بالعالم — বাংলা — emoji 🧪\x00")
     root = _document_xml(blob)
     text = root.xpath("string(.//w:body)", namespaces=NS)
 

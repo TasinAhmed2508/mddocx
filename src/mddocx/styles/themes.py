@@ -19,6 +19,18 @@ class ThemeSpec:
 
 
 THEMES: dict[str, ThemeSpec] = {
+    "bengali-document": ThemeSpec(
+        body_font="Nirmala UI",
+        heading_font="Nirmala UI",
+        code_font="Consolas",
+        body_size_pt=10,
+        line_spacing=1.0,
+        heading_sizes_pt=(16, 14, 12, 11, 10, 10),
+        paragraph_after_pt=3,
+        quote_indent_pt=16,
+        code_size_pt=9,
+        table_header_fill="FFFFFF",
+    ),
     "default": ThemeSpec(
         body_font="Aptos",
         heading_font="Aptos Display",

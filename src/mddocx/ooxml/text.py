@@ -74,6 +74,8 @@ def configure_run_fonts(
     rfonts.set(qn("w:hAnsi"), body)
     if east_asia and has_cjk(text):
         rfonts.set(qn("w:eastAsia"), east_asia)
+    if complex_script and any(0x0980 <= ord(ch) <= 0x09FF for ch in text):
+        rfonts.set(qn("w:cs"), complex_script)
     if complex_script and rtl:
         rfonts.set(qn("w:cs"), complex_script)
         rtl_el = rpr.find(qn("w:rtl"))

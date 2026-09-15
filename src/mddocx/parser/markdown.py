@@ -47,6 +47,7 @@ from mddocx.ast.inline import (
     Comment,
 )
 from .compatibility import (
+    normalize_export_citations,
     extract_footnote_definitions,
     normalize_math_syntax,
     normalize_bibliography_directives,
@@ -137,6 +138,7 @@ class MarkdownParser:
                 policy=self.metadata_config.ai_export
             )
         metadata, body, line_offset = split_front_matter(markdown)
+        body = normalize_export_citations(body, strip=self.metadata_config.ai_export != "keep")
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
         normalized = normalize_math_syntax(

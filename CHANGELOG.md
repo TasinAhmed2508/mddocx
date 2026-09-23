@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-No unreleased changes.
+- Prevent unbounded memory growth when mixed-script OCR text leaves an isolated Bengali vowel mark before Bijoy font conversion.
 
 ## 1.3.1 — Bangla documents and merged layout tables
 

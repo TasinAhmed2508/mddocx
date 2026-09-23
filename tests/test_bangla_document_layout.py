@@ -132,6 +132,25 @@ def test_sutonny_lafala_uses_supported_glyph_not_soft_hyphen():
     assert "\u00ad" not in doc.paragraphs[0].text
 
 
+def test_isolated_bengali_prekar_after_other_script_avoids_bijoy_loop(monkeypatch):
+    from bijoy2unicode.converter import Unicode
+
+    original = Unicode.convertUnicodeToBijoy
+
+    def guarded(self, value):
+        assert value[0] not in "িেৈ"
+        return original(self, value)
+
+    monkeypatch.setattr(Unicode, "convertUnicodeToBijoy", guarded)
+    source = "বাংলা " + " ".join(f"ல{mark}র" for mark in "িেৈ")
+    doc = Document(BytesIO(MarkdownWord().render_string(source)))
+    runs = doc.paragraphs[0].runs
+    assert runs[0].text == "evsjv"
+    assert [(r.text, r.font.name) for r in runs if r.font.name == "Nirmala UI"] == [
+        (mark + "র", "Nirmala UI") for mark in "িেৈ"
+    ]
+
+
 def test_bangla_font_can_preserve_unicode_when_explicitly_disabled():
     cfg = RenderConfig()
     cfg.fonts.bengali = None

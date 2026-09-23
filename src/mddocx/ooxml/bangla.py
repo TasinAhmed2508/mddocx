@@ -58,12 +58,19 @@ def apply_bangla_font(blob: bytes, font: str | None) -> bytes:
                             if fonts is None:
                                 fonts = etree.SubElement(pr, f"{{{W}}}rFonts")
                             bangla = part is not None and BENGALI.fullmatch(part) is not None
+                            # bijoy2unicode loops indefinitely on a leading pre-kar (OCR can
+                            # leave one after a character from another script).
+                            unsafe_legacy = legacy and bangla and part[0] in "িেৈ"
                             original_font = (
                                 fonts.get(f"{{{W}}}hAnsi") or fonts.get(f"{{{W}}}ascii") or "Aptos"
                             )
                             if original_font.lower().replace(" ", "") == "sutonnymj":
                                 original_font = "Aptos"
-                            selected = font if bangla else original_font
+                            selected = (
+                                ("Nirmala UI" if unsafe_legacy else font)
+                                if bangla
+                                else original_font
+                            )
                             for slot in ("ascii", "hAnsi", "cs", "eastAsia"):
                                 fonts.set(f"{{{W}}}{slot}", selected)
                             for slot in ("asciiTheme", "hAnsiTheme", "cstheme", "eastAsiaTheme"):
@@ -77,7 +84,7 @@ def apply_bangla_font(blob: bytes, font: str | None) -> bytes:
                                     converter.convertUnicodeToBijoy(part + "  ")[:-2].replace(
                                         "\u00ad", "\u00f8"
                                     )
-                                    if bangla and legacy
+                                    if bangla and legacy and not unsafe_legacy
                                     else part
                                 )
                                 content.set(

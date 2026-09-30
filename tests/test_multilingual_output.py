@@ -25,14 +25,9 @@ from mddocx import (
     inspect_docx_bytes,
 )
 from mddocx.cli import main
-from mddocx.ooxml.text import (
-    clean_xml_text,
-    configure_run_fonts,
-    has_cjk,
-    has_complex_script,
-    is_rtl_text,
-)
+from mddocx.ooxml.text import clean_xml_text, configure_xml_run
 from mddocx.parser import MarkdownParser
+from mddocx.scripts import has_cjk, has_complex_script, is_rtl_text
 
 ROOT = Path(__file__).parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "multilingual" / "polyglot.md"
@@ -216,7 +211,7 @@ def test_run_font_slots_are_script_specific():
 
     def add(text: str, rtl: bool = False):
         run = paragraph.add_run(text)
-        configure_run_fonts(run, text, "Aptos", "Microsoft YaHei", "Nirmala UI", rtl)
+        configure_xml_run(run._r, text, "Aptos", "Microsoft YaHei", "Nirmala UI", rtl)
         return run
 
     latin = add("English")
@@ -444,6 +439,34 @@ def test_bangla_boundary_encodes_headers_tables_and_notes():
         text = "".join(node.text or "" for node in _part_xml(blob, part).iter(_q("t")))
         assert "evsjv" in text
         assert not any("\u0980" <= character <= "\u09ff" for character in text)
+
+
+def test_styles_and_runs_share_one_script_font_rule():
+    from mddocx.styles import FontSlots, get_theme
+
+    config = RenderConfig(theme="academic")
+    fonts = FontSlots.resolve(config, get_theme("academic"))
+    document = WordDocument(BytesIO(MarkdownWord(config).render_string("# Heading\n\nBody\n")))
+
+    # The body font follows the theme, while script slots fall back to the
+    # configured fallback list, identically for every style.
+    assert fonts.body == "Times New Roman"
+    assert fonts.east_asia == "Aptos"
+    for style_name in ("MD Normal", "MD Title", "MD Abstract", "MD Callout Note"):
+        rfonts = document.styles[style_name].element.rPr.rFonts
+        assert rfonts.get(qn("w:eastAsia")) == fonts.east_asia
+        assert rfonts.get(qn("w:cs")) == fonts.complex_script
+
+    explicit = RenderConfig(theme="academic")
+    explicit.fonts.east_asia = "Microsoft YaHei"
+    explicit.fonts.complex_script = "Nirmala UI"
+    resolved = FontSlots.resolve(explicit, get_theme("academic"))
+
+    assert resolved.east_asia == "Microsoft YaHei"
+    assert resolved.complex_script == "Nirmala UI"
+    assert resolved.for_text(rtl=True) == "Nirmala UI"
+    assert resolved.for_text() == "Times New Roman"
+    assert resolved.for_text(code=True) == "Consolas"
 
 
 def test_clean_xml_text_keeps_astral_scripts_and_drops_invalid_controls():

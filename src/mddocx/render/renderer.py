@@ -76,20 +76,18 @@ from mddocx.ooxml.fields import (
 )
 from mddocx.ooxml.numbering import NumberingEngine
 from mddocx.ooxml.tasks import append_checkbox, set_task_indent
-from mddocx.ooxml.footnotes import append_footnote_reference, inject_footnotes
-from mddocx.ooxml.endnotes import append_endnote_reference, inject_endnotes
+from mddocx.ooxml.notes import (
+    append_endnote_reference,
+    append_footnote_reference,
+    inject_endnotes,
+    inject_footnotes,
+)
 from mddocx.ooxml.comments import append_comment_reference, inject_comments
 from mddocx.ooxml.charts import ChartEntry, inject_charts
 from mddocx.references import ReferenceRegistry
 from mddocx.bibliography import BibliographyDatabase
-from mddocx.ooxml.text import (
-    clean_xml_text,
-    configure_run_fonts,
-    configure_xml_run,
-    is_rtl_text,
-    set_paragraph_rtl,
-    set_xml_paragraph_rtl,
-)
+from mddocx.ooxml.text import clean_xml_text, configure_xml_run, set_xml_paragraph_rtl
+from mddocx.scripts import is_rtl_text
 from mddocx.ooxml.utils import (
     set_cell_margins,
     set_cell_shading,
@@ -100,7 +98,13 @@ from mddocx.ooxml.utils import (
     set_row_cant_split,
 )
 from mddocx.resources import ResourceFallback, ResourceRequest, ResourceResolver
-from mddocx.styles import ensure_styles, get_theme, resolve_style_name, validate_style_mapping
+from mddocx.styles import (
+    FontSlots,
+    ensure_styles,
+    get_theme,
+    resolve_style_name,
+    validate_style_mapping,
+)
 from mddocx.validation import validate_docx_package
 from .context import RenderContext
 from .math_renderer import NativeMathRenderer
@@ -142,6 +146,7 @@ class DocxRenderer:
         self.config = config or RenderConfig()
         self._layout_plan = layout_plan or LayoutPlanner(self.config).plan(document)
         self._theme = get_theme(self.config.theme)
+        self.fonts = FontSlots.resolve(self.config, self._theme)
         self.document = self._open_document()
         validate_style_mapping(self.document, self.config, self.reporter)
         ensure_styles(self.document, self.config)
@@ -222,7 +227,7 @@ class DocxRenderer:
             blob = stream.getvalue()
             if self._footnote_entries:
                 configure_run = self._configure_xml_run
-                configure_paragraph = self._apply_xml_direction
+                configure_paragraph = self._apply_text_direction
                 if self.config.notes.style == "endnote":
                     blob = inject_endnotes(
                         blob, self._footnote_entries, self.math, configure_run, configure_paragraph
@@ -302,30 +307,30 @@ class DocxRenderer:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Mm(42)
         p.add_run(clean_xml_text(self.config.title or "Untitled Document"))
-        self._finish_text_paragraph(p, self.config.title or "Untitled Document")
+        self._apply_text_policy(p, self.config.title or "Untitled Document")
         if cfg.subtitle:
             sp = self.document.add_paragraph(style=self._style("MD Subtitle"))
             sp.alignment = WD_ALIGN_PARAGRAPH.CENTER
             sp.add_run(clean_xml_text(cfg.subtitle))
-            self._finish_text_paragraph(sp, cfg.subtitle)
+            self._apply_text_policy(sp, cfg.subtitle)
         if self.config.author:
             ap = self.document.add_paragraph(style=self._style("MD Normal"))
             ap.alignment = WD_ALIGN_PARAGRAPH.CENTER
             ap.add_run(clean_xml_text(self.config.author))
-            self._finish_text_paragraph(ap, self.config.author)
+            self._apply_text_policy(ap, self.config.author)
         if cfg.organization:
             op = self.document.add_paragraph(style=self._style("MD Normal"))
             op.alignment = WD_ALIGN_PARAGRAPH.CENTER
             op.add_run(clean_xml_text(cfg.organization))
-            self._finish_text_paragraph(op, cfg.organization)
+            self._apply_text_policy(op, cfg.organization)
         dp = self.document.add_paragraph(style=self._style("MD Normal"))
         dp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if cfg.date:
             render_field_template(dp, cfg.date, {"AUTHOR": self.config.author or ""})
-            self._finish_text_paragraph(dp, cfg.date)
+            self._apply_text_policy(dp, cfg.date)
         else:
             render_field_template(dp, "{DATE}")
-            self._finish_text_paragraph(dp)
+            self._apply_text_policy(dp)
         if cfg.page_break_after:
             self.document.add_page_break()
 
@@ -334,17 +339,17 @@ class DocxRenderer:
         if cfg.text:
             hp = self.document.add_paragraph(style=self._style("MD Heading 1"))
             hp.add_run(clean_xml_text(cfg.title))
-            self._finish_text_paragraph(hp, cfg.title)
+            self._apply_text_policy(hp, cfg.title)
             bp = self.document.add_paragraph(style=self._style("MD Abstract"))
             bp.add_run(clean_xml_text(cfg.text))
-            self._finish_text_paragraph(bp, cfg.text)
+            self._apply_text_policy(bp, cfg.text)
         if cfg.keywords:
             keyword_text = ", ".join(cfg.keywords)
             kp = self.document.add_paragraph(style=self._style("MD Abstract"))
             r = kp.add_run(clean_xml_text(cfg.keywords_label) + ": ")
             r.bold = True
             kp.add_run(clean_xml_text(keyword_text))
-            self._finish_text_paragraph(kp, keyword_text)
+            self._apply_text_policy(kp, keyword_text)
 
     def _configure_section(
         self, sec, orientation: str | None = None, preserve_page: bool = False
@@ -405,7 +410,7 @@ class DocxRenderer:
                 if pieces:
                     p.add_run(" — ")
                 add_style_ref(p, self._style("MD Heading 1"))
-            self._finish_text_paragraph(p, text)
+            self._apply_text_policy(p, text)
 
         def render_footer(footer, text: str | None, include_defaults: bool = True) -> None:
             footer.is_linked_to_previous = False
@@ -416,7 +421,7 @@ class DocxRenderer:
                     p, text, {"TITLE": self.config.title or "", "AUTHOR": self.config.author or ""}
                 )
             if not include_defaults:
-                self._finish_text_paragraph(p, text)
+                self._apply_text_policy(p, text)
                 return
             has_text = bool(text)
             if footer_cfg.page_x_of_y:
@@ -434,7 +439,7 @@ class DocxRenderer:
                 if has_text:
                     p.add_run("  •  ")
                 add_num_pages(p)
-            self._finish_text_paragraph(p, text)
+            self._apply_text_policy(p, text)
 
         if (
             header_cfg.enabled
@@ -468,7 +473,7 @@ class DocxRenderer:
             r.bold = True
             r.font.size = Mm(5.5)
             p.paragraph_format.keep_with_next = True
-            self._finish_text_paragraph(p, self.config.toc.title)
+            self._apply_text_policy(p, self.config.toc.title)
         p = self.document.add_paragraph(style=self._style("MD Normal"))
         add_toc(p, self.config.toc.min_level, self.config.toc.max_level)
         self.document.add_paragraph(style=self._style("MD Normal"))
@@ -495,7 +500,7 @@ class DocxRenderer:
             ):
                 self.numbering.apply(p, self._heading_num_id, node.level - 1)
             self._render_inlines(p, node.children)
-            self._apply_paragraph_direction(p, self._plain_inline_text(node.children))
+            self._apply_text_direction(p._p, self._plain_inline_text(node.children))
             if self.config.heading_bookmarks:
                 plain = self._plain_inline_text(node.children) or f"Heading {self._bookmark_id}"
                 target = (
@@ -535,7 +540,7 @@ class DocxRenderer:
         elif isinstance(node, Paragraph):
             p = self.document.add_paragraph(style=self._style("MD Normal"))
             self._render_inlines(p, node.children)
-            self._apply_paragraph_direction(p, self._plain_inline_text(node.children))
+            self._apply_text_direction(p._p, self._plain_inline_text(node.children))
         elif isinstance(node, Callout):
             self._render_callout(node)
         elif isinstance(node, BlockQuote):
@@ -976,7 +981,7 @@ class DocxRenderer:
                     )
                     r.bold = True
                 self._render_inlines(p, child.children)
-                self._apply_paragraph_direction(p, self._plain_inline_text(child.children))
+                self._apply_text_direction(p._p, self._plain_inline_text(child.children))
                 first_paragraph = False
             elif isinstance(child, (BulletList, OrderedList)):
                 if first_paragraph:
@@ -1023,9 +1028,9 @@ class DocxRenderer:
             add_seq_field(p, label, "1")
         if caption:
             p.add_run(" — " + clean_xml_text(caption))
-            self._finish_text_paragraph(p, caption)
+            self._apply_text_policy(p, caption)
         else:
-            self._finish_text_paragraph(p, label)
+            self._apply_text_policy(p, label)
 
     def _render_numbered_equation(self, node: MathBlock) -> None:
         table = self.document.add_table(rows=1, cols=2)
@@ -1144,7 +1149,7 @@ class DocxRenderer:
         if not has_explicit_heading:
             p = self.document.add_paragraph(style=self._style("MD Heading 1"))
             p.add_run(title)
-            self._finish_text_paragraph(p, title)
+            self._apply_text_policy(p, title)
         cited = set(self._cited_keys)
         include_all = getattr(self.config.citations, "bibliography_include", "cited") == "all"
         keys = None if include_all or not cited else self._cited_keys
@@ -1160,13 +1165,13 @@ class DocxRenderer:
                         bp,
                         text,
                         segment.href,
-                        font_name=self._font_for_text(text),
+                        font_name=self.fonts.for_text(rtl=self._rtl_for_text(text)),
                         rtl=self._rtl_for_text(text),
                     )
                 else:
                     run = bp.add_run(text)
                     self._configure_run(run, text)
-            self._finish_text_paragraph(bp, " ".join(segment.text for segment in segments))
+            self._apply_text_policy(bp, " ".join(segment.text for segment in segments))
             name = f"cite_{ReferenceRegistry.safe_bookmark(key)}"[:40]
             if name not in self._bookmark_names:
                 self._bookmark_names.add(name)
@@ -1195,7 +1200,7 @@ class DocxRenderer:
                         spacer = p.add_run(" ")
                         self._configure_run(spacer, spacer.text)
                     self._render_inlines(p, child.children)
-                    self._apply_paragraph_direction(p, self._plain_inline_text(child.children))
+                    self._apply_text_direction(p._p, self._plain_inline_text(child.children))
                     numbered = True
                 elif isinstance(child, (BulletList, OrderedList)):
                     self._render_list(child, level + 1)
@@ -1298,7 +1303,7 @@ class DocxRenderer:
                 p = cell.paragraphs[0]
                 p.style = self._style("MD Normal")
                 self._render_inlines(p, cell_node.children)
-                self._apply_paragraph_direction(p, self._plain_inline_text(cell_node.children))
+                self._apply_text_direction(p._p, self._plain_inline_text(cell_node.children))
                 if cell_node.header:
                     set_cell_shading(cell, header_fill)
                     for run in p.runs:
@@ -1365,7 +1370,7 @@ class DocxRenderer:
                         bold,
                         italic,
                         strike,
-                        font_name=self._font_for_text(text),
+                        font_name=self.fonts.for_text(rtl=self._rtl_for_text(text)),
                         rtl=self._rtl_for_text(text),
                     )
             elif isinstance(node, CrossReference):
@@ -1636,57 +1641,29 @@ class DocxRenderer:
             return False
         return is_rtl_text(text)
 
-    def _font_for_text(self, text: str, code: bool = False) -> str:
-        if code:
-            return self.config.fonts.code or self._theme.code_font
-        if self._rtl_for_text(text) and self.config.fonts.complex_script:
-            return self.config.fonts.complex_script
-        return self.config.fonts.body or self._theme.body_font
-
-    def _east_asia_font(self) -> str | None:
-        return self.config.fonts.east_asia or (
-            self.config.fonts.fallback[0] if self.config.fonts.fallback else None
-        )
-
-    def _complex_script_font(self) -> str | None:
-        return self.config.fonts.complex_script or (
-            self.config.fonts.fallback[0] if self.config.fonts.fallback else None
-        )
-
     def _configure_run(self, run, text: str, code: bool = False) -> None:
-        configure_run_fonts(
-            run,
-            text,
-            self._font_for_text(text, code=code),
-            self._east_asia_font(),
-            self._complex_script_font(),
-            self._rtl_for_text(text),
-        )
+        """Configure a python-docx run with the document's script font slots."""
+        self._configure_xml_run(run._r, text, code=code)
 
-    def _configure_xml_run(self, run, text: str) -> None:
-        """Configure a raw ``w:r`` element that was not built through python-docx."""
+    def _configure_xml_run(self, run, text: str, code: bool = False) -> None:
+        """Configure any raw ``w:r`` element, including note and header runs.
+
+        Bound as the note-part callback, so it accepts ``(run, text)``.
+        """
         if not text:
             return
+        rtl = self._rtl_for_text(text)
         configure_xml_run(
             run,
             text,
-            self._font_for_text(text),
-            self._east_asia_font(),
-            self._complex_script_font(),
-            self._rtl_for_text(text),
+            self.fonts.for_text(rtl=rtl, code=code),
+            self.fonts.east_asia,
+            self.fonts.complex_script,
+            rtl,
         )
 
-    def _finish_text_paragraph(self, paragraph, text: str | None = None) -> None:
-        """Apply script fonts and direction to a paragraph built outside the block renderer."""
-        if text is None:
-            text = "".join(node.text or "" for node in paragraph._p.iter(qn("w:t")))
-        for run in paragraph._p.iter(qn("w:r")):
-            run_text = "".join(node.text or "" for node in run.iter(qn("w:t")))
-            self._configure_xml_run(run, run_text)
-        self._apply_paragraph_direction(paragraph, text)
-
-    def _apply_xml_direction(self, paragraph_element, text: str) -> None:
-        """Apply bidi direction to a raw ``w:p`` element used by note parts."""
+    def _apply_text_direction(self, paragraph_element, text: str) -> None:
+        """Apply bidi direction and right alignment to any ``w:p`` element."""
         if not text or not self._rtl_for_text(text):
             return
         set_xml_paragraph_rtl(paragraph_element, True)
@@ -1696,9 +1673,11 @@ class DocxRenderer:
             justify.set(qn("w:val"), "right")
             ppr.append(justify)
 
-    def _apply_paragraph_direction(self, paragraph, text: str) -> None:
-        rtl = self._rtl_for_text(text)
-        if rtl:
-            set_paragraph_rtl(paragraph, True)
-            if paragraph.alignment is None:
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    def _apply_text_policy(self, paragraph, text: str | None = None) -> None:
+        """Apply script fonts and direction to a paragraph built outside block rendering."""
+        if text is None:
+            text = "".join(node.text or "" for node in paragraph._p.iter(qn("w:t")))
+        for run in paragraph._p.iter(qn("w:r")):
+            run_text = "".join(node.text or "" for node in run.iter(qn("w:t")))
+            self._configure_xml_run(run, run_text)
+        self._apply_text_direction(paragraph._p, text)

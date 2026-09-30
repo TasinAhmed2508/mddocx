@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Internal
+
+- Consolidated script and font policy: Unicode classification moved to `mddocx.scripts`,
+  font-slot resolution to `mddocx.styles.fonts` (one rule shared by Word styles and runs),
+  package part registration to `mddocx.ooxml.package`, and footnotes and endnotes into one
+  spec-driven `mddocx.ooxml.notes` module. Rendered output is byte-identical for the
+  multilingual, notes, comments, charts, figure, and bibliography fixtures.
+
 ### Performance
 
 - Fast-path ASCII text in direction and script classification. `is_rtl_text`, `has_cjk`,

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Fast-path ASCII text in direction and script classification. `is_rtl_text`, `has_cjk`,
+  and `has_complex_script` now return after one C-level ASCII scan and de-duplicate code
+  points before range checks, removing the overhead the 1.4.0 script slots added to
+  Latin-only documents.
+
+### CI
+
+- Give the large-document benchmark a platform-aware budget: 30 seconds on Linux and 60
+  seconds on macOS and Windows hosted runners, which measured the 100-section corpus at
+  33.7 seconds and 44.7 seconds respectively.
+
 ## 1.4.0 — Multilingual script coverage
 
 This release makes the script-aware output boundary cover every writing system the

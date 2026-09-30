@@ -1,43 +1,114 @@
-# mddocx-native 1.4.0
+# mddocx-native 1.4.0 — Multilingual script coverage
 
-Version 1.4 extends script-aware output beyond Bengali, CJK, and right-to-left text so
-documents in every writing system the parser accepts keep the correct Word font slots
-and direction.
+Version 1.4 completes the script-aware output boundary. Before this release, only Bengali, CJK
+text, and right-to-left text received correct Word font slots and direction — and even those were
+applied to body content only. Now every writing system the parser accepts keeps the correct font
+slot, and direction reaches every text surface in the document.
 
-## Every complex script gets the configured font
+**Upgrade if** you convert documents containing Arabic, Hebrew, Persian, Hindi, Bengali, Punjabi,
+Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai, Lao, Tibetan, Burmese, Khmer,
+Amharic, Mongolian, Chinese, Japanese, or Korean text — or any mix of them in one file.
 
-- The `w:cs` complex-script font slot now applies to Devanagari, Bengali, Gurmukhi,
-  Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai, Lao, Tibetan,
-  Myanmar, Khmer, Ethiopic, Mongolian, Syriac, Thaana, Arabic, and Hebrew.
-- Set the font with `--complex-script-font NAME`, `RenderConfig.fonts.complex_script`,
-  or a template style map.
-- Left-to-right complex scripts such as Hindi, Tamil, and Thai receive the font slot
-  without inheriting bidi paragraph direction.
+**Full Changelog**: https://github.com/TasinAhmed2508/mddocx/compare/v1.3.1...v1.4.0
 
-## East Asian coverage
+## At a glance: 1.3.1 → 1.4.0
 
-- CJK detection now covers the unified ideograph extension planes, Hangul Jamo and
-  syllables, compatibility ideographs, Bopomofo, and halfwidth Katakana, so
-  `--east-asia-font` reaches Chinese, Japanese, and Korean text of any length.
+| Capability | 1.3.1 | 1.4.0 |
+|---|---|---|
+| Complex-script font slot (`w:cs`) | Bengali only | Every Word complex script (see the list below) |
+| CJK font slot (`w:eastAsia`) | Basic ideographs, Hiragana/Katakana, Hangul syllables | Adds extension planes, Hangul Jamo, compatibility ideographs, Bopomofo, halfwidth Katakana |
+| Arabic/Hebrew paragraph direction | Body paragraphs only | Adds title page, abstract, table-of-contents title, captions, bibliography, headers, footers, and notes |
+| Arabic/Hebrew run direction | Body runs only | Adds header/footer, caption, bibliography, footnote, and endnote runs |
+| Centered RTL title page | Lost center alignment to the direction pass | Keeps explicit center alignment with bidi direction |
+| RTL bibliography hyperlinks | No complex-script font or run direction | Emitted with `w:cs` and `w:rtl` |
+| Multilingual regression coverage | Bengali layout tests only | 62 dedicated tests plus a polyglot fixture covering 18 scripts |
 
-## Direction and fonts on every surface
+## What changed
 
-Right-to-left direction and script fonts now reach surfaces that previously bypassed
-them: the title page, abstract, table-of-contents title, captions, bibliography
-heading and entries, headers, footers, footnotes, and endnotes. Centered title-page
-lines keep their explicit center alignment instead of switching to right alignment.
+### 1. The complex-script font slot covers every complex script
 
-## Bengali boundary unchanged
+`--complex-script-font` and `RenderConfig.fonts.complex_script` now apply to Devanagari, Bengali,
+Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai, Lao, Tibetan, Myanmar,
+Khmer, Ethiopic, Mongolian, Syriac, Thaana, Arabic, and Hebrew.
 
-The Unicode-to-Bijoy pass remains limited to the `word/*.xml` output boundary and to
-Bengali code points. Markdown and the canonical AST stay Unicode, English text keeps a
-Latin font, and other scripts are never re-encoded. The isolated-vowel-mark guard that
-prevents unbounded memory growth during Bijoy conversion is included in this release.
+Left-to-right complex scripts receive the font slot **without** inheriting bidi direction. In 1.3.1
+Hindi, Tamil, Thai, and similar text silently fell back to the Latin body font.
+
+### 2. CJK detection covers the full East Asian range
+
+Chinese, Japanese, and Korean text now uses the `--east-asia-font` slot for the unified ideograph
+extension planes, Hangul Jamo and syllables, compatibility ideographs, Bopomofo, and halfwidth
+Katakana. Large East Asian documents no longer lose the configured font in these ranges.
+
+### 3. Direction and fonts reach every text surface
+
+The title page, abstract, table-of-contents title, captions, bibliography heading and entries,
+headers, footers, footnotes, and endnotes previously bypassed script handling. They now receive the
+same paragraph direction, run direction, and font slots as body text. Bibliography hyperlinks in
+right-to-left entries are emitted with the correct complex-script font and run direction.
+
+### 4. Bengali behavior is unchanged
+
+The Unicode-to-Bijoy pass still runs only at the `word/*.xml` boundary and only for Bengali code
+points. Markdown and the canonical AST stay Unicode, English keeps a Latin font, other scripts are
+never re-encoded, and the guard that prevents unbounded memory growth on isolated Bengali vowel
+marks is included in this release.
+
+## What improved
+
+- **Hindi, Tamil, Telugu, Kannada, Malayalam, Punjabi, Gujarati, Oriya, Sinhala, Thai, Lao,
+  Tibetan, Burmese, Khmer, Amharic, Mongolian, Syriac, and Thaana** documents now render with the
+  complex-script font you configure instead of a Latin substitute.
+- **Arabic and Hebrew headings, titles, abstracts, captions, references, headers, footers, and
+  notes** are right-to-left in Word, not left-to-right Latin paragraphs.
+- **Mixed-script documents** — for example a report with Bengali, Arabic, Chinese, and English in
+  the same file — keep each script in its own font slot while English stays Latin.
+- **Bengali documents** keep the 1.3.1 behavior, including SutonnyMJ/Bijoy output, identity forms,
+  photo boxes, and merged layout tables.
+
+## How to use it
+
+```bash
+# Complex scripts (Indic, Southeast Asian, Arabic, Hebrew) and CJK
+mddocx report.md -o report.docx --complex-script-font "Nirmala UI" --east-asia-font "Microsoft YaHei"
+
+# Arabic or Hebrew document, forced right-to-left
+mddocx arabic-report.md -o arabic-report.docx --rtl force
+
+# Bengali document with the legacy SutonnyMJ output boundary
+mddocx bangla.md -o bangla.docx --theme bengali-document
+```
+
+```python
+from mddocx import RenderConfig, render
+
+config = RenderConfig(rtl="auto")
+config.fonts.complex_script = "Nirmala UI"
+config.fonts.east_asia = "Microsoft YaHei"
+config.fonts.bengali = "Nirmala UI"  # Unicode Bangla output instead of Bijoy
+render("report.md", "report.docx", config=config)
+```
+
+## Compatibility
+
+- The v1 Python API, CLI command names, and exit codes are unchanged; no migration is required.
+- `rtl` accepts `off`, `auto` (default), and `force` exactly as before.
+- Script detection, font-slot selection, and direction are covered by
+  `tests/test_multilingual_output.py` and the `tests/fixtures/multilingual/polyglot.md` fixture.
 
 ## Verification
 
-`tests/test_multilingual_output.py` and the `tests/fixtures/multilingual/polyglot.md`
-fixture cover script detection, font-slot selection, direction modes (`off`, `auto`,
-`force`), native structure preservation, and the Unicode-to-Bijoy boundary for
-headers, tables, and notes. The v1 Python entry points, CLI flags, and exit codes are
-unchanged.
+`tests/test_multilingual_output.py` adds 62 tests: complex-script detection across 18 scripts, CJK
+plane detection, RTL truth tables, the `off`/`auto`/`force` direction modes, per-run font-slot
+selection, native structure preservation in a polyglot document, the Unicode-to-Bijoy boundary for
+headers, tables, and notes, and CLI flag plumbing. The release candidate passed the full suite,
+Ruff, mypy, `mddocx doctor`, the performance gate, a wheel and sdist build with `twine check`, and a
+clean-environment wheel smoke run (render, `inspect --strict`, `math-check --strict`, and the public
+API manifest).
+
+## Follow-up
+
+A follow-up patch adds an ASCII fast path to script classification, so Latin-only documents pay
+essentially nothing for the new per-run font and direction logic, and it splits the large-document
+benchmark budget per platform (30 seconds on Linux, 60 seconds on macOS and Windows runners, which
+measured 33.7 s and 44.7 s for the 100-section corpus).

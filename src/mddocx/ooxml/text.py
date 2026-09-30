@@ -25,6 +25,10 @@ def clean_xml_text(value: str) -> str:
 
 
 def is_rtl_text(value: str) -> bool:
+    # ASCII cannot carry right-to-left characters, so the common case avoids a
+    # per-character bidirectional classification.
+    if value.isascii():
+        return False
     rtl = 0
     ltr = 0
     for ch in value:
@@ -96,7 +100,18 @@ _COMPLEX_SCRIPT_RANGES = (
 
 
 def _within(value: str, ranges: tuple[tuple[int, int], ...]) -> bool:
-    return any(any(start <= ord(ch) <= end for start, end in ranges) for ch in value)
+    """Return True when any code point falls inside one of ``ranges``.
+
+    ASCII text dominates ordinary documents, and it exits after a single
+    C-level scan. Repeated code points are de-duplicated before the range scan.
+    """
+    if value.isascii():
+        return False
+    return any(
+        start <= code <= end
+        for code in {ord(character) for character in value}
+        for start, end in ranges
+    )
 
 
 def has_cjk(value: str) -> bool:

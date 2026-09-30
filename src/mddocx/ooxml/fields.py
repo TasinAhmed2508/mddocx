@@ -114,7 +114,13 @@ def add_bookmark(paragraph, name: str, bookmark_id: int) -> None:
     start.set(qn("w:name"), name)
     end = OxmlElement("w:bookmarkEnd")
     end.set(qn("w:id"), str(bookmark_id))
-    paragraph._p.insert(0, start)
+    # CT_P requires w:pPr first; a bookmark that precedes paragraph properties
+    # is invalid WordprocessingML and some consumers reject the paragraph.
+    properties = paragraph._p.find(qn("w:pPr"))
+    if properties is None:
+        paragraph._p.insert(0, start)
+    else:
+        properties.addnext(start)
     paragraph._p.append(end)
 
 

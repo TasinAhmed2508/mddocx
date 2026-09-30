@@ -75,7 +75,7 @@ def render_heading(renderer: DocxRenderer, node: Heading) -> None:
             add_hidden_field(counter_p, r" SEQ Equation \r 0 ", "0")
         if renderer.config.references.caption_number_format == "section":
             for label in ("Figure", "Table", "Listing"):
-                add_hidden_field(counter_p, f" SEQ {label} \r 0 ", "0")
+                add_hidden_field(counter_p, rf" SEQ {label} \r 0 ", "0")
 
 
 def render_paragraph(renderer: DocxRenderer, node: Paragraph) -> None:

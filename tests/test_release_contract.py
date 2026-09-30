@@ -56,6 +56,23 @@ def test_machine_readable_feature_matrix_has_live_evidence():
         assert all((ROOT / test).exists() for test in feature["tests"])
 
 
+def test_python_module_entry_point_matches_the_console_script():
+    import subprocess
+    import sys
+
+    from mddocx import __version__
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "mddocx", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert __version__ in completed.stdout
+
+
 def test_docx_round_trip_reopens_and_retains_semantic_structure():
     markdown = "# Heading\n\nParagraph with **bold**.\n\n1. First\n2. Second"
     blob = MarkdownWord().render_string(markdown)

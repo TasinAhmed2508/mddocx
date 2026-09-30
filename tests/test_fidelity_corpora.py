@@ -87,6 +87,50 @@ def test_native_endnotes_are_packaged_and_related_consistently():
     ]
 
 
+def test_section_scoped_counter_fields_use_word_switches():
+    config = RenderConfig()
+    config.references.equation_number_format = "section"
+    config.references.caption_number_format = "section"
+    config.heading_numbering.enabled = True
+    markdown = '# Section\n\n$$\nE=mc^2\n$$ {#eq-a caption="Energy"}\n\nSee [Equation @eq-a].\n'
+    blob = MarkdownWord(config).render_string(markdown)
+    with ZipFile(BytesIO(blob)) as package:
+        root = etree.fromstring(package.read("word/document.xml"))
+    instructions = [node.text or "" for node in root.xpath(".//w:instrText", namespaces=NS)]
+
+    # A carriage return here means the reset switch is missing, so Word never
+    # restarts section-scoped figure, table, or listing numbering.
+    assert instructions
+    assert not any("\r" in instruction or "\n" in instruction for instruction in instructions)
+    for label in ("Figure", "Table", "Listing"):
+        assert any(instruction.strip() == f"SEQ {label} \\r 0" for instruction in instructions)
+    # Word field switches start with a backslash; chr(92) keeps this assertion
+    # immune to test-file escaping rules.
+    switch = chr(92)
+    assert any(f"{switch}r 1 {switch}s 1" in instruction for instruction in instructions)
+
+
+def test_paragraph_properties_precede_bookmarks():
+    blob = MarkdownWord().render_string("# First {#sec-one}\n\nBody.\n\n## Second\n")
+    with ZipFile(BytesIO(blob)) as package:
+        root = etree.fromstring(package.read("word/document.xml"))
+    marked = [
+        p
+        for p in root.xpath(".//w:p", namespaces=NS)
+        if p.xpath("./w:bookmarkStart", namespaces=NS)
+    ]
+
+    assert marked
+    for paragraph in marked:
+        children = [child.tag for child in paragraph if isinstance(child.tag, str)]
+        first_bookmark = next(
+            index for index, tag in enumerate(children) if tag.endswith("}bookmarkStart")
+        )
+        properties = [index for index, tag in enumerate(children) if tag.endswith("}pPr")]
+        assert properties, "every rendered paragraph should carry properties"
+        assert properties[0] < first_bookmark
+
+
 def test_package_part_registration_is_idempotent():
     from mddocx.ooxml.package import (
         add_content_type_override,

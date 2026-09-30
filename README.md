@@ -136,6 +136,9 @@ For interactive use:
 
     mddocx shell
 
+Every command is also available as `python -m mddocx ...` when the console script is not on
+`PATH`.
+
 Run mddocx --help for the complete command reference.
 
 ## Python API
@@ -257,6 +260,9 @@ AI-math, compiler, layout, security-policy, and migration summary.
 The compiler stages and system architecture are described in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The machine-readable supported
 feature contract is [docs/feature-matrix.json](docs/feature-matrix.json).
+
+The forward plan for usability, performance, and defect prevention is
+[docs/ROADMAP.md](docs/ROADMAP.md), including the known warts and open quality gaps.
 
 The machine-readable fidelity contract is `docs/feature-matrix.json`; every listed feature links
 its accepted syntax, canonical AST, native Word representation, diagnostic behavior, host status,

@@ -962,11 +962,11 @@ def main(argv: list[str] | None = None) -> int:
             output_dir = args.output_dir or Path(".")
             results = render_many(sources, output_dir, config, fail_fast=args.fail_fast)
             status = 0
-            for result in results:
-                if result.ok:
-                    print(result.output_path)
+            for batch_result in results:
+                if batch_result.ok:
+                    print(batch_result.output_path)
                 else:
-                    print(f"ERROR {result.input_path}: {result.error}", file=sys.stderr)
+                    print(f"ERROR {batch_result.input_path}: {batch_result.error}", file=sys.stderr)
                     status = 2
             return status
 

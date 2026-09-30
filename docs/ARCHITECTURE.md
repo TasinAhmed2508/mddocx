@@ -109,6 +109,27 @@ WordprocessingML goes out.
 Flow: `RenderConfig + ThemeSpec → FontSlots`; `text → scripts → (font slot, direction)`;
 `(font slot, direction) → ooxml/text.py → w:r / w:p`; `note AST → ooxml/notes.py → package part`.
 
+The block renderer is split the same way: [`render/renderer.py`](../src/mddocx/render/renderer.py)
+holds the per-render state, the `render()` sequence, the `_render_block` dispatch table, the inline
+engine, and the text/direction policy. Every Word surface is a module in the same package whose
+functions take the live renderer:
+
+| Surface | Owner | Depends on |
+|---|---|---|
+| Template loading, core properties, field updates | [`render/document_setup.py`](../src/mddocx/render/document_setup.py) | `docx`, `validation`, `sections` |
+| Page geometry, margins, orientation | [`render/sections.py`](../src/mddocx/render/sections.py) | `docx`, `headers_footers` |
+| Headers and footers | [`render/headers_footers.py`](../src/mddocx/render/headers_footers.py) | `ooxml/fields.py` |
+| Title page, abstract, table of contents | [`render/front_matter.py`](../src/mddocx/render/front_matter.py) | `ooxml/fields.py`, `ooxml/text.py` |
+| Headings, paragraphs, quotes, callouts, definition lists, flow breaks | [`render/text_blocks.py`](../src/mddocx/render/text_blocks.py) | `ooxml/fields.py`, `lists`, `sections` |
+| Bullets, ordered lists, task items | [`render/lists.py`](../src/mddocx/render/lists.py) | `ooxml/numbering.py`, `ooxml/tasks.py` |
+| Tables, widths, landscape planning | [`render/tables.py`](../src/mddocx/render/tables.py) | `layout.py`, `ooxml/utils.py`, `citations`, `sections` |
+| Imported data tables and data-path containment | [`render/data_tables.py`](../src/mddocx/render/data_tables.py) | `data.py`, `citations`, `tables` |
+| Charts and ChartEntry validation | [`render/charts.py`](../src/mddocx/render/charts.py) | `ooxml/charts.py`, `data.py`, `data_tables`, `citations` |
+| Images, Mermaid diagrams, figure placement | [`render/figures.py`](../src/mddocx/render/figures.py) | `resources`, `ooxml/fields.py`, `citations` |
+| Fenced code and listing captions | [`render/code_blocks.py`](../src/mddocx/render/code_blocks.py) | `diagrams`, `text_layout.py`, `figures`, `citations` |
+| Block math and numbered equations | [`render/math_blocks.py`](../src/mddocx/render/math_blocks.py) | `ooxml/fields.py`, `tables` |
+| Captions, cross-references, bibliography | [`render/citations.py`](../src/mddocx/render/citations.py) | `ooxml/fields.py`, `references.py` |
+
 The rules that keep the structure from drifting:
 
 - Script classification stays free of Word, OOXML, and configuration knowledge.
@@ -124,6 +145,20 @@ The rules that keep the structure from drifting:
 - Text surfaces created outside the block renderer (title page, abstract, TOC title, captions,
   bibliography, headers, footers) call `renderer._apply_text_policy` so they inherit the same
   font slots and direction as body content.
+- Block surfaces are renderer-taking functions (`render_table(renderer, node)`), not classes or
+  mixins. They never build render state and never call `render()`; the renderer is the only
+  orchestrator and the only owner of the dispatch table.
+- Surface modules import each other only along the edges in the table above:
+  `document_setup → sections`, `sections → headers_footers`, `text_blocks → lists, sections`,
+  `tables → sections`, `data_tables → tables`, `charts → data_tables`,
+  `code_blocks → figures`, and `math_blocks → tables` (the borderless-table helper).
+  Numbered-reference presentation — captions, cross-references, bibliography — is shared
+  through `citations` rather than re-implemented per surface.
+  `render/renderer.py` may import every surface; no surface imports `renderer.py` at runtime
+  (only under `TYPE_CHECKING` for annotations), which keeps the package acyclic.
+- `render/renderer.py` stays the orchestrator: `tests/test_render_module_boundaries.py` fails
+  if it grows past 700 lines or loses the shared entry points
+  (`_style`, `_configure_run`, `_apply_text_policy`, `_render_inlines`).
 
 ## Stages
 

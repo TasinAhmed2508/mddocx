@@ -41,7 +41,13 @@ def append_footnote_reference(paragraph, footnote_id: int) -> None:
     paragraph._p.append(run)
 
 
-def inject_footnotes(blob: bytes, notes: dict[int, list], math_converter) -> bytes:
+def inject_footnotes(
+    blob: bytes,
+    notes: dict[int, list],
+    math_converter,
+    configure_run=None,
+    configure_paragraph=None,
+) -> bytes:
     if not notes:
         return blob
     source = BytesIO(blob)
@@ -49,7 +55,9 @@ def inject_footnotes(blob: bytes, notes: dict[int, list], math_converter) -> byt
     with ZipFile(source, "r") as zin:
         parts = {info.filename: zin.read(info.filename) for info in zin.infolist()}
 
-    parts["word/footnotes.xml"] = _build_footnotes_xml(notes, math_converter)
+    parts["word/footnotes.xml"] = _build_footnotes_xml(
+        notes, math_converter, configure_run, configure_paragraph
+    )
     parts["[Content_Types].xml"] = _patch_content_types(parts["[Content_Types].xml"])
     parts["word/_rels/document.xml.rels"] = _patch_document_rels(
         parts["word/_rels/document.xml.rels"]
@@ -61,7 +69,9 @@ def inject_footnotes(blob: bytes, notes: dict[int, list], math_converter) -> byt
     return output.getvalue()
 
 
-def _build_footnotes_xml(notes: dict[int, list], math_converter) -> bytes:
+def _build_footnotes_xml(
+    notes: dict[int, list], math_converter, configure_run=None, configure_paragraph=None
+) -> bytes:
     root = OxmlElement("w:footnotes")
     root.append(_separator(-1, "separator", "w:separator"))
     root.append(_separator(0, "continuationSeparator", "w:continuationSeparator"))
@@ -84,8 +94,10 @@ def _build_footnotes_xml(notes: dict[int, list], math_converter) -> bytes:
         ref = OxmlElement("w:footnoteRef")
         ref_run.append(ref)
         p.append(ref_run)
-        _append_run(p, " ")
-        _append_inlines(p, nodes, math_converter)
+        _append_run(p, " ", configure_run=configure_run)
+        _append_inlines(p, nodes, math_converter, configure_run=configure_run)
+        if configure_paragraph is not None:
+            configure_paragraph(p, "".join(node.text or "" for node in p.iter(qn("w:t"))))
         fn.append(p)
         root.append(fn)
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
@@ -103,52 +115,108 @@ def _separator(footnote_id: int, kind: str, element_name: str):
     return fn
 
 
-def _append_inlines(parent, nodes, math_converter, *, bold=False, italic=False, strike=False):
+def _append_inlines(
+    parent, nodes, math_converter, *, bold=False, italic=False, strike=False, configure_run=None
+):
     for node in nodes:
         if isinstance(node, Text):
-            _append_run(parent, node.text, bold=bold, italic=italic, strike=strike)
+            _append_run(
+                parent,
+                node.text,
+                bold=bold,
+                italic=italic,
+                strike=strike,
+                configure_run=configure_run,
+            )
         elif isinstance(node, Strong):
             _append_inlines(
-                parent, node.children, math_converter, bold=True, italic=italic, strike=strike
+                parent,
+                node.children,
+                math_converter,
+                bold=True,
+                italic=italic,
+                strike=strike,
+                configure_run=configure_run,
             )
         elif isinstance(node, Emphasis):
             _append_inlines(
-                parent, node.children, math_converter, bold=bold, italic=True, strike=strike
+                parent,
+                node.children,
+                math_converter,
+                bold=bold,
+                italic=True,
+                strike=strike,
+                configure_run=configure_run,
             )
         elif isinstance(node, Strikethrough):
             _append_inlines(
-                parent, node.children, math_converter, bold=bold, italic=italic, strike=True
+                parent,
+                node.children,
+                math_converter,
+                bold=bold,
+                italic=italic,
+                strike=True,
+                configure_run=configure_run,
             )
         elif isinstance(node, InlineCode):
-            _append_run(parent, node.code, bold=bold, italic=italic, strike=strike, code=True)
+            _append_run(
+                parent,
+                node.code,
+                bold=bold,
+                italic=italic,
+                strike=strike,
+                code=True,
+                configure_run=configure_run,
+            )
         elif isinstance(node, InlineMath):
             try:
                 parent.append(math_converter.latex_to_omml(node.source_text, False))
             except Exception:
-                _append_run(parent, node.source_text, bold=bold, italic=italic, strike=strike)
+                _append_run(
+                    parent,
+                    node.source_text,
+                    bold=bold,
+                    italic=italic,
+                    strike=strike,
+                    configure_run=configure_run,
+                )
         elif isinstance(node, Link):
             # Footnotes are a separate OOXML part and need their own relationship
             # collection. Preserve editable visible text rather than emit a broken link.
             _append_inlines(
-                parent, node.children, math_converter, bold=bold, italic=italic, strike=strike
+                parent,
+                node.children,
+                math_converter,
+                bold=bold,
+                italic=italic,
+                strike=strike,
+                configure_run=configure_run,
             )
         elif isinstance(node, SoftBreak):
-            _append_run(parent, " ")
+            _append_run(parent, " ", configure_run=configure_run)
         elif isinstance(node, HardBreak):
             r = OxmlElement("w:r")
             r.append(OxmlElement("w:br"))
             parent.append(r)
         elif isinstance(node, Image):
-            _append_run(parent, node.alt or node.src)
+            _append_run(parent, node.alt or node.src, configure_run=configure_run)
         elif isinstance(node, FootnoteReference):
-            _append_run(parent, f"[^{node.label}]")
+            _append_run(parent, f"[^{node.label}]", configure_run=configure_run)
         elif hasattr(node, "children"):
             _append_inlines(
-                parent, node.children, math_converter, bold=bold, italic=italic, strike=strike
+                parent,
+                node.children,
+                math_converter,
+                bold=bold,
+                italic=italic,
+                strike=strike,
+                configure_run=configure_run,
             )
 
 
-def _append_run(parent, text: str, *, bold=False, italic=False, strike=False, code=False):
+def _append_run(
+    parent, text: str, *, bold=False, italic=False, strike=False, code=False, configure_run=None
+):
     text = clean_xml_text(text)
     if not text:
         return
@@ -173,6 +241,8 @@ def _append_run(parent, text: str, *, bold=False, italic=False, strike=False, co
     t.text = text
     r.append(t)
     parent.append(r)
+    if configure_run is not None:
+        configure_run(r, text)
 
 
 def _patch_content_types(data: bytes) -> bytes:

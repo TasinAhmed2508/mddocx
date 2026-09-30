@@ -1,8 +1,41 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — Multilingual script coverage
 
-- Prevent unbounded memory growth when mixed-script OCR text leaves an isolated Bengali vowel mark before Bijoy font conversion.
+This release makes the script-aware output boundary cover every writing system the
+renderer accepts, instead of Bengali, CJK and right-to-left text only.
+
+### Complex-script font coverage
+
+- The Word complex-script font slot (`w:cs`) is now applied to every complex script —
+  Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam,
+  Sinhala, Thai, Lao, Tibetan, Myanmar, Khmer, Ethiopic, Mongolian, Syriac, Thaana,
+  Arabic and Hebrew — through `--complex-script-font` and `RenderConfig.fonts`.
+- Indic, Southeast Asian and other left-to-right complex scripts receive the font slot
+  without inheriting right-to-left direction.
+- CJK detection now includes the extension planes, Hangul Jamo, compatibility
+  ideographs and halfwidth Katakana so large East Asian documents keep the
+  configured East Asian font.
+
+### Direction and fonts on every text surface
+
+- Right-to-left paragraph direction, run direction, and script font slots now reach the
+  title page, abstract, table-of-contents title, captions, bibliography heading and
+  entries, headers, footers, footnotes, and endnotes. Previously these surfaces rendered
+  Arabic or Hebrew text without bidi properties.
+- Bibliography hyperlinks in right-to-left entries are emitted with the correct
+  complex-script font and run direction.
+
+### Fixes
+
+- Prevent unbounded memory growth when mixed-script OCR text leaves an isolated Bengali
+  vowel mark before Bijoy font conversion.
+
+### Verification
+
+- Added a polyglot fixture and a multilingual regression suite covering script
+  detection, font slots, direction modes, native structure preservation, and the
+  Unicode-to-Bijoy output boundary for headers, tables, and notes.
 
 ## 1.3.1 — Bangla documents and merged layout tables
 

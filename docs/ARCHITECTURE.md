@@ -92,6 +92,39 @@ allowed, private/reserved addresses, unsafe redirects, invalid MIME types, overs
 and external SVG references remain blocked. Non-image responses and acquisition failures become
 clickable figure fallbacks unless strict-image mode is selected; ordinary links never enter this flow.
 
+## Module ownership
+
+Each concern has exactly one owner, and data flows one way: configuration and text come in,
+WordprocessingML goes out.
+
+| Concern | Owner | Depends on |
+|---|---|---|
+| Which script is this text? | [`scripts.py`](../src/mddocx/scripts.py) | Unicode data only |
+| Which font does each slot use? | [`styles/fonts.py`](../src/mddocx/styles/fonts.py) | `config`, `styles/themes.py` |
+| How is a run or paragraph written to Word XML? | [`ooxml/text.py`](../src/mddocx/ooxml/text.py) | `scripts`, `python-docx` XML helpers |
+| How is a package part registered? | [`ooxml/package.py`](../src/mddocx/ooxml/package.py) | `zipfile`, `lxml` |
+| How is a note part built? | [`ooxml/notes.py`](../src/mddocx/ooxml/notes.py) | `ooxml/package.py`, `ooxml/text.py`, inline AST |
+| Who decides direction and applies policy? | [`render/renderer.py`](../src/mddocx/render/renderer.py) | all of the above |
+
+Flow: `RenderConfig + ThemeSpec → FontSlots`; `text → scripts → (font slot, direction)`;
+`(font slot, direction) → ooxml/text.py → w:r / w:p`; `note AST → ooxml/notes.py → package part`.
+
+The rules that keep the structure from drifting:
+
+- Script classification stays free of Word, OOXML, and configuration knowledge.
+- The font rule — explicit configuration, then the configured fallback list, then the theme
+  font — is defined once in `styles/fonts.py`. Word styles and document runs both read
+  `FontSlots`, so they cannot disagree about a script's font.
+- Direction policy (`off`, `auto`, `force`) lives in the renderer. The XML layer only writes
+  the decision it is given.
+- Footnotes and endnotes are one implementation parameterized by `NotePart`. A new note kind
+  extends that spec rather than adding a module.
+- Every added package part goes through `ooxml/package.py`, so content types and relationships
+  are registered consistently.
+- Text surfaces created outside the block renderer (title page, abstract, TOC title, captions,
+  bibliography, headers, footers) call `renderer._apply_text_policy` so they inherit the same
+  font slots and direction as body content.
+
 ## Stages
 
 1. **Clean and prepare** removes high-confidence AI/chat export metadata,

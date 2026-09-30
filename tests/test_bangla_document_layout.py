@@ -7,7 +7,7 @@ from mddocx import MarkdownWord, RenderConfig
 from mddocx.parser import MarkdownParser
 from mddocx.ast.block import CodeBlock, Paragraph
 from mddocx.parser.compatibility import normalize_export_citations
-from mddocx.ooxml.text import configure_run_fonts
+from mddocx.ooxml.text import configure_xml_run
 
 
 def test_export_closing_fence_does_not_swallow_following_blocks():
@@ -43,7 +43,7 @@ def test_programming_fence_is_never_interpreted_as_layout():
 def test_bangla_complex_font_does_not_enable_rtl():
     doc = Document()
     run = doc.add_paragraph().add_run("বাংলা")
-    configure_run_fonts(run, run.text, "Arial", None, "Nirmala UI", False)
+    configure_xml_run(run._r, run.text, "Arial", None, "Nirmala UI", False)
     assert run._r.rPr.rFonts.get(qn("w:cs")) == "Nirmala UI"
     assert run._r.rPr.find(qn("w:rtl")) is None
 

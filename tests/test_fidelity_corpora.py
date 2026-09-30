@@ -6,6 +6,7 @@ import pytest
 
 from mddocx import MarkdownWord, NotesConfig, RenderConfig, inspect_docx_bytes
 from mddocx.math.converter import DefaultMathConverter
+from mddocx.ooxml.comments import COMMENT_CT, COMMENT_REL
 
 
 NS = {
@@ -68,9 +69,46 @@ def test_native_endnotes_are_packaged_and_related_consistently():
     inspection = inspect_docx_bytes(blob)
     with ZipFile(BytesIO(blob)) as package:
         names = set(package.namelist())
+        root = etree.fromstring(package.read("word/endnotes.xml"))
 
     assert "word/endnotes.xml" in names
     assert inspection.endnote_references == 1
     assert inspection.endnote_definitions == 1
     assert inspection.duplicate_note_ids == 0
     assert inspection.broken_relationships == []
+    # Separator items belong to the part they live in; a footnote item inside
+    # endnotes.xml is invalid and makes Word treat the part as damaged.
+    assert root.tag.endswith("}endnotes")
+    assert not root.xpath(".//w:footnote", namespaces=NS)
+    separators = root.xpath("./w:endnote", namespaces=NS)[:2]
+    assert [item.get(f"{{{NS['w']}}}type") for item in separators] == [
+        "separator",
+        "continuationSeparator",
+    ]
+
+
+def test_package_part_registration_is_idempotent():
+    from mddocx.ooxml.package import (
+        add_content_type_override,
+        add_document_relationship,
+        read_parts,
+    )
+
+    blob = MarkdownWord().render_string("# Report")
+    parts = read_parts(blob)
+    for _ in range(2):
+        add_content_type_override(parts, "/word/comments.xml", COMMENT_CT)
+        add_document_relationship(parts, COMMENT_REL, "comments.xml")
+
+    content_types = etree.fromstring(parts["[Content_Types].xml"])
+    relationships = etree.fromstring(parts["word/_rels/document.xml.rels"])
+    overrides = [
+        element.get("PartName")
+        for element in content_types
+        if element.get("PartName") == "/word/comments.xml"
+    ]
+    matching = [rel for rel in relationships if rel.get("Type") == COMMENT_REL]
+
+    assert overrides == ["/word/comments.xml"]
+    assert len(matching) == 1
+    assert matching[0].get("Target") == "comments.xml"

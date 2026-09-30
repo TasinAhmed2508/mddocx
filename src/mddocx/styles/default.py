@@ -7,6 +7,7 @@ from docx.shared import Pt, RGBColor
 
 from mddocx.config import RenderConfig
 from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
+from .fonts import FontSlots
 from .themes import get_theme
 
 
@@ -39,15 +40,12 @@ def _set_font(
 def ensure_styles(document, config: RenderConfig) -> None:
     styles = document.styles
     theme = get_theme(config.theme)
-    body_font = config.fonts.body or theme.body_font
-    heading_font = config.fonts.headings or theme.heading_font
-    code_font = config.fonts.code or theme.code_font
-    east_asia = config.fonts.east_asia or (
-        config.fonts.fallback[0] if config.fonts.fallback else body_font
-    )
-    complex_script = config.fonts.complex_script or (
-        config.fonts.fallback[0] if config.fonts.fallback else body_font
-    )
+    fonts = FontSlots.resolve(config, theme)
+    body_font = fonts.body
+    heading_font = fonts.headings
+    code_font = fonts.code
+    east_asia = fonts.east_asia
+    complex_script = fonts.complex_script
     preserve = bool(config.template and config.preserve_template_styles)
 
     if "MD Normal" not in styles:
@@ -174,10 +172,11 @@ def _set_paragraph_shading(style, fill: str) -> None:
 def ensure_professional_styles(document, config: RenderConfig) -> None:
     styles = document.styles
     theme = get_theme(config.theme)
-    body_font = config.fonts.body or theme.body_font
-    heading_font = config.fonts.headings or theme.heading_font
-    east_asia = config.fonts.east_asia or body_font
-    complex_script = config.fonts.complex_script or body_font
+    fonts = FontSlots.resolve(config, theme)
+    body_font = fonts.body
+    heading_font = fonts.headings
+    east_asia = fonts.east_asia
+    complex_script = fonts.complex_script
 
     if "MD Title" not in styles:
         s = styles.add_style("MD Title", WD_STYLE_TYPE.PARAGRAPH)
@@ -204,7 +203,7 @@ def ensure_professional_styles(document, config: RenderConfig) -> None:
     if "MD Code Label" not in styles:
         s = styles.add_style("MD Code Label", WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["MD Normal"]
-        _set_font(s, config.fonts.code or theme.code_font, None, None)
+        _set_font(s, fonts.code, None, None)
         s.font.size = Pt(max(8.0, theme.code_size_pt - 0.5))
         s.font.bold = True
         s.paragraph_format.space_after = Pt(0)

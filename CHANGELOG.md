@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- Section-scoped figure, table, and listing counters now emit the Word `\r` reset switch
+  instead of a carriage return, so caption numbering restarts in each new section as
+  documented for `caption_number_format="section"`.
+- Heading and caption bookmarks are written after `w:pPr`, matching the WordprocessingML
+  `CT_P` sequence instead of preceding the paragraph properties.
+- `python -m mddocx` now runs the command-line interface instead of failing with
+  `No module named mddocx.__main__`.
+
 ### Internal
 
 - Consolidated script and font policy: Unicode classification moved to `mddocx.scripts`,

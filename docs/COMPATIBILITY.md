@@ -40,6 +40,7 @@ regression suite. Structural checks do not claim pixel-level certification on ev
 | headers/footers/bookmarks/metadata | Tested | Native package parts/properties. |
 | automatic landscape table sections | Tested | Uses Word section semantics and page breaks. |
 | RTL/bidi properties | Tested structurally | Word performs shaping/font selection. |
+| script font slots | Tested | Complex-script, East Asian, and RTL slots are set per run, including title page, headers, footers, captions, bibliography, and notes. |
 
 ## Microsoft Word targets
 

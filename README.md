@@ -25,6 +25,7 @@ mddocx converts Markdown into native Word structures instead of screenshots or f
 - Includes diagnostics, document inspection, accessibility checks, and profiling utilities.
 - Provides privacy-aware metadata handling for exported AI/chat conversations.
 - Accepts common equation syntax copied from ChatGPT, Claude, Gemini, and other MathJax/LaTeX-producing assistants.
+- Keeps multilingual documents correct with per-script font slots, right-to-left direction, and CJK East Asian fonts.
 
 ## Installation
 
@@ -50,25 +51,25 @@ mddocx doctor
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.3.1-py3-none-any.whl
+python -m pip install ./mddocx_native-1.4.0-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.3.1-py3-none-any.whl
+python -m pip install .\mddocx_native-1.4.0-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.3.1 GitHub Release:
+You can also install the wheel directly from the v1.4.0 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.3.1/mddocx_native-1.3.1-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.0/mddocx_native-1.4.0-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.3.1"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.0"
 ```
 
 ### Install for local development
@@ -182,6 +183,28 @@ Run `mddocx math-check document.md` before conversion to see the active math eng
 of equations that can be rendered natively. Add `--json` for automation or `--strict` to return
 exit code 3 when any equation requires a fallback.
 
+## Language and script support
+
+Markdown and the canonical AST are always Unicode. Script-specific fonts and direction are
+applied only to the generated Word XML:
+
+- **Bengali** runs use `SutonnyMJ` by default with Bijoy glyph encoding at the DOCX boundary.
+  Set `RenderConfig.fonts.bengali` to a Unicode font (for example `Nirmala UI`) for Unicode
+  output, or to `None` to disable the output pass. English text keeps a Latin font.
+- **Other complex scripts** — Devanagari, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada,
+  Malayalam, Sinhala, Thai, Lao, Tibetan, Myanmar, Khmer, Ethiopic, Mongolian, Syriac, Thaana,
+  Arabic, and Hebrew — use the `--complex-script-font` slot. Left-to-right scripts stay LTR.
+- **Right-to-left** Arabic and Hebrew paragraphs receive Word bidi direction and right alignment
+  automatically (`rtl: auto`), or with `--rtl force` / `--rtl off`. Direction and script fonts
+  also apply to the title page, abstract, captions, bibliography, headers, footers, and notes.
+- **CJK** text — Chinese, Japanese, and Korean, including extension planes — uses the
+  `--east-asia-font` slot.
+
+```bash
+mddocx report.md -o report.docx --complex-script-font "Nirmala UI" --east-asia-font "Microsoft YaHei"
+mddocx arabic-report.md -o arabic-report.docx --rtl force
+```
+
 ## YAML front matter
 
 Document settings can be defined at the top of a Markdown file:
@@ -226,8 +249,9 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
-See the [1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md) for resilient resources, smart equations,
-academic references, and the existing [1.2.4 release notes](docs/RELEASE_NOTES_1.2.4.md) for Base64-image,
+See the [1.4.0 release notes](docs/RELEASE_NOTES_1.4.0.md) for multilingual script coverage and the
+existing [1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md) for resilient resources, smart equations,
+academic references; [1.2.4 release notes](docs/RELEASE_NOTES_1.2.4.md) cover Base64-image,
 AI-math, compiler, layout, security-policy, and migration summary.
 
 The compiler stages and system architecture are described in

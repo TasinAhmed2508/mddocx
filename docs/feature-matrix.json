@@ -143,6 +143,16 @@
       "word365": "package opens without repair for qualification fixture",
       "libreoffice": "package accepted in automated smoke",
       "tests": ["tests/test_security_and_metadata.py"]
+    },
+    {
+      "id": "scripts-and-languages",
+      "syntax": "Unicode Markdown in any script, with automatic or forced RTL and configured script fonts",
+      "ast": "ordinary text nodes",
+      "ooxml": "per-run ascii/hAnsi/eastAsia/cs font slots, w:rtl runs, w:bidi paragraphs, and the boundary Unicode-to-Bijoy pass",
+      "malformed_diagnostic": "invalid XML characters are sanitized in every part; existing MATH/RESOURCE diagnostics are unchanged",
+      "word365": "implemented; script fonts and direction applied to body text, title page, captions, bibliography, headers, footers, and notes",
+      "libreoffice": "supported with font-substitution differences",
+      "tests": ["tests/test_multilingual_output.py", "tests/test_bangla_document_layout.py"]
     }
   ]
 }

@@ -15,6 +15,20 @@ tracked evidence for each feature. This page summarizes host/runtime policy.
 | Charts | native ChartML + embedded XLSX |
 | Network | disabled by default |
 
+## Languages and scripts
+
+Markdown and the canonical AST remain Unicode. Script-specific fonts and direction are applied
+only to the generated Word XML, including the title page, captions, bibliography, headers,
+footers, and notes.
+
+| Script group | Status |
+|---|---|
+| Latin, Cyrillic, Greek, Vietnamese, Turkish | Unicode text with the body font |
+| Bengali | Unicode by default; Bijoy/SutonnyMJ encoding at the DOCX boundary when `fonts.bengali` is set |
+| Other complex scripts (Indic, Southeast Asian, Ethiopic, Mongolian, Syriac, Thaana) | `w:cs` font slot through `--complex-script-font`; left-to-right direction preserved |
+| Arabic, Hebrew, Persian | automatic bidi direction and right alignment; `--rtl off/auto/force` controls the policy |
+| Chinese, Japanese, Korean | `w:eastAsia` font slot through `--east-asia-font`, including extension planes |
+
 ## Word-compatible hosts
 
 mddocx generates standards-based OOXML intended for Microsoft Word 2019/2021/Microsoft 365 on Windows and Microsoft 365 on macOS. Automated package tests validate OOXML structure independently of any office application. Automated visual regression in the repository currently uses LibreOffice on Linux because Microsoft Word is not available in headless CI.

@@ -82,7 +82,14 @@ from mddocx.ooxml.comments import append_comment_reference, inject_comments
 from mddocx.ooxml.charts import ChartEntry, inject_charts
 from mddocx.references import ReferenceRegistry
 from mddocx.bibliography import BibliographyDatabase
-from mddocx.ooxml.text import clean_xml_text, configure_run_fonts, is_rtl_text, set_paragraph_rtl
+from mddocx.ooxml.text import (
+    clean_xml_text,
+    configure_run_fonts,
+    configure_xml_run,
+    is_rtl_text,
+    set_paragraph_rtl,
+    set_xml_paragraph_rtl,
+)
 from mddocx.ooxml.utils import (
     set_cell_margins,
     set_cell_shading,
@@ -214,10 +221,16 @@ class DocxRenderer:
             self.document.save(stream)
             blob = stream.getvalue()
             if self._footnote_entries:
+                configure_run = self._configure_xml_run
+                configure_paragraph = self._apply_xml_direction
                 if self.config.notes.style == "endnote":
-                    blob = inject_endnotes(blob, self._footnote_entries, self.math)
+                    blob = inject_endnotes(
+                        blob, self._footnote_entries, self.math, configure_run, configure_paragraph
+                    )
                 else:
-                    blob = inject_footnotes(blob, self._footnote_entries, self.math)
+                    blob = inject_footnotes(
+                        blob, self._footnote_entries, self.math, configure_run, configure_paragraph
+                    )
             if self._comment_entries and self.config.native_comments.enabled:
                 blob = inject_comments(
                     blob,
@@ -289,24 +302,30 @@ class DocxRenderer:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Mm(42)
         p.add_run(clean_xml_text(self.config.title or "Untitled Document"))
+        self._finish_text_paragraph(p, self.config.title or "Untitled Document")
         if cfg.subtitle:
             sp = self.document.add_paragraph(style=self._style("MD Subtitle"))
             sp.alignment = WD_ALIGN_PARAGRAPH.CENTER
             sp.add_run(clean_xml_text(cfg.subtitle))
+            self._finish_text_paragraph(sp, cfg.subtitle)
         if self.config.author:
             ap = self.document.add_paragraph(style=self._style("MD Normal"))
             ap.alignment = WD_ALIGN_PARAGRAPH.CENTER
             ap.add_run(clean_xml_text(self.config.author))
+            self._finish_text_paragraph(ap, self.config.author)
         if cfg.organization:
             op = self.document.add_paragraph(style=self._style("MD Normal"))
             op.alignment = WD_ALIGN_PARAGRAPH.CENTER
             op.add_run(clean_xml_text(cfg.organization))
+            self._finish_text_paragraph(op, cfg.organization)
         dp = self.document.add_paragraph(style=self._style("MD Normal"))
         dp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if cfg.date:
             render_field_template(dp, cfg.date, {"AUTHOR": self.config.author or ""})
+            self._finish_text_paragraph(dp, cfg.date)
         else:
             render_field_template(dp, "{DATE}")
+            self._finish_text_paragraph(dp)
         if cfg.page_break_after:
             self.document.add_page_break()
 
@@ -315,13 +334,17 @@ class DocxRenderer:
         if cfg.text:
             hp = self.document.add_paragraph(style=self._style("MD Heading 1"))
             hp.add_run(clean_xml_text(cfg.title))
+            self._finish_text_paragraph(hp, cfg.title)
             bp = self.document.add_paragraph(style=self._style("MD Abstract"))
             bp.add_run(clean_xml_text(cfg.text))
+            self._finish_text_paragraph(bp, cfg.text)
         if cfg.keywords:
+            keyword_text = ", ".join(cfg.keywords)
             kp = self.document.add_paragraph(style=self._style("MD Abstract"))
             r = kp.add_run(clean_xml_text(cfg.keywords_label) + ": ")
             r.bold = True
-            kp.add_run(clean_xml_text(", ".join(cfg.keywords)))
+            kp.add_run(clean_xml_text(keyword_text))
+            self._finish_text_paragraph(kp, keyword_text)
 
     def _configure_section(
         self, sec, orientation: str | None = None, preserve_page: bool = False
@@ -382,6 +405,7 @@ class DocxRenderer:
                 if pieces:
                     p.add_run(" — ")
                 add_style_ref(p, self._style("MD Heading 1"))
+            self._finish_text_paragraph(p, text)
 
         def render_footer(footer, text: str | None, include_defaults: bool = True) -> None:
             footer.is_linked_to_previous = False
@@ -392,6 +416,7 @@ class DocxRenderer:
                     p, text, {"TITLE": self.config.title or "", "AUTHOR": self.config.author or ""}
                 )
             if not include_defaults:
+                self._finish_text_paragraph(p, text)
                 return
             has_text = bool(text)
             if footer_cfg.page_x_of_y:
@@ -409,6 +434,7 @@ class DocxRenderer:
                 if has_text:
                     p.add_run("  •  ")
                 add_num_pages(p)
+            self._finish_text_paragraph(p, text)
 
         if (
             header_cfg.enabled
@@ -442,6 +468,7 @@ class DocxRenderer:
             r.bold = True
             r.font.size = Mm(5.5)
             p.paragraph_format.keep_with_next = True
+            self._finish_text_paragraph(p, self.config.toc.title)
         p = self.document.add_paragraph(style=self._style("MD Normal"))
         add_toc(p, self.config.toc.min_level, self.config.toc.max_level)
         self.document.add_paragraph(style=self._style("MD Normal"))
@@ -996,6 +1023,9 @@ class DocxRenderer:
             add_seq_field(p, label, "1")
         if caption:
             p.add_run(" — " + clean_xml_text(caption))
+            self._finish_text_paragraph(p, caption)
+        else:
+            self._finish_text_paragraph(p, label)
 
     def _render_numbered_equation(self, node: MathBlock) -> None:
         table = self.document.add_table(rows=1, cols=2)
@@ -1114,6 +1144,7 @@ class DocxRenderer:
         if not has_explicit_heading:
             p = self.document.add_paragraph(style=self._style("MD Heading 1"))
             p.add_run(title)
+            self._finish_text_paragraph(p, title)
         cited = set(self._cited_keys)
         include_all = getattr(self.config.citations, "bibliography_include", "cited") == "all"
         keys = None if include_all or not cited else self._cited_keys
@@ -1125,10 +1156,17 @@ class DocxRenderer:
             for segment in segments:
                 text = clean_xml_text(segment.text)
                 if segment.href and getattr(self.config.citations, "hyperlink_doi_and_url", True):
-                    add_hyperlink(bp, text, segment.href, font_name=self._font_for_text(text))
+                    add_hyperlink(
+                        bp,
+                        text,
+                        segment.href,
+                        font_name=self._font_for_text(text),
+                        rtl=self._rtl_for_text(text),
+                    )
                 else:
                     run = bp.add_run(text)
                     self._configure_run(run, text)
+            self._finish_text_paragraph(bp, " ".join(segment.text for segment in segments))
             name = f"cite_{ReferenceRegistry.safe_bookmark(key)}"[:40]
             if name not in self._bookmark_names:
                 self._bookmark_names.add(name)
@@ -1605,18 +1643,58 @@ class DocxRenderer:
             return self.config.fonts.complex_script
         return self.config.fonts.body or self._theme.body_font
 
+    def _east_asia_font(self) -> str | None:
+        return self.config.fonts.east_asia or (
+            self.config.fonts.fallback[0] if self.config.fonts.fallback else None
+        )
+
+    def _complex_script_font(self) -> str | None:
+        return self.config.fonts.complex_script or (
+            self.config.fonts.fallback[0] if self.config.fonts.fallback else None
+        )
+
     def _configure_run(self, run, text: str, code: bool = False) -> None:
-        rtl = self._rtl_for_text(text)
         configure_run_fonts(
             run,
             text,
             self._font_for_text(text, code=code),
-            self.config.fonts.east_asia
-            or (self.config.fonts.fallback[0] if self.config.fonts.fallback else None),
-            self.config.fonts.complex_script
-            or (self.config.fonts.fallback[0] if self.config.fonts.fallback else None),
-            rtl,
+            self._east_asia_font(),
+            self._complex_script_font(),
+            self._rtl_for_text(text),
         )
+
+    def _configure_xml_run(self, run, text: str) -> None:
+        """Configure a raw ``w:r`` element that was not built through python-docx."""
+        if not text:
+            return
+        configure_xml_run(
+            run,
+            text,
+            self._font_for_text(text),
+            self._east_asia_font(),
+            self._complex_script_font(),
+            self._rtl_for_text(text),
+        )
+
+    def _finish_text_paragraph(self, paragraph, text: str | None = None) -> None:
+        """Apply script fonts and direction to a paragraph built outside the block renderer."""
+        if text is None:
+            text = "".join(node.text or "" for node in paragraph._p.iter(qn("w:t")))
+        for run in paragraph._p.iter(qn("w:r")):
+            run_text = "".join(node.text or "" for node in run.iter(qn("w:t")))
+            self._configure_xml_run(run, run_text)
+        self._apply_paragraph_direction(paragraph, text)
+
+    def _apply_xml_direction(self, paragraph_element, text: str) -> None:
+        """Apply bidi direction to a raw ``w:p`` element used by note parts."""
+        if not text or not self._rtl_for_text(text):
+            return
+        set_xml_paragraph_rtl(paragraph_element, True)
+        ppr = paragraph_element.find(qn("w:pPr"))
+        if ppr is not None and ppr.find(qn("w:jc")) is None:
+            justify = OxmlElement("w:jc")
+            justify.set(qn("w:val"), "right")
+            ppr.append(justify)
 
     def _apply_paragraph_direction(self, paragraph, text: str) -> None:
         rtl = self._rtl_for_text(text)

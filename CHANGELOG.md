@@ -9,6 +9,12 @@
   package part registration to `mddocx.ooxml.package`, and footnotes and endnotes into one
   spec-driven `mddocx.ooxml.notes` module. Rendered output is byte-identical for the
   multilingual, notes, comments, charts, figure, and bibliography fixtures.
+- Split the 1,683-line `mddocx.render.renderer` into a 480-line orchestrator plus
+  per-surface modules (`front_matter`, `text_blocks`, `lists`, `tables`, `data_tables`,
+  `charts`, `figures`, `code_blocks`, `math_blocks`, `citations`, `document_setup`,
+  `sections`, `headers_footers`). Block surfaces are now functions that receive the live
+  renderer, so line counts, file ownership, and the direction/font policy are easier to
+  audit; rendered output is byte-identical across an 18-document corpus.
 
 ### Performance
 

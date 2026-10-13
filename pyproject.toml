@@ -1,10 +1,12 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# 77 is the first setuptools release that understands the PEP 639 license
+# expression and license-files keys used below; older versions fail the build.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "mddocx-native"
-version = "1.4.0"
+version = "1.4.1"
 description = "Deterministic Markdown to native, editable Microsoft Word DOCX compiler"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,6 +37,7 @@ dependencies = [
   "Pillow>=10.0",
   "Pygments>=2.17",
   "PyYAML>=6.0",
+  "latex2mathml>=3.81.0",
   "openpyxl>=3.1",
   "prompt-toolkit>=3.0",
 ]
@@ -46,14 +49,32 @@ Issues = "https://github.com/TasinAhmed2508/mddocx/issues"
 Changelog = "https://github.com/TasinAhmed2508/mddocx/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+# Kept for compatibility; latex2mathml is now a core dependency of the package.
 math = ["latex2mathml>=3.81.0"]
 frontmatter = ["PyYAML>=6.0"]
 images = ["Pillow>=10.0", "CairoSVG>=2.7", "defusedxml>=0.7"]
 academic = ["citeproc-py>=0.10.3,<0.11"]
+# Opt-in Node.js runtime for the bundled MathJax engine (about 45 MB).
+mathjax = ["nodejs-wheel>=24.19.0"]
+# Everything except the Node.js runtime, in one command.
+all = [
+  "latex2mathml>=3.81.0",
+  "Pillow>=10.0",
+  "CairoSVG>=2.7",
+  "defusedxml>=0.7",
+  "citeproc-py>=0.10.3,<0.11",
+]
 dev = ["pytest>=8", "ruff==0.15.10", "mypy>=1.10", "build>=1.2", "twine>=5.0"]
 
 [project.scripts]
 mddocx = "mddocx.cli:main"
+# Launched through a module outside the 'mddocx' package, so it still runs when the
+# unrelated PyPI project of that name has overwritten mddocx/cli.py.
+mddocx-native = "mddocx_launcher:main"
+
+[tool.setuptools]
+# A single top-level module next to the package: the collision-safe launcher.
+py-modules = ["mddocx_launcher"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

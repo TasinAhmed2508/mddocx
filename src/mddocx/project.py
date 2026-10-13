@@ -586,6 +586,10 @@ def _config_from_manifest(manifest: ProjectManifest, explicit: RenderConfig | No
             cfg.fonts.headings = str(render["heading_font"])
         if "code_font" in render:
             cfg.fonts.code = str(render["code_font"])
+        if "bengali_font" in render:
+            # 'none' disables the Bangla output pass; 'auto' resolves at render time.
+            value = str(render["bengali_font"]).strip()
+            cfg.fonts.bengali = None if value.casefold() == "none" else value or None
         if "code_language_labels" in render:
             cfg.code.show_language_label = bool(render["code_language_labels"])
         if "syntax_highlighting" in render:

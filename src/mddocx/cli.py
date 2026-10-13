@@ -8,6 +8,7 @@ from . import __version__
 from .batch import collect_markdown_inputs, render_many
 from .compiler import Compiler
 from .config import (
+    DEFAULT_BENGALI_FONT,
     CacheConfig,
     CompilationLimits,
     FontConfig,
@@ -34,11 +35,11 @@ from .config import (
     MetadataConfig,
     MathFailurePolicy,
 )
-from .diagnostics import MddocxError
+from .diagnostics import Diagnostic, MddocxError
 from .data import load_tabular_data
 from .styles import THEMES
 from .inspection import inspect_docx
-from .doctor import run_doctor
+from .doctor import conflicting_distributions, install_conflict_message, run_doctor
 from .accessibility import audit_docx_accessibility
 from .benchmark import run_performance_gate
 from .api_stability import get_public_api_manifest
@@ -175,6 +176,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--comment-author", default="mddocx", help="Author for CriticMarkup native Word comments"
     )
     p.add_argument("--comment-initials", default="MD", help="Initials for native Word comments")
+    p.add_argument(
+        "--bengali-font",
+        help=(
+            "Bangla script font. 'auto' uses the legacy SutonnyMJ font when installed and an "
+            "installed Unicode Bangla font otherwise; 'none' disables the Bangla output pass"
+        ),
+    )
     p.add_argument("--east-asia-font", help="East Asian script font")
     p.add_argument("--complex-script-font", help="Arabic/Hebrew complex-script font")
     p.add_argument("--rtl", choices=["off", "auto", "force"], default="auto")
@@ -338,6 +346,7 @@ def _config_from_args(args: argparse.Namespace) -> RenderConfig:
         ),
         native_comments=CommentConfig(author=args.comment_author, initials=args.comment_initials),
         fonts=FontConfig(
+            bengali=_bangla_font_choice(args.bengali_font),
             body=args.font,
             headings=args.heading_font,
             code=args.code_font,
@@ -891,9 +900,71 @@ def _main_open(argv: list[str]) -> int:
         return 2
 
 
+def _report_diagnostics(diagnostics: tuple[Diagnostic, ...]) -> None:
+    """Surface recoverable problems on stderr during a normal conversion.
+
+    Warnings used to be collected but never shown, so a document could be
+    produced with, for example, unreadable Bangla glyphs and no visible reason.
+    Unchanged command output stays on stdout; this only adds to stderr.
+    """
+    for item in diagnostics:
+        if item.severity == "warning":
+            print(str(item), file=sys.stderr)
+
+
+def _bangla_font_choice(value: str | None) -> str | None:
+    """Map ``--bengali-font`` onto the configured Bangla font slot."""
+    if value is None or not value.strip():
+        return DEFAULT_BENGALI_FONT
+    choice = value.strip()
+    if choice.casefold() in {"none", "off", "disable", "disabled"}:
+        return None
+    return choice
+
+
+def warn_about_import_conflict() -> bool:
+    """Report another distribution that also provides the ``mddocx`` package.
+
+    mddocx is published as ``mddocx-native``, but an unrelated PyPI project named
+    ``mddocx`` ships the same ``mddocx`` import package and the same ``mddocx``
+    console script, so the two overwrite each other inside ``site-packages``.
+    Explaining that in one actionable message is far better than the confusing
+    failures it otherwise produces.
+    """
+    conflicts = conflicting_distributions()
+    if not conflicts:
+        return False
+    print(
+        "WARNING: conflicting mddocx installation detected.\n"
+        f"{install_conflict_message(conflicts)}",
+        file=sys.stderr,
+    )
+    return True
+
+
+def _main_first_run() -> int:
+    """Onboard an interactive invocation that supplied no arguments."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        # Non-interactive callers keep the scriptable argparse usage error.
+        build_parser().parse_args([])
+        return 2
+    print(
+        f"mddocx {__version__} - Markdown to editable Word documents\n"
+        "\n"
+        "No input was given, so the guided console is starting.\n"
+        "  Convert a file:      mddocx report.md -o report.docx\n"
+        "  Check this machine:  mddocx doctor\n"
+        "  Full command list:   mddocx --help\n"
+    )
+    return _main_shell([])
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
-    if raw and raw[0] == "shell":
+    warn_about_import_conflict()
+    if not raw:
+        return _main_first_run()
+    if raw[0] == "shell":
         return _main_shell(raw[1:])
     if raw and raw[0] == "recent":
         return _main_recent(raw[1:])
@@ -975,6 +1046,7 @@ def main(argv: list[str] | None = None) -> int:
         output = args.output or source.with_suffix(".docx")
         result = compiler.compile_file(source, output)
         print(output)
+        _report_diagnostics(result.diagnostics)
         add_recent(
             source=source,
             output=output,

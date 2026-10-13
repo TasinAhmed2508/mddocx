@@ -9,6 +9,45 @@ import shutil
 import sys
 import tempfile
 
+# The package-name conflict and its explanation live in the launcher module,
+# which stays importable even when another distribution has overwritten the
+# mddocx package. Re-exported here because the doctor is where users look.
+from mddocx_launcher import conflicting_distributions, install_conflict_message
+
+__all__ = ["DoctorReport", "conflicting_distributions", "install_conflict_message", "run_doctor"]
+
+
+def svg_support_status() -> str:
+    """Report whether SVG conversion can actually run.
+
+    CairoSVG installs as a pure-Python package but needs a native cairo library
+    at import time, which is the one optional feature that can be installed and
+    still fail, so it is probed rather than reported by version alone.
+    """
+    try:
+        import cairosvg  # noqa: F401
+    except ImportError:
+        return "not installed; install the images extra for SVG sources"
+    except OSError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else "unknown error"
+        return f"unavailable: the native cairo library was not found ({first_line})"
+    return "ready"
+
+
+def math_engine_probe(latex: str = "x^2 + 1") -> tuple[str | None, str | None]:
+    """Convert one trivial equation and report the engine that actually ran.
+
+    Engine names are advisory unless they have been exercised, so the doctor
+    proves the math pipeline instead of reporting that a file exists.
+    """
+    try:
+        from .math import DefaultMathConverter
+
+        conversion = DefaultMathConverter(cache=False).convert(latex, False)
+    except Exception as exc:  # noqa: BLE001 - the report carries the reason
+        return None, f"{type(exc).__name__}: {exc}"
+    return conversion.engine, None
+
 
 @dataclass(slots=True)
 class DoctorReport:
@@ -21,6 +60,15 @@ class DoctorReport:
     temp_directory_writable: bool = False
     mathjax_sidecar: str | None = None
     mathjax_protocol: int = 1
+    javascript_runtime: str | None = None
+    math_engine: str | None = None
+    math_engine_error: str | None = None
+    install_conflict: tuple[str, ...] = ()
+    svg_support: str = "unknown"
+
+    @property
+    def mathjax_ready(self) -> bool:
+        return self.math_engine == "mathjax-sidecar"
 
     @property
     def visual_qa_ready(self) -> bool:
@@ -38,18 +86,22 @@ class DoctorReport:
             "Pillow",
             "Pygments",
             "PyYAML",
+            "latex2mathml",
             "openpyxl",
             "prompt-toolkit",
         )
         return (
             sys.version_info >= (3, 11)
             and self.temp_directory_writable
+            and self.math_engine is not None
+            and not self.install_conflict
             and all(self.dependencies.get(name) not in {None, "missing"} for name in required)
         )
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
         payload["visual_qa_ready"] = self.visual_qa_ready
+        payload["mathjax_ready"] = self.mathjax_ready
         payload["ok"] = self.ok
         return payload
 
@@ -57,16 +109,31 @@ class DoctorReport:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=True)
 
     def to_text(self) -> str:
-        lines = [
-            f"mddocx doctor: {'PASS' if self.ok else 'ISSUES'}",
-            f"mddocx: {self.mddocx_version}",
-            f"Python: {self.python}",
-            f"Platform: {self.platform} ({self.machine})",
-            f"Temporary directory writable: {'yes' if self.temp_directory_writable else 'no'}",
-            f"MathJax sidecar: {self.mathjax_sidecar or 'not found; Python engines will be used'}",
-            f"MathJax protocol: {self.mathjax_protocol}",
-            "Dependencies:",
-        ]
+        lines = [f"mddocx doctor: {'PASS' if self.ok else 'ISSUES'}"]
+        if self.install_conflict:
+            lines.append("Install conflict detected:")
+            lines.extend(
+                f"  {line}" for line in install_conflict_message(self.install_conflict).splitlines()
+            )
+        lines.extend(
+            [
+                f"mddocx: {self.mddocx_version}",
+                f"Python: {self.python}",
+                f"Platform: {self.platform} ({self.machine})",
+                f"Temporary directory writable: {'yes' if self.temp_directory_writable else 'no'}",
+                f"MathJax sidecar: {self.mathjax_sidecar or 'not found'}",
+                f"JavaScript runtime: {self.javascript_runtime or 'not found; optional, needed for the MathJax engine'}",
+                "Math engine in use: "
+                + (
+                    self.math_engine
+                    if self.math_engine
+                    else f"unavailable ({self.math_engine_error or 'no engine available'})"
+                ),
+                f"MathJax protocol: {self.mathjax_protocol}",
+                f"SVG conversion: {self.svg_support}",
+                "Dependencies:",
+            ]
+        )
         for name, value in self.dependencies.items():
             lines.append(f"  {name}: {value}")
         lines.append("External QA tools:")
@@ -135,6 +202,7 @@ def run_doctor() -> DoctorReport:
         temp_ok = False
 
     sidecar = MathJaxSidecar()
+    math_engine, math_engine_error = math_engine_probe()
     return DoctorReport(
         python=platform.python_version(),
         platform=f"{platform.system()} {platform.release()}",
@@ -143,6 +211,15 @@ def run_doctor() -> DoctorReport:
         dependencies=deps,
         executables={name: shutil.which(name) for name in ("libreoffice", "soffice", "pdftoppm")},
         temp_directory_writable=temp_ok,
-        mathjax_sidecar=str(sidecar.executable) if sidecar.available else None,
+        mathjax_sidecar=(
+            str(sidecar.executable)
+            if sidecar.executable is not None and sidecar.executable.is_file()
+            else None
+        ),
         mathjax_protocol=sidecar.protocol_version,
+        javascript_runtime=sidecar.runtime,
+        math_engine=math_engine,
+        math_engine_error=math_engine_error,
+        install_conflict=conflicting_distributions(),
+        svg_support=svg_support_status(),
     )

@@ -65,12 +65,24 @@ jobs:
           python -m venv /tmp/mddocx-wheel
           /tmp/mddocx-wheel/bin/python -m pip install dist/*.whl
           /tmp/mddocx-wheel/bin/mddocx --version
+          /tmp/mddocx-wheel/bin/mddocx-native --version
+          /tmp/mddocx-wheel/bin/python -m mddocx --version
           /tmp/mddocx-wheel/bin/mddocx doctor
           /tmp/mddocx-wheel/bin/mddocx tests/fixtures/ai_markdown/chatgpt_sphere_equations.md -o /tmp/ai-math.docx
           /tmp/mddocx-wheel/bin/mddocx inspect /tmp/ai-math.docx --strict
           /tmp/mddocx-wheel/bin/mddocx math-check tests/fixtures/ai_markdown/chatgpt_sphere_equations.md --strict
           /tmp/mddocx-wheel/bin/mddocx api --json > /tmp/public-api.json
           /tmp/mddocx-wheel/bin/python -c "import json; p=json.load(open('/tmp/public-api.json')); assert p['api_version']=='1'"
+      - name: Smoke-test optional extras from the built wheel
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y libcairo2
+          wheel=$(ls dist/*.whl | head -1)
+          python -m venv /tmp/mddocx-extras
+          /tmp/mddocx-extras/bin/python -m pip install "${wheel}[all]"
+          /tmp/mddocx-extras/bin/python -c "import cairosvg, citeproc, latex2mathml"
+          /tmp/mddocx-extras/bin/mddocx doctor
+          /tmp/mddocx-extras/bin/python -m mddocx tests/fixtures/ai_markdown/chatgpt_sphere_equations.md -o /tmp/extras-math.docx
       - name: Smoke-test source distribution in a clean environment
         shell: bash
         run: |

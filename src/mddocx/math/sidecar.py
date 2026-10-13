@@ -1,14 +1,41 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+
+NODE_ENV_VAR = "MDDOCX_NODE"
+_SCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs"})
 
 
 class MathJaxSidecarError(RuntimeError):
     pass
+
+
+@lru_cache(maxsize=1)
+def node_executable() -> str | None:
+    """Locate the JavaScript runtime the bundled MathJax sidecar needs.
+
+    ``MDDOCX_NODE`` wins so a self-managed runtime can be selected explicitly.
+    Otherwise the interpreter that owns mddocx is checked first, which is how an
+    environment-installed ``nodejs-wheel`` dependency is found even when the
+    environment's script directory is not on ``PATH``.
+
+    The result is cached for the process; call ``node_executable.cache_clear()``
+    after changing ``PATH`` or ``MDDOCX_NODE``.
+    """
+    configured = os.environ.get(NODE_ENV_VAR)
+    if configured:
+        return shutil.which(configured) or (configured if Path(configured).is_file() else None)
+    suffix = ".exe" if os.name == "nt" else ""
+    local = Path(sys.executable).with_name(f"node{suffix}")
+    if local.is_file():
+        return str(local)
+    return shutil.which("node") or shutil.which("nodejs")
 
 
 class MathJaxSidecar:
@@ -21,12 +48,39 @@ class MathJaxSidecar:
         self.timeout = timeout
 
     @property
+    def is_script(self) -> bool:
+        return self.executable is not None and self.executable.suffix.lower() in _SCRIPT_SUFFIXES
+
+    @property
+    def runtime(self) -> str | None:
+        """JavaScript runtime for a script sidecar, or None when none is needed."""
+        return node_executable() if self.is_script else None
+
+    @property
     def available(self) -> bool:
-        return self.executable is not None and self.executable.is_file()
+        """True only when the sidecar can actually run, not merely when it exists."""
+        if self.executable is None or not self.executable.is_file():
+            return False
+        return self.runtime is not None if self.is_script else True
+
+    def unavailable_reason(self) -> str | None:
+        """Explain why :attr:`available` is False, for actionable diagnostics."""
+        if self.executable is None:
+            return "the MathJax sidecar file was not found"
+        if not self.executable.is_file():
+            return f"the MathJax sidecar file is missing: {self.executable}"
+        if self.is_script and self.runtime is None:
+            return (
+                "the MathJax sidecar needs a JavaScript runtime; install Node.js, "
+                f"install the mddocx[mathjax] extra, or set {NODE_ENV_VAR}"
+            )
+        return None
 
     def convert(self, latex: str, display: bool) -> str:
         if not self.available or self.executable is None:
-            raise MathJaxSidecarError("MathJax sidecar is not installed")
+            raise MathJaxSidecarError(
+                f"MathJax sidecar is not usable: {self.unavailable_reason() or 'unknown reason'}"
+            )
         request = {
             "protocol": self.protocol_version,
             "tex": latex,
@@ -37,8 +91,8 @@ class MathJaxSidecar:
         }
         try:
             command = (
-                [shutil.which("node") or "node", str(self.executable)]
-                if self.executable.suffix.lower() in {".js", ".mjs", ".cjs"}
+                [self.runtime or "node", str(self.executable)]
+                if self.is_script
                 else [str(self.executable)]
             )
             completed = subprocess.run(

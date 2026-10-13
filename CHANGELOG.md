@@ -1,9 +1,37 @@
 # Changelog
 
-## Unreleased
+## 1.4.1 — Install diagnostics and collision safety
 
-### Fixed
+This release fixes the failures that surround a conversion rather than the conversion itself: an
+install that resolves to a different project, a documented command missing from the published
+wheel, an optional engine reported as ready when it could not run, and Bangla output that could be
+unreadable with no warning.
 
+### Fixes
+
+- `mddocx` now reports the unrelated PyPI project named `mddocx`, which ships the same `mddocx`
+  package directory and the same `mddocx` console script and therefore overwrites this one when
+  both are installed. `mddocx` warns with the exact uninstall/reinstall commands, `mddocx doctor`
+  lists the conflict and fails, and the new `mddocx-native` command runs through a launcher that
+  lives outside the shared package, so it cannot be overwritten: in a corrupted environment it
+  refuses with the repair commands instead of silently executing the other project
+  (`MDDOCX_ALLOW_IMPORT_CONFLICT=1` bypasses the refusal).
+- Running `mddocx` with no arguments on an interactive terminal now opens the guided console
+  with quick-start lines instead of failing with an argparse usage error. Non-interactive
+  invocations keep the previous exit-code-2 usage error.
+- `mddocx doctor` now converts one equation to prove the math pipeline works, and reports the
+  engine that actually ran, the JavaScript runtime it found, and why the engine is unavailable
+  when it is. A MathJax sidecar script with no JavaScript runtime is no longer reported as
+  available, and `mddocx math-check` no longer claims the MathJax engine when equations fall
+  back to another one. It also probes SVG support, because CairoSVG can be installed and still
+  fail when the native cairo library is absent.
+- Bangla output no longer produces unreadable glyphs silently: a configured Bangla font that is
+  not installed raises a `FONT301` warning explaining the options, and the new `--bengali-font`
+  option accepts a font name, `none` to disable the output pass, or `auto` to use the legacy
+  `SutonnyMJ` font when installed and an installed Unicode Bangla font otherwise. Project
+  manifests accept `render.bengali_font`.
+- Documents without Bangla text skip the Bangla output pass instead of rewriting every Word XML
+  part and rebuilding the package.
 - Section-scoped figure, table, and listing counters now emit the Word `\r` reset switch
   instead of a carriage return, so caption numbering restarts in each new section as
   documented for `caption_number_format="section"`.
@@ -11,6 +39,20 @@
   `CT_P` sequence instead of preceding the paragraph properties.
 - `python -m mddocx` now runs the command-line interface instead of failing with
   `No module named mddocx.__main__`.
+
+### Changed
+
+- `latex2mathml` is now a core dependency, so a plain `pip install mddocx-native` always has a
+  real equation engine when no JavaScript runtime is available. The `math` extra remains for
+  compatibility.
+- Added `all` and `mathjax` extras: `mddocx-native[all]` installs the math, image, and academic
+  extras together, and `[mathjax]` additionally provides a Node.js runtime for the bundled
+  MathJax engine.
+- The build requires setuptools 77 or newer, the first release that accepts the PEP 639 license
+  expression and license-file metadata this project already declares.
+- README documentation links are absolute so they resolve on the PyPI project page, and the
+  install section documents the `mddocx` name conflict, the `mddocx-native` command, and a
+  troubleshooting list.
 
 ### Internal
 
@@ -38,6 +80,9 @@
 - Give the large-document benchmark a platform-aware budget: 30 seconds on Linux and 60
   seconds on macOS and Windows hosted runners, which measured the 100-section corpus at
   33.7 seconds and 44.7 seconds respectively.
+- The clean-install smoke test now exercises the documented entry points (`mddocx`,
+  `mddocx-native`, and `python -m mddocx`) and adds a second environment that installs the
+  `all` extra from the built wheel and converts an equation-heavy fixture.
 
 ## 1.4.0 — Multilingual script coverage
 

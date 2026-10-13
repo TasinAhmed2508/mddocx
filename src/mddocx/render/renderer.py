@@ -233,9 +233,21 @@ class DocxRenderer:
                 blob = inject_charts(blob, self._chart_entries)
             from mddocx.ooxml.bangla import apply_bangla_font
 
-            return apply_bangla_font(blob, self.config.fonts.bengali)
+            return apply_bangla_font(
+                blob, self.config.fonts.bengali, report=self._report_bangla_font
+            )
         finally:
             self.resolver.close()
+
+    def _report_bangla_font(self, message: str) -> None:
+        self.reporter.warn(
+            "FONT301",
+            message,
+            remediation=(
+                "Install the configured Bangla font, or use --bengali-font auto to let "
+                "mddocx choose an installed Unicode Bangla font."
+            ),
+        )
 
     def _style(self, canonical: str) -> str:
         return resolve_style_name(self.document, self.config, canonical)

@@ -39,37 +39,47 @@ The distribution is published as `mddocx-native`; the Python import and command 
 python -m pip install --upgrade mddocx-native
 ```
 
+> **Install `mddocx-native`, not `mddocx`.** An unrelated PyPI project owns the name `mddocx`
+> and ships the same `mddocx` package directory and the same `mddocx` command. Installing both
+> makes them overwrite each other, so always use the `mddocx-native` distribution name.
+> mddocx reports the conflict when it starts, and `mddocx doctor` lists it too.
+
 Verify the installation:
 
 ```bash
 mddocx --version
+mddocx-native --version   # same program; refuses to run when another project overwrote it
 mddocx doctor
 ```
+
+`mddocx doctor` reports the Python version, the dependencies it found, the JavaScript runtime
+and math engine it will actually use, and whether another distribution is competing for the
+`mddocx` package. It exits with status 2 when something needs attention.
 
 ### Install a downloaded wheel
 
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.4.0-py3-none-any.whl
+python -m pip install ./mddocx_native-1.4.1-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.4.0-py3-none-any.whl
+python -m pip install .\mddocx_native-1.4.1-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.4.0 GitHub Release:
+You can also install the wheel directly from the v1.4.1 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.0/mddocx_native-1.4.0-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.1/mddocx_native-1.4.1-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.0"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.1"
 ```
 
 ### Install for local development
@@ -83,13 +93,54 @@ python -m pip install -e ".[dev]"
 Optional features:
 
 ```bash
-python -m pip install "mddocx-native[math]"
-python -m pip install "mddocx-native[images]"
-python -m pip install "mddocx-native[math,images]"
+# Everything except the Node.js runtime
+python -m pip install "mddocx-native[all]"
 
-# Add arbitrary local CSL style support
-python -m pip install "mddocx-native[academic]"
+# Include a Node.js runtime so the bundled MathJax engine works without a manual install (~45 MB)
+python -m pip install "mddocx-native[mathjax]"
+
+# Individually
+python -m pip install "mddocx-native[images]"
+python -m pip install "mddocx-native[academic]"   # arbitrary local CSL styles
+python -m pip install "mddocx-native[math]"        # included by default; kept for compatibility
 ```
+
+Equation rendering needs no extra package: a pure-Python engine is always installed, and the
+bundled MathJax sidecar is used automatically when a JavaScript runtime is available. Run
+`mddocx doctor` to see which engine this machine uses.
+
+### Install troubleshooting
+
+- **`mddocx --version` prints something like `0.5.x`.** The unrelated PyPI project `mddocx` is
+  installed as well; the two share one package directory and one command, so whichever was
+  installed last wins. Remove both and reinstall this distribution:
+
+  ```bash
+  python -m pip uninstall -y mddocx mddocx-native
+  python -m pip install --force-reinstall mddocx-native
+  ```
+
+  Afterwards use `mddocx-native` (or `python -m mddocx`) so the shared command name cannot be
+  taken over again.
+- **`mddocx: command not found`.** The Python script directory is not on `PATH`. Every command
+  is also available as `python -m mddocx ...`, which needs no `PATH` change.
+- **`No matching distribution found for mddocx-native`.** mddocx requires Python 3.11 or newer;
+  check `python --version`.
+- **`Could not find a version that satisfies the requirement bijoy2unicode`.** That dependency
+  is published as a source distribution only, so `--only-binary=:all:` and wheel-only mirrors
+  cannot install it. Allow source builds for that package.
+- **`mddocx doctor` reports no JavaScript runtime.** Equations still render through the
+  pure-Python engine. Install Node.js, or `mddocx-native[mathjax]`, for the MathJax engine.
+- **SVG images fail after installing the `images` or `all` extra.** CairoSVG needs a native cairo
+  library at run time (not just the Python package). Install it with the usual system package for
+  your platform, or convert the SVG to PNG first; every other document feature works without it,
+  and `mddocx doctor` reports the exact reason when it is missing.
+- **Bangla text looks wrong in Word.** The default `SutonnyMJ` font is not bundled. Install the
+  font, or pass `--bengali-font auto` to keep Bangla Unicode while applying an installed
+  Unicode Bangla font, or `--bengali-font none` to skip the Bangla output pass entirely.
+- **`mddocx` starts the interactive console.** Running it with no arguments on a terminal opens
+  the guided console. `mddocx --help` lists every command, and `mddocx FILE.md` converts
+  directly.
 
 ## Quick start
 
@@ -153,9 +204,9 @@ Run mddocx --help for the complete command reference.
     with open("generated.docx", "wb") as file:
         file.write(document)
 
-The public API is documented in docs/API_STABILITY.md and can also be inspected with mddocx api --json.
+The public API is documented in [docs/API_STABILITY.md](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/API_STABILITY.md) and can also be inspected with `mddocx api --json`.
 The additive compiler-stage mapping and behavioral changes are documented in
-`docs/V2_MIGRATION.md`.
+[docs/V2_MIGRATION.md](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/V2_MIGRATION.md).
 
 For callers that need the output, diagnostics, and profiling data together, use the staged-v2
 compiler service:
@@ -193,7 +244,11 @@ applied only to the generated Word XML:
 
 - **Bengali** runs use `SutonnyMJ` by default with Bijoy glyph encoding at the DOCX boundary.
   Set `RenderConfig.fonts.bengali` to a Unicode font (for example `Nirmala UI`) for Unicode
-  output, or to `None` to disable the output pass. English text keeps a Latin font.
+  output, or to `None` to disable the output pass. From the command line, use
+  `--bengali-font "Nirmala UI"`, `--bengali-font none`, or `--bengali-font auto`, which uses
+  `SutonnyMJ` when it is installed and an installed Unicode Bangla font otherwise. English text
+  keeps a Latin font, and mddocx warns (diagnostic `FONT301`) when a configured Bangla font is
+  not installed instead of silently emitting unreadable glyphs.
 - **Other complex scripts** — Devanagari, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada,
   Malayalam, Sinhala, Thai, Lao, Tibetan, Myanmar, Khmer, Ethiopic, Mongolian, Syriac, Thaana,
   Arabic, and Hebrew — use the `--complex-script-font` slot. Left-to-right scripts stay LTR.
@@ -252,17 +307,22 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
-See the [1.4.0 release notes](docs/RELEASE_NOTES_1.4.0.md) for multilingual script coverage and the
-existing [1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md) for resilient resources, smart equations,
-academic references; [1.2.4 release notes](docs/RELEASE_NOTES_1.2.4.md) cover Base64-image,
-AI-math, compiler, layout, security-policy, and migration summary.
+See the [1.4.1 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.1.md)
+for install diagnostics, collision safety, and equation-engine reporting, the
+[1.4.0 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.0.md)
+for multilingual script coverage, and the existing
+[1.3.0 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.3.0.md)
+for resilient resources, smart equations, academic references;
+[1.2.4 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.2.4.md)
+cover Base64-image, AI-math, compiler, layout, security-policy, and migration summary.
 
 The compiler stages and system architecture are described in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The machine-readable supported
-feature contract is [docs/feature-matrix.json](docs/feature-matrix.json).
+[docs/ARCHITECTURE.md](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/ARCHITECTURE.md).
+The machine-readable supported feature contract is
+[docs/feature-matrix.json](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/feature-matrix.json).
 
 The forward plan for usability, performance, and defect prevention is
-[docs/ROADMAP.md](docs/ROADMAP.md), including the known warts and open quality gaps.
+[docs/ROADMAP.md](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/ROADMAP.md), including the known warts and open quality gaps.
 
 The machine-readable fidelity contract is `docs/feature-matrix.json`; every listed feature links
 its accepted syntax, canonical AST, native Word representation, diagnostic behavior, host status,

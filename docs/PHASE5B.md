@@ -145,6 +145,10 @@ Supported safe subsets include:
 
 These are compatibility renderers, not a full implementation of Mermaid JavaScript semantics. Unsupported syntax either falls back to editable code with `DIAGRAM201` or fails when strict Mermaid mode is enabled.
 
+Long flowcharts are split into overlapping page-sized panels. Numbered branch conditions appear
+as editable text after the diagram. Multilingual node labels are also preserved in an editable
+key, avoiding missing glyphs when a raster font does not support the source language.
+
 ## Inspection
 
 `mddocx inspect` now reports reference/caption and publication structures including SEQ/REF field counts, internal hyperlinks, endnote references/definitions, drawing accessibility metadata, OMML integrity, and relationship integrity.

@@ -49,6 +49,7 @@ _MD_REMOTE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?(https://[^)\s>]+)>?", re.I
 _HTML_REMOTE_IMAGE_RE = re.compile(
     r"<img\b[^>]*\bsrc=[\"\'](https://[^\"\']+)[\"\']", re.IGNORECASE
 )
+_GUIDED_THEMES = [name for name in sorted(THEMES) if name != "bengali-document"]
 _COMMANDS = (
     "menu",
     "render",
@@ -422,7 +423,7 @@ class InteractiveConsole:
             output = output_default
         theme = ns.theme
         if guided and not theme:
-            themes = sorted(THEMES)
+            themes = _GUIDED_THEMES
             theme = themes[self.choose("Theme:", themes, themes.index("default") + 1) - 1]
         theme = theme or "default"
         remote_hosts = _remote_hosts(source)
@@ -490,6 +491,9 @@ class InteractiveConsole:
         self.println(
             f"Structural issues: {report.structural_issues}  Warnings: {report.quality_warnings}"
         )
+        for diagnostic in result.diagnostics:
+            if diagnostic.severity == "warning":
+                self.println(str(diagnostic))
         self.println(f"Output: {output}")
         self.last_output = output
         add_recent(
@@ -583,8 +587,8 @@ class InteractiveConsole:
         root = self._resolve_path(directory, require_exists=False)
         path = init_project(root)
         title = self.ask("Document title", "My Document")
-        theme = sorted(THEMES)[
-            self.choose("Theme:", sorted(THEMES), sorted(THEMES).index("default") + 1) - 1
+        theme = _GUIDED_THEMES[
+            self.choose("Theme:", _GUIDED_THEMES, _GUIDED_THEMES.index("default") + 1) - 1
         ]
         _update_project_yaml(
             path, {"variables.project_name": title, "render.title": title, "render.theme": theme}
@@ -626,7 +630,7 @@ class InteractiveConsole:
         ]
         pick = self.choose("Project configuration", choices)
         if pick == 1:
-            themes = sorted(THEMES)
+            themes = _GUIDED_THEMES
             value = themes[self.choose("Theme", themes) - 1]
             changes = {"render.theme": value}
         elif pick == 2:

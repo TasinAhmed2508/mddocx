@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 import hashlib
 import json
 import glob as _glob
+import math
 from pathlib import Path
 import re
 import time
@@ -19,6 +20,7 @@ from .ast.inline import Image
 from .config import RenderConfig
 from .diagnostics import Diagnostic, MddocxError
 from .normalize import Normalizer
+from .output import write_docx
 from .parser import MarkdownParser
 from .parser.frontmatter import split_front_matter
 from .metadata import sanitize_markdown_metadata
@@ -366,14 +368,22 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
     watch_cfg = loaded.get("watch") or {}
     if watch_cfg and not isinstance(watch_cfg, dict):
         raise _project_error("PROJECT823", "'watch' must be a YAML mapping.", path)
-    max_depth = int(project_cfg.get("max_include_depth", 32))
+    try:
+        max_depth = int(project_cfg.get("max_include_depth", 32))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise _project_error("PROJECT828", "max_include_depth must be an integer.", path) from exc
     max_depth = max(1, min(256, max_depth))
     undefined = str(project_cfg.get("undefined_variables", "error"))
     if undefined not in {"error", "keep", "empty"}:
         raise _project_error(
             "PROJECT824", "undefined_variables must be error, keep, or empty.", path
         )
-    interval = float(watch_cfg.get("interval", 1.0))
+    try:
+        interval = float(watch_cfg.get("interval", 1.0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise _project_error("PROJECT829", "watch interval must be a finite number.", path) from exc
+    if not math.isfinite(interval):
+        raise _project_error("PROJECT829", "watch interval must be a finite number.", path)
     if interval < 0.1:
         interval = 0.1
     return ProjectManifest(
@@ -426,13 +436,13 @@ def build_project(
     compiled = compiler.compile()
     cfg = compiler.config
     cfg.base_dir = manifest.root
+    dependencies = set(compiled.dependencies)
+    effective_cfg = _apply_front_matter(deepcopy(cfg), compiled.document.metadata, True)
+    dependencies.update(_render_dependencies(manifest, effective_cfg))
     result = Compiler(cfg).render(compiled.document, base_dir=manifest.root)
     blob = result.output_bytes
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(blob)
+    write_docx(output_path, blob, protected_paths=(*dependencies, state_path))
 
-    dependencies = set(compiled.dependencies)
-    dependencies.update(_render_dependencies(manifest, cfg))
     dependency_tuple = tuple(
         sorted((p.resolve() for p in dependencies), key=lambda p: str(p).casefold())
     )
@@ -594,7 +604,7 @@ def _config_from_manifest(manifest: ProjectManifest, explicit: RenderConfig | No
             cfg.code.show_language_label = bool(render["code_language_labels"])
         if "syntax_highlighting" in render:
             cfg.code.syntax_highlighting = bool(render["syntax_highlighting"])
-        if render.get("ai_metadata") in {"auto", "strip", "keep"}:
+        if render.get("ai_metadata") in ("auto", "strip", "keep"):
             cfg.metadata.ai_export = str(render["ai_metadata"])
         if "different_first_page" in render:
             cfg.header.different_first_page = bool(render["different_first_page"])
@@ -622,12 +632,14 @@ def _config_from_manifest(manifest: ProjectManifest, explicit: RenderConfig | No
 def _render_dependencies(manifest: ProjectManifest, cfg: RenderConfig) -> set[Path]:
     deps: set[Path] = set()
     if cfg.template:
-        path = Path(cfg.template)
+        deps.add(Path(cfg.template).expanduser().resolve())
+    if cfg.citations.bibliography:
+        path = Path(cfg.citations.bibliography)
         if not path.is_absolute():
             path = manifest.root / path
         deps.add(path.resolve())
-    if cfg.citations.bibliography:
-        path = Path(cfg.citations.bibliography)
+    if cfg.citations.style_file:
+        path = Path(cfg.citations.style_file)
         if not path.is_absolute():
             path = manifest.root / path
         deps.add(path.resolve())

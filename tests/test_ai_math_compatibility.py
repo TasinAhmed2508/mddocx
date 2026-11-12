@@ -101,6 +101,18 @@ formula = "$$not_math$$"
     assert not any(isinstance(node, (MathBlock, InlineMath)) for node in _walk(ast.children))
 
 
+def test_invalid_math_markers_remain_text_next_to_valid_math():
+    markdown = "Literal MDDOCXMATHaENDMATH and MDDOCXMATH_aENDMATH; $0$ then $x^2$."
+
+    ast = MarkdownParser().parse(markdown)
+    nodes = list(_walk(ast.children))
+
+    assert [node.source_text for node in nodes if isinstance(node, InlineMath)] == ["0", "x^2"]
+    text = "".join(getattr(node, "text", "") for node in nodes)
+    assert "MDDOCXMATHaENDMATH" in text
+    assert "MDDOCXMATH_aENDMATH" in text
+
+
 def test_unclosed_display_delimiter_does_not_consume_document_tail():
     markdown = "Before\n\n$$\nx+1\n\n# Still present"
     ast = MarkdownParser().parse(markdown)

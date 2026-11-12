@@ -8,6 +8,7 @@ from typing import Iterable
 from .compiler import Compiler
 from .config import RenderConfig
 from .diagnostics import Diagnostic, MddocxError
+from .output import validate_output_path
 
 
 @dataclass(slots=True)
@@ -55,6 +56,7 @@ def render_many(
         target = target_root / base
         compiler = Compiler(config)
         try:
+            validate_output_path(target, source_paths)
             result = compiler.compile_file(source, target)
             results.append(BatchResult(source, target, True, diagnostics=result.diagnostics))
         except MddocxError as exc:

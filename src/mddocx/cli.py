@@ -63,6 +63,7 @@ from .interactive import run_shell
 from .interactive.history import add_recent, load_recent
 from .interactive.opening import open_path
 from .metadata import sanitize_markdown_metadata
+from .output import validate_output_path
 from .math.preflight import inspect_math_file
 from .bibliography import BibliographyDatabase
 from .linkcheck import LinkChecker, collect_links, results_json, results_text
@@ -1036,6 +1037,7 @@ def main(argv: list[str] | None = None) -> int:
             for batch_result in results:
                 if batch_result.ok:
                     print(batch_result.output_path)
+                    _report_diagnostics(batch_result.diagnostics)
                 else:
                     print(f"ERROR {batch_result.input_path}: {batch_result.error}", file=sys.stderr)
                     status = 2
@@ -1044,6 +1046,21 @@ def main(argv: list[str] | None = None) -> int:
         source = sources[0]
         compiler = Compiler(config)
         output = args.output or source.with_suffix(".docx")
+        diagnostic_paths = [
+            Path(path)
+            for path in (args.diagnostics_json, args.diagnostics_sarif)
+            if path and path != "-"
+        ]
+        protected = [source, output]
+        if config.template is not None:
+            protected.append(Path(config.template).expanduser())
+        for path in (config.citations.bibliography, config.citations.style_file):
+            if path is not None:
+                path = Path(path)
+                protected.append(path if path.is_absolute() else source.parent / path)
+        for index, path in enumerate(diagnostic_paths):
+            other_paths = diagnostic_paths[:index] + diagnostic_paths[index + 1 :]
+            validate_output_path(path, [*protected, *other_paths])
         result = compiler.compile_file(source, output)
         print(output)
         _report_diagnostics(result.diagnostics)

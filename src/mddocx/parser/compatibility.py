@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 from dataclasses import dataclass
 import re
 
@@ -104,8 +105,26 @@ def _enc(value: str) -> str:
 
 
 def decode_inline_math(value: str) -> str:
+    """Decode a shielded inline-math payload.
+
+    Payloads are always produced by :func:`_enc` (UTF-8 -> URL-safe base64),
+    so a decode failure means the sentinel regex matched unrelated literal
+    text (or a corrupted stream) and the caller must treat it as plain text
+    instead of crashing the whole conversion with ``UnicodeDecodeError``.
+    """
     pad = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(value + pad).decode("utf-8")
+    try:
+        return base64.urlsafe_b64decode(value + pad).decode("utf-8")
+    except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+        raise ValueError(f"invalid inline-math payload {value!r}: {exc}") from exc
+
+
+def _try_decode_inline_math(value: str) -> str | None:
+    """Return the decoded payload, or ``None`` when it is not valid math."""
+    try:
+        return decode_inline_math(value)
+    except ValueError:
+        return None
 
 
 def normalize_math_syntax(markdown: str) -> str:
@@ -241,7 +260,15 @@ def _shield_inline_math(line: str) -> str:
             end = _find_inline_dollar_close(line, i + 1)
             if end >= 0:
                 source = line[i + 1 : end]
-                if line[i + 1].isdigit() and not re.search(r"[\\^_+=*/(){}<>]", source):
+                # Currency/range guard: never pair across a code span or across
+                # another "$" that _find skipped (e.g. "$5 to $10. ... `$x$`").
+                # Such a span is a false-positive range, not math.  Treating
+                # the opener as literal lets the later "$"s resolve (or stay
+                # literal) on their own.  A former digit-only guard ("$0$" ->
+                # literal) left its closer dangling, which then paired with the
+                # *next* opener and corrupted the line into invalid base64
+                # (UnicodeDecodeError 0xc0), so "$<digits>$" stays math.
+                if "`" in source or "$" in source:
                     out.append("$")
                     i += 1
                     continue
@@ -336,7 +363,13 @@ def split_text_math(text: str) -> list[tuple[str, str]]:
     for m in sentinel_re.finditer(text):
         if m.start() > pos:
             segments.extend(_split_dollars(text[pos : m.start()]))
-        segments.append(("math", decode_inline_math(m.group(1))))
+        decoded = _try_decode_inline_math(m.group(1))
+        if decoded is None:
+            # Not a payload we produced (literal text or corrupted stream):
+            # keep it as text instead of crashing the conversion.
+            segments.append(("text", m.group(0)))
+        else:
+            segments.append(("math", decoded))
         pos = m.end()
     if pos < len(text):
         segments.extend(_split_dollars(text[pos:]))
@@ -355,7 +388,11 @@ def _split_dollars(text: str) -> list[tuple[str, str]]:
     for match in sentinel_re.finditer(shielded):
         if match.start() > pos:
             result.append(("text", shielded[pos : match.start()].replace(r"\$", "$")))
-        result.append(("math", decode_inline_math(match.group(1))))
+        decoded = _try_decode_inline_math(match.group(1))
+        if decoded is None:
+            result.append(("text", match.group(0)))
+        else:
+            result.append(("math", decoded))
         pos = match.end()
     if pos < len(shielded):
         result.append(("text", shielded[pos:].replace(r"\$", "$")))
@@ -583,7 +620,8 @@ def split_footnote_references(text: str) -> list[tuple[str, str]]:
 
     def keep_literal(match):
         key = f"\x00FNESC{len(protected)}\x00"
-        protected[key] = f"[^{decode_inline_math(match.group(1))}]"
+        decoded = _try_decode_inline_math(match.group(1))
+        protected[key] = f"[^{decoded}]" if decoded is not None else match.group(0)
         return key
 
     text = sentinel_re.sub(keep_literal, text)
@@ -620,7 +658,12 @@ def protect_escaped_footnote_references(markdown: str) -> str:
 
 def _restore_escaped_footnotes(text: str) -> str:
     pattern = re.compile(rf"{FOOTNOTE_ESCAPE_SENTINEL}([A-Za-z0-9_-]+)ENDNOTE")
-    return pattern.sub(lambda m: f"[^{decode_inline_math(m.group(1))}]", text)
+
+    def _replace(match: re.Match[str]) -> str:
+        decoded = _try_decode_inline_math(match.group(1))
+        return f"[^{decoded}]" if decoded is not None else match.group(0)
+
+    return pattern.sub(_replace, text)
 
 
 _CALLOUT_KINDS = {"note", "tip", "important", "warning", "caution", "example"}

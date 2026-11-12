@@ -18,28 +18,28 @@ def validate_render_config(config: RenderConfig) -> RenderConfig:
                 )
             )
 
-    require(config.page.size in {"A4", "Letter"}, "Page size must be A4 or Letter.")
+    require(config.page.size in ("A4", "Letter"), "Page size must be A4 or Letter.")
     require(
-        config.page.orientation in {"portrait", "landscape"},
+        config.page.orientation in ("portrait", "landscape"),
         "Page orientation must be portrait or landscape.",
     )
-    require(config.rtl in {"off", "auto", "force"}, "RTL mode must be off, auto, or force.")
+    require(config.rtl in ("off", "auto", "force"), "RTL mode must be off, auto, or force.")
     require(
-        config.math_failure.mode in {"error", "plain_text", "warning"},
+        config.math_failure.mode in ("error", "plain_text", "warning"),
         "Math failure mode must be error, plain_text, or warning.",
     )
     require(
-        config.notes.style in {"footnote", "endnote"},
+        config.notes.style in ("footnote", "endnote"),
         "Notes style must be footnote or endnote.",
     )
     require(
-        config.style_map.missing in {"error", "warning"},
+        config.style_map.missing in ("error", "warning"),
         "Missing mapped-style policy must be error or warning.",
     )
     require(
-        config.references.figure_caption_position in {"above", "below"}
-        and config.references.table_caption_position in {"above", "below"}
-        and config.references.listing_caption_position in {"above", "below"},
+        config.references.figure_caption_position in ("above", "below")
+        and config.references.table_caption_position in ("above", "below")
+        and config.references.listing_caption_position in ("above", "below"),
         "Caption positions must be above or below.",
     )
     page_width = 210.0 if config.page.size == "A4" else 215.9
@@ -97,15 +97,15 @@ def validate_render_config(config: RenderConfig) -> RenderConfig:
     require(config.resources.timeout_seconds > 0, "Resource timeout must be positive.")
     require(config.resources.max_redirects >= 0, "Maximum redirects cannot be negative.")
     require(
-        all(scheme in {"http", "https"} for scheme in config.resources.allowed_schemes),
+        all(scheme in ("http", "https") for scheme in config.resources.allowed_schemes),
         "Remote resource schemes are limited to HTTP and HTTPS.",
     )
     require(
-        config.resources.image_failure in {"clickable_fallback", "literal", "error"},
+        config.resources.image_failure in ("clickable_fallback", "literal", "error"),
         "Unknown image failure policy.",
     )
     require(
-        config.citations.bibliography_include in {"cited", "all"},
+        config.citations.bibliography_include in ("cited", "all"),
         "Unknown bibliography inclusion policy.",
     )
     require(

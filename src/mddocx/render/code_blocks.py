@@ -28,7 +28,17 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
             max_edges=renderer.config.mermaid.max_edges,
         )
         try:
-            path = mermaid.render(node.code, renderer.resolver.temp_dir)
+            section = renderer.document.sections[-1]
+            paths, legend, node_key = mermaid.render_pages(
+                node.code,
+                renderer.resolver.temp_dir,
+                width_inches=float(section.page_width - section.left_margin - section.right_margin)
+                / 914400,
+                height_inches=float(
+                    section.page_height - section.top_margin - section.bottom_margin
+                )
+                / 914400,
+            )
         except MermaidRenderError as exc:
             if renderer.config.mermaid.fallback == "error":
                 raise MddocxError(Diagnostic("error", "DIAGRAM201", str(exc))) from exc
@@ -47,16 +57,39 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
             )
             if diagram_caption and renderer.config.references.figure_caption_position == "above":
                 citations.render_caption(renderer, "Figure", diagram_caption, node.identifier)
-            p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.paragraph_format.keep_together = True
-            figures.add_image_path(
-                renderer,
-                p,
-                path,
-                diagram_caption or "Mermaid diagram",
-                title=diagram_caption,
-            )
+            for index, path in enumerate(paths):
+                p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.keep_together = True
+                if index:
+                    p.paragraph_format.page_break_before = True
+                    p.add_run(f"Flowchart continued ({index + 1} of {len(paths)})").italic = True
+                    p.add_run().add_break()
+                figures.add_image_path(
+                    renderer,
+                    p,
+                    path,
+                    diagram_caption or f"Mermaid diagram, part {index + 1} of {len(paths)}",
+                    title=diagram_caption,
+                )
+            for title, items in (
+                ("Flowchart nodes", node_key),
+                (
+                    "Flowchart conditions",
+                    [f"{index}. {item}" for index, item in enumerate(legend, 1)],
+                ),
+            ):
+                if not items:
+                    continue
+                heading = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                heading.paragraph_format.keep_with_next = True
+                heading.add_run(title).bold = True
+                for item in items:
+                    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                    text = item
+                    run = p.add_run(clean_xml_text(text))
+                    renderer._configure_run(run, text)
+                    renderer._apply_text_direction(p._p, text)
             if diagram_caption and renderer.config.references.figure_caption_position == "below":
                 citations.render_caption(renderer, "Figure", diagram_caption, node.identifier)
             renderer.reporter.info(

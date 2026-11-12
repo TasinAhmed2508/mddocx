@@ -10,6 +10,12 @@ from mddocx.parser.compatibility import normalize_export_citations
 from mddocx.ooxml.text import configure_xml_run
 
 
+def _legacy_config():
+    config = RenderConfig()
+    config.fonts.bengali = "SutonnyMJ"
+    return config
+
+
 def test_export_closing_fence_does_not_swallow_following_blocks():
     source = "Title[cite: 1]\n\n```text\nLiteral[cite: 2]\n```[cite: 1]\n\nAfter\n"
     nodes = MarkdownParser().parse(source).children
@@ -56,7 +62,7 @@ def test_bengali_document_theme():
 
 def test_form_has_native_photo_box_and_address_columns():
     source = "```text\nনাম : উদাহরণ ┌────┐\nপিতা : উদাহরণ │ ছবি │\nমাতা : উদাহরণ └────┘\nধর্ম : ইসলাম\nপেশা : শিক্ষক\nস্থায়ী | বর্তমান\nগ্রাম : ক | গ্রাম : খ\nজেলা : ক | জেলা : খ\n```"
-    doc = Document(BytesIO(MarkdownWord().render_string(source)))
+    doc = Document(BytesIO(MarkdownWord(_legacy_config()).render_string(source)))
     assert len(doc.tables) == 2
     from bijoy2unicode.converter import Unicode
 
@@ -117,8 +123,8 @@ def test_layout_table_rejects_data_loss_and_overlapping_merges():
             MarkdownWord().render_string(source)
 
 
-def test_default_sutonny_encoding_preserves_english_and_word_structure():
-    doc = Document(BytesIO(MarkdownWord().render_string("**বাংলা English 123**")))
+def test_sutonny_encoding_preserves_english_and_word_structure():
+    doc = Document(BytesIO(MarkdownWord(_legacy_config()).render_string("**বাংলা English 123**")))
     p = doc.paragraphs[0]
     assert p.text == "evsjv English 123"
     assert all(run.bold for run in p.runs)
@@ -127,7 +133,7 @@ def test_default_sutonny_encoding_preserves_english_and_word_structure():
 
 
 def test_sutonny_lafala_uses_supported_glyph_not_soft_hyphen():
-    doc = Document(BytesIO(MarkdownWord().render_string("আল্লাহ")))
+    doc = Document(BytesIO(MarkdownWord(_legacy_config()).render_string("আল্লাহ")))
     assert doc.paragraphs[0].text == "Avjøvn"
     assert "\u00ad" not in doc.paragraphs[0].text
 
@@ -143,7 +149,7 @@ def test_isolated_bengali_prekar_after_other_script_avoids_bijoy_loop(monkeypatc
 
     monkeypatch.setattr(Unicode, "convertUnicodeToBijoy", guarded)
     source = "বাংলা " + " ".join(f"ல{mark}র" for mark in "িেৈ")
-    doc = Document(BytesIO(MarkdownWord().render_string(source)))
+    doc = Document(BytesIO(MarkdownWord(_legacy_config()).render_string(source)))
     runs = doc.paragraphs[0].runs
     assert runs[0].text == "evsjv"
     assert [(r.text, r.font.name) for r in runs if r.font.name == "Nirmala UI"] == [

@@ -187,9 +187,8 @@ class TableConfig:
     restore_portrait_after_landscape: bool = True
 
 
-#: Bangla font slot default. SutonnyMJ output is Bijoy-encoded; "auto" resolves at
-#: render time to this font when installed and to a Unicode Bangla font otherwise.
-DEFAULT_BENGALI_FONT: str | None = "SutonnyMJ"
+#: Automatically prefer SutonnyMJ, falling back to an installed Unicode Bangla font.
+DEFAULT_BENGALI_FONT: str | None = "auto"
 
 
 @dataclass(slots=True)

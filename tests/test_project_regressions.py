@@ -97,3 +97,24 @@ def test_explicit_project_config_overrides_manifest_render_values(tmp_path: Path
 
     assert compiler.config.title == "Caller title"
     assert compiler.config.theme == "academic"
+
+
+@pytest.mark.parametrize(
+    ("setting", "code"),
+    [
+        ("project:\n  max_include_depth: [invalid]", "PROJECT828"),
+        ("watch:\n  interval: [invalid]", "PROJECT829"),
+        ("watch:\n  interval: .inf", "PROJECT829"),
+        ("watch:\n  interval: .nan", "PROJECT829"),
+    ],
+)
+def test_invalid_numeric_project_settings_have_a_clear_diagnostic(
+    tmp_path: Path, setting: str, code: str
+):
+    (tmp_path / "main.md").write_text("# Report\n", encoding="utf-8")
+    (tmp_path / "mddocx.yml").write_text(
+        f"version: 1\nsources: [main.md]\n{setting}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(MddocxError, match=code):
+        load_project(tmp_path)

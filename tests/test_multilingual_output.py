@@ -281,7 +281,9 @@ def test_bengali_boundary_preserves_unicode_ast_and_encodes_only_docx():
     unicode_document = WordDocument(BytesIO(MarkdownWord(_unicode_config()).render_string(source)))
     assert "বাংলা শিরোনাম" in [paragraph.text for paragraph in unicode_document.paragraphs]
 
-    legacy_document = WordDocument(BytesIO(MarkdownWord().render_string(source)))
+    legacy_config = RenderConfig()
+    legacy_config.fonts.bengali = "SutonnyMJ"
+    legacy_document = WordDocument(BytesIO(MarkdownWord(legacy_config).render_string(source)))
     texts = [paragraph.text for paragraph in legacy_document.paragraphs]
 
     assert "evsjv wk‡ivbvg" in texts
@@ -323,7 +325,8 @@ def test_polyglot_fixture_keeps_every_script_and_native_structure():
     assert inspection.ok
 
 
-def test_cli_script_font_flags_reach_the_document(tmp_path: Path, capsys):
+def test_cli_script_font_flags_reach_the_document(tmp_path: Path, capsys, monkeypatch):
+    monkeypatch.setattr("mddocx.cli.add_recent", lambda **kwargs: None)
     output = tmp_path / "polyglot.docx"
 
     assert (
@@ -432,6 +435,7 @@ def test_bangla_boundary_encodes_headers_tables_and_notes():
         header=HeaderConfig(text="বাংলা শিরোনাম"),
         footer=FooterConfig(text="বাংলা পাদ"),
     )
+    config.fonts.bengali = "SutonnyMJ"
     markdown = "| ভাষা |\n| --- |\n| বাংলা |\n\nটীকা[^1]\n\n[^1]: বাংলা পাদটীকা\n"
     blob = MarkdownWord(config).render_string(markdown)
 

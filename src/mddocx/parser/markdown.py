@@ -835,8 +835,11 @@ class MarkdownParser:
                 nodes.append(Image(src=t.attrGet("src") or "", alt=alt, title=t.attrGet("title")))
                 i += 1
             elif t.type == "html_inline":
-                image = self._html_image(t.content)
-                nodes.append(image if image is not None else Text(text=t.content))
+                if re.fullmatch(r"<br\s*/?>", t.content, flags=re.I):
+                    nodes.append(HardBreak())
+                else:
+                    image = self._html_image(t.content)
+                    nodes.append(image if image is not None else Text(text=t.content))
                 i += 1
             else:
                 i += 1

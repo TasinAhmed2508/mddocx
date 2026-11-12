@@ -5,6 +5,13 @@ import hashlib
 from pathlib import Path
 import re
 
+_FLOW_NODE_WIDTH = 240
+_FLOW_NODE_HEIGHT = 120
+_FLOW_HORIZONTAL_GAP = 300
+_FLOW_VERTICAL_GAP = 210
+_FLOW_ITEM_GAP = 285
+_FLOW_MARGIN = 70
+
 
 class MermaidRenderError(ValueError):
     pass
@@ -75,6 +82,99 @@ class MermaidRenderer:
             raise MermaidRenderError(f"Unsupported Mermaid diagram type: {kind}")
         return target
 
+    def render_pages(
+        self, source: str, output_dir: Path, *, width_inches: float, height_inches: float
+    ) -> tuple[list[Path], list[str], list[str]]:
+        """Split long flowcharts at overlapping levels so text remains legible in Word."""
+        if len(source) > self.max_source_chars:
+            raise MermaidRenderError("Mermaid source exceeds configured size limit.")
+        lines = [
+            line.strip()
+            for line in source.replace("\r", "").split("\n")
+            if line.strip() and not line.lstrip().startswith("%%")
+        ]
+        if not lines or not re.match(r"^(?:flowchart|graph)\b", lines[0], flags=re.I):
+            return [self.render(source, output_dir)], [], []
+        direction, nodes, edges = self._parse_flow(lines)
+        levels = self._levels(nodes, edges)
+        digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        target = output_dir / f"mermaid-{digest}-numbered.png"
+        display_labels = {
+            node.ident: f"Node {index}"
+            for index, node in enumerate((n for n in nodes.values() if not n.label.isascii()), 1)
+        }
+        node_key = [f"{label}: {nodes[ident].label}" for ident, label in display_labels.items()]
+        legend = [
+            f"{nodes[edge.src].label} → {nodes[edge.dst].label}: {edge.label}"
+            for edge in edges
+            if edge.label
+        ]
+        horizontal = direction in {"LR", "RL"}
+        width, height = self._flow_size(levels, horizontal)
+        max_width = width_inches * 144
+        max_height = max(1.0, height_inches - 0.75) * 144
+        if horizontal:
+            max_levels = max(
+                3,
+                int((max_width - 2 * _FLOW_MARGIN - _FLOW_NODE_WIDTH) // _FLOW_HORIZONTAL_GAP) + 1,
+            )
+        else:
+            scale = min(1.0, max_width / width)
+            max_levels = max(
+                3,
+                int(
+                    (max_height / scale - 2 * _FLOW_MARGIN - _FLOW_NODE_HEIGHT)
+                    // _FLOW_VERTICAL_GAP
+                )
+                + 1,
+            )
+        if len(levels) <= max_levels:
+            self._render_flowchart(
+                lines, target, numbered_edges=True, display_labels=display_labels
+            )
+            return [target], legend, node_key
+
+        pages: list[Path] = []
+        ranges: list[tuple[int, int]] = []
+        start = 0
+        while start < len(levels):
+            end = min(len(levels), start + max_levels)
+            ranges.append((start, end))
+            gap = _FLOW_HORIZONTAL_GAP if horizontal else _FLOW_VERTICAL_GAP
+            extent = (_FLOW_NODE_WIDTH if horizontal else _FLOW_NODE_HEIGHT) // 2
+            center = _FLOW_MARGIN + extent
+            limit = width if horizontal else height
+            first = 0 if start == 0 else max(0, center + start * gap - extent - 2)
+            last = (
+                limit if end == len(levels) else min(limit, center + (end - 1) * gap + extent + 2)
+            )
+            if direction in {"RL", "BT"}:
+                first, last = limit - last, limit - first
+            box = (first, 0, last, height) if horizontal else (0, first, width, last)
+            page = target.with_name(f"{target.stem}-part-{len(pages) + 1}.png")
+            self._render_flowchart(
+                lines,
+                page,
+                numbered_edges=True,
+                display_labels=display_labels,
+                visible_nodes={ident for level in levels[start:end] for ident in level},
+                crop=box,
+            )
+            pages.append(page)
+            if end == len(levels):
+                break
+            start = end - 2
+        by_level = {ident: index for index, group in enumerate(levels) for ident in group}
+        for edge in edges:
+            if not edge.label and not any(
+                start <= by_level[edge.src] < end and start <= by_level[edge.dst] < end
+                for start, end in ranges
+            ):
+                legend.append(
+                    f"Unlabeled connection: {nodes[edge.src].label} → {nodes[edge.dst].label}"
+                )
+        return pages, legend, node_key
+
     @staticmethod
     def _font(size: int, bold: bool = False):
         try:
@@ -103,6 +203,7 @@ class MermaidRenderer:
             return _Node(ident, ident)
         patterns = [
             (r"^\(\((.*)\)\)$", "circle"),
+            (r"^\(\[(.*)\]\)$", "round"),
             (r"^\{(.*)\}$", "diamond"),
             (r"^\[(.*)\]$", "rect"),
             (r'^\("(.*)"\)$', "round"),
@@ -112,14 +213,56 @@ class MermaidRenderer:
             m = re.match(pattern, suffix)
             if m:
                 return _Node(ident, m.group(1).strip() or ident, shape)
-        return _Node(ident, ident)
+        raise MermaidRenderError(f"Unsupported Mermaid node syntax: {token}")
+
+    @staticmethod
+    def _split_flow_chain(line: str) -> tuple[list[str], list[str]]:
+        tokens: list[str] = []
+        labels: list[str] = []
+        stack: list[str] = []
+        pairs = {"[": "]", "(": ")", "{": "}"}
+        start = i = 0
+        quote: str | None = None
+        while i < len(line):
+            char = line[i]
+            if quote:
+                if char == quote and (i == 0 or line[i - 1] != "\\"):
+                    quote = None
+            elif char == '"' and stack:
+                quote = char
+            elif char in pairs:
+                stack.append(pairs[char])
+            elif stack and char == stack[-1]:
+                stack.pop()
+            elif not stack:
+                arrow = next(
+                    (a for a in ("-->", "---", "-.->", "==>") if line.startswith(a, i)), None
+                )
+                if arrow:
+                    tokens.append(line[start:i].strip())
+                    i += len(arrow)
+                    while i < len(line) and line[i].isspace():
+                        i += 1
+                    label = ""
+                    if i < len(line) and line[i] == "|":
+                        close = line.find("|", i + 1)
+                        if close < 0:
+                            raise MermaidRenderError("Unclosed Mermaid edge label.")
+                        label = line[i + 1 : close].strip()
+                        i = close + 1
+                    labels.append(label)
+                    start = i
+                    continue
+            i += 1
+        if labels:
+            tokens.append(line[start:].strip())
+        return tokens, labels
 
     def _parse_flow(self, lines: list[str]):
         head = re.match(r"^(?:flowchart|graph)\s+([A-Za-z]+)", lines[0], flags=re.I)
         direction = head.group(1).upper() if head else "TD"
         nodes: dict[str, _Node] = {}
         edges: list[_Edge] = []
-        edge_re = re.compile(r"\s+(-->|---|-.->|==>)\s+")
         labeled_re = re.compile(r"^(.*?)\s+--\s*(.*?)\s*-->\s*(.*?)$")
         for line in lines[1:]:
             stripped = line.strip().rstrip(";")
@@ -135,31 +278,27 @@ class MermaidRenderer:
                 nodes[b.ident] = b if b.label != b.ident or b.ident not in nodes else nodes[b.ident]
                 edges.append(_Edge(a.ident, b.ident, label.strip()))
                 continue
-            parts = edge_re.split(stripped)
-            if len(parts) >= 3:
+            parts, labels = self._split_flow_chain(stripped)
+            if labels:
                 current = self._node_from_token(parts[0])
                 nodes[current.ident] = (
                     current
                     if current.label != current.ident or current.ident not in nodes
                     else nodes[current.ident]
                 )
-                idx = 1
-                while idx + 1 < len(parts):
-                    nxt = self._node_from_token(parts[idx + 1])
+                for label, part in zip(labels, parts[1:]):
+                    nxt = self._node_from_token(part)
                     nodes[nxt.ident] = (
                         nxt
                         if nxt.label != nxt.ident or nxt.ident not in nodes
                         else nodes[nxt.ident]
                     )
-                    edges.append(_Edge(current.ident, nxt.ident))
+                    edges.append(_Edge(current.ident, nxt.ident, label))
                     current = nxt
-                    idx += 2
                 continue
-            try:
-                node = self._node_from_token(stripped)
-            except MermaidRenderError:
-                continue
-            nodes[node.ident] = node
+            node = self._node_from_token(stripped)
+            if node.label != node.ident or node.ident not in nodes:
+                nodes[node.ident] = node
         if not nodes:
             raise MermaidRenderError("No supported Mermaid flowchart nodes were found.")
         if len(nodes) > self.max_nodes or len(edges) > self.max_edges:
@@ -195,7 +334,31 @@ class MermaidRenderer:
             levels.append(remaining)
         return levels
 
-    def _render_flowchart(self, lines: list[str], target: Path) -> None:
+    @staticmethod
+    def _flow_size(levels: list[list[str]], horizontal: bool) -> tuple[int, int]:
+        max_items = max(len(level) for level in levels)
+        if horizontal:
+            width = (
+                2 * _FLOW_MARGIN + max(1, len(levels) - 1) * _FLOW_HORIZONTAL_GAP + _FLOW_NODE_WIDTH
+            )
+            height = 2 * _FLOW_MARGIN + max(1, max_items - 1) * 150 + _FLOW_NODE_HEIGHT
+        else:
+            width = 2 * _FLOW_MARGIN + max(1, max_items - 1) * _FLOW_ITEM_GAP + _FLOW_NODE_WIDTH
+            height = (
+                2 * _FLOW_MARGIN + max(1, len(levels) - 1) * _FLOW_VERTICAL_GAP + _FLOW_NODE_HEIGHT
+            )
+        return max(600, width), max(320, height)
+
+    def _render_flowchart(
+        self,
+        lines: list[str],
+        target: Path,
+        *,
+        numbered_edges: bool = False,
+        display_labels: dict[str, str] | None = None,
+        visible_nodes: set[str] | None = None,
+        crop: tuple[int, int, int, int] | None = None,
+    ) -> None:
         try:
             from PIL import Image, ImageDraw
         except ImportError as exc:
@@ -203,29 +366,19 @@ class MermaidRenderer:
         direction, nodes, edges = self._parse_flow(lines)
         levels = self._levels(nodes, edges)
         horizontal = direction in {"LR", "RL"}
-        layer_gap, item_gap = 190, 220
-        margin = 70
-        max_items = max(len(level) for level in levels)
-        if horizontal:
-            width = margin * 2 + max(1, len(levels) - 1) * layer_gap + 220
-            height = margin * 2 + max(1, max_items - 1) * 110 + 90
-        else:
-            width = margin * 2 + max(1, max_items - 1) * item_gap + 220
-            height = margin * 2 + max(1, len(levels) - 1) * 150 + 90
-        width, height = max(600, width), max(320, height)
-        image = Image.new("RGB", (width, height), "white")
-        draw = ImageDraw.Draw(image)
-        font = self._font(18)
-        label_font = self._font(15)
+        margin = _FLOW_MARGIN
+        width, height = self._flow_size(levels, horizontal)
+        if width * height > 40_000_000:
+            raise MermaidRenderError("Flowchart is too large to render clearly.")
         positions: dict[str, tuple[float, float]] = {}
         for li, level in enumerate(levels):
             for ni, ident in enumerate(level):
                 if horizontal:
-                    x = margin + 110 + li * layer_gap
-                    y = height / 2 + (ni - (len(level) - 1) / 2) * 110
+                    x = margin + _FLOW_NODE_WIDTH / 2 + li * _FLOW_HORIZONTAL_GAP
+                    y = height / 2 + (ni - (len(level) - 1) / 2) * 150
                 else:
-                    x = width / 2 + (ni - (len(level) - 1) / 2) * item_gap
-                    y = margin + 45 + li * 150
+                    x = width / 2 + (ni - (len(level) - 1) / 2) * _FLOW_ITEM_GAP
+                    y = margin + _FLOW_NODE_HEIGHT / 2 + li * _FLOW_VERTICAL_GAP
                 positions[ident] = (x, y)
         if direction in {"RL", "BT"}:
             if horizontal:
@@ -233,22 +386,61 @@ class MermaidRenderer:
             else:
                 positions = {n: (x, height - y) for n, (x, y) in positions.items()}
 
+        if crop is not None:
+            left, top, right, bottom = crop
+            positions = {n: (x - left, y - top) for n, (x, y) in positions.items()}
+            width, height = right - left, bottom - top
+        image = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(image)
+        font = self._font(18)
+        label_font = self._font(15)
+
+        label_number = 0
+        grouped: dict[tuple[str, str], list[int]] = {}
         for edge in edges:
-            if edge.src not in positions or edge.dst not in positions:
-                continue
-            sx, sy = positions[edge.src]
-            dx, dy = positions[edge.dst]
-            self._arrow(draw, sx, sy, dx, dy)
+            numbers = grouped.setdefault((edge.src, edge.dst), [])
             if edge.label:
+                label_number += 1
+                numbers.append(label_number)
+        by_level = {ident: level for level, group in enumerate(levels) for ident in group}
+        for (src, dst), numbers in grouped.items():
+            if src == dst:
+                raise MermaidRenderError("Self-loop flowcharts are not supported by the renderer.")
+            if src not in positions or dst not in positions:
+                continue
+            if visible_nodes is not None and (src not in visible_nodes or dst not in visible_nodes):
+                continue
+            sx, sy = positions[src]
+            dx, dy = positions[dst]
+            if abs(by_level[src] - by_level[dst]) > 1:
+                mx, my = self._long_arrow(draw, sx, sy, dx, dy, width, height, horizontal)
+            else:
+                self._arrow(draw, sx, sy, dx, dy)
                 mx, my = (sx + dx) / 2, (sy + dy) / 2
-                box = draw.textbbox((0, 0), edge.label, font=label_font)
-                tw, th = box[2] - box[0], box[3] - box[1]
-                draw.rectangle(
-                    (mx - tw / 2 - 4, my - th / 2 - 3, mx + tw / 2 + 4, my + th / 2 + 3),
-                    fill="white",
+            if numbers:
+                label = (
+                    ",".join(map(str, numbers))
+                    if numbered_edges
+                    else " / ".join(
+                        edge.label
+                        for edge in edges
+                        if edge.src == src and edge.dst == dst and edge.label
+                    )
                 )
-                draw.text((mx - tw / 2, my - th / 2), edge.label, fill="black", font=label_font)
+                box = draw.textbbox((0, 0), label, font=label_font)
+                half_width = max(12, (box[2] - box[0]) / 2 + 5)
+                draw.rounded_rectangle(
+                    (mx - half_width, my - 12, mx + half_width, my + 12),
+                    radius=11,
+                    fill="white",
+                    outline="black",
+                )
+                draw.text((mx, my), label, fill="black", font=label_font, anchor="mm")
         for ident, node in nodes.items():
+            if visible_nodes is not None and ident not in visible_nodes:
+                continue
+            if display_labels and ident in display_labels:
+                node = _Node(ident, display_labels[ident], node.shape)
             self._draw_node(draw, positions[ident], node, font)
         image.save(target, format="PNG", dpi=(144, 144))
 
@@ -257,7 +449,14 @@ class MermaidRenderer:
         import math
 
         angle = math.atan2(dy - sy, dx - sx)
-        start_pad, end_pad = 70, 70
+        cosine, sine = abs(math.cos(angle)), abs(math.sin(angle))
+        start_pad = end_pad = (
+            min(
+                _FLOW_NODE_WIDTH / 2 / cosine if cosine else float("inf"),
+                _FLOW_NODE_HEIGHT / 2 / sine if sine else float("inf"),
+            )
+            + 4
+        )
         x1, y1 = sx + math.cos(angle) * start_pad, sy + math.sin(angle) * start_pad
         x2, y2 = dx - math.cos(angle) * end_pad, dy - math.sin(angle) * end_pad
         draw.line((x1, y1, x2, y2), fill="black", width=2)
@@ -267,31 +466,73 @@ class MermaidRenderer:
         draw.polygon([(x2, y2), left, right], fill="black")
 
     @staticmethod
-    def _wrap(draw, text: str, font, max_width: int = 155) -> list[str]:
+    def _long_arrow(draw, sx, sy, dx, dy, width, height, horizontal):
+        if horizontal:
+            direction = 1 if dx > sx else -1
+            lane = 20 if sy < height / 2 else height - 20
+            start = sx + direction * (_FLOW_NODE_WIDTH / 2 + 4)
+            end = dx - direction * (_FLOW_NODE_WIDTH / 2 + 4)
+            first, last = start + direction * 14, end - direction * 14
+            points = [(start, sy), (first, sy), (first, lane), (last, lane), (last, dy), (end, dy)]
+            arrow = [(end, dy), (end - direction * 9, dy - 5), (end - direction * 9, dy + 5)]
+            marker = (first, (sy + lane) / 2)
+        else:
+            direction = 1 if dy > sy else -1
+            lane = 20 if sx < width / 2 else width - 20
+            start = sy + direction * (_FLOW_NODE_HEIGHT / 2 + 4)
+            end = dy - direction * (_FLOW_NODE_HEIGHT / 2 + 4)
+            first, last = start + direction * 14, end - direction * 14
+            points = [(sx, start), (sx, first), (lane, first), (lane, last), (dx, last), (dx, end)]
+            arrow = [(dx, end), (dx - 5, end - direction * 9), (dx + 5, end - direction * 9)]
+            marker = ((sx + lane) / 2, first)
+        draw.line(points, fill="black", width=2)
+        draw.polygon(arrow, fill="black")
+        return marker
+
+    @staticmethod
+    def _wrap(draw, text: str, font, max_width: int = 205) -> list[str]:
         words = text.split()
         if not words:
             return [text]
         lines: list[str] = []
-        cur = words[0]
-        for word in words[1:]:
-            trial = cur + " " + word
+        cur = ""
+        for word in words:
+            while draw.textbbox((0, 0), word, font=font)[2] > max_width:
+                if cur:
+                    lines.append(cur)
+                    cur = ""
+                cut = 1
+                while (
+                    cut < len(word)
+                    and draw.textbbox((0, 0), word[: cut + 1], font=font)[2] <= max_width
+                ):
+                    cut += 1
+                lines.append(word[:cut])
+                word = word[cut:]
+            trial = (cur + " " + word).strip()
             if draw.textbbox((0, 0), trial, font=font)[2] <= max_width:
                 cur = trial
             else:
-                lines.append(cur)
+                if cur:
+                    lines.append(cur)
                 cur = word
-        lines.append(cur)
+        if cur:
+            lines.append(cur)
         return lines
 
     def _draw_node(self, draw, pos, node: _Node, font):
         x, y = pos
-        w, h = (180, 74) if node.shape != "circle" else (88, 88)
+        w, h = _FLOW_NODE_WIDTH, _FLOW_NODE_HEIGHT
         if node.shape == "diamond":
             draw.polygon(
-                [(x, y - 48), (x + 95, y), (x, y + 48), (x - 95, y)], outline="black", fill="white"
+                [(x, y - h / 2), (x + w / 2, y), (x, y + h / 2), (x - w / 2, y)],
+                outline="black",
+                fill="white",
             )
         elif node.shape == "circle":
-            draw.ellipse((x - 44, y - 44, x + 44, y + 44), outline="black", fill="white", width=2)
+            draw.ellipse(
+                (x - h / 2, y - h / 2, x + h / 2, y + h / 2), outline="black", fill="white", width=2
+            )
         elif node.shape == "round":
             draw.rounded_rectangle(
                 (x - w / 2, y - h / 2, x + w / 2, y + h / 2),
@@ -304,15 +545,20 @@ class MermaidRenderer:
             draw.rectangle(
                 (x - w / 2, y - h / 2, x + w / 2, y + h / 2), outline="black", fill="white", width=2
             )
-        lines = self._wrap(draw, node.label, font)
-        heights = [draw.textbbox((0, 0), line, font=font)[3] for line in lines]
-        total_h = sum(heights) + max(0, len(lines) - 1) * 3
-        yy = y - total_h / 2
-        for line, th in zip(lines, heights):
-            box = draw.textbbox((0, 0), line, font=font)
-            tw = box[2] - box[0]
-            draw.text((x - tw / 2, yy), line, fill="black", font=font)
-            yy += th + 3
+        text_width = 130 if node.shape == "diamond" else 100 if node.shape == "circle" else 210
+        available_height = 65 if node.shape == "diamond" else 85 if node.shape == "circle" else 100
+        for size in range(18, 11, -1):
+            candidate = font if size == 18 else self._font(size)
+            lines = self._wrap(draw, node.label, candidate, text_width)
+            line_height = draw.textbbox((0, 0), "Ag", font=candidate)[3] + 3
+            if len(lines) * line_height <= available_height:
+                break
+        else:
+            raise MermaidRenderError("A flowchart node label is too long to render clearly.")
+        yy = y - (len(lines) - 1) * line_height / 2
+        for line in lines:
+            draw.text((x, yy), line, fill="black", font=candidate, anchor="mm")
+            yy += line_height
 
     def _render_sequence(self, lines: list[str], target: Path) -> None:
         try:

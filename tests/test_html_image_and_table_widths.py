@@ -3,6 +3,7 @@ from io import BytesIO
 from zipfile import ZipFile
 
 from PIL import Image
+from docx import Document
 
 from mddocx import MarkdownWord, RenderConfig, TableConfig
 
@@ -46,3 +47,12 @@ def test_table_writes_fixed_grid_and_cell_widths():
     assert b'w:tblLayout w:type="fixed"' in document
     assert b"<w:gridCol w:w=" in document
     assert b"<w:tcW" in document and b'w:type="dxa"' in document
+
+
+def test_html_breaks_become_native_line_breaks_in_table_cells():
+    markdown = "| Steps |\n|---|\n| One<br>Two<BR />Three |\n\n`<br>` and <mark>literal</mark>"
+
+    document = Document(BytesIO(MarkdownWord().render_string(markdown)))
+
+    assert document.tables[0].cell(1, 0).text == "One\nTwo\nThree"
+    assert document.paragraphs[-1].text == "<br> and <mark>literal</mark>"

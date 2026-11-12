@@ -16,18 +16,16 @@ from copy import deepcopy
 from io import BytesIO
 from functools import lru_cache
 import re
-from typing import Callable
+from typing import Any, Callable
 from zipfile import ZipFile
 
 from lxml import etree
 
-from mddocx.config import DEFAULT_BENGALI_FONT
-
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-BENGALI = re.compile(r"([\u0980-\u09ff\u200c\u200d]+)")
+BENGALI = re.compile(r"([\u0980-\u09ff]+(?:[\u200c\u200d][\u0980-\u09ff]+)*[\u200c\u200d]?)")
 
 #: Font the legacy Bijoy-encoded output pass is written for.
-LEGACY_BANGLA_FONT = DEFAULT_BENGALI_FONT or "SutonnyMJ"
+LEGACY_BANGLA_FONT = "SutonnyMJ"
 
 #: Font value that selects the legacy font when installed and a Unicode font otherwise.
 AUTO_BANGLA_FONT = "auto"
@@ -117,10 +115,7 @@ def resolve_bangla_font(font: str | None) -> tuple[str | None, str | None]:
             return LEGACY_BANGLA_FONT, None
         for candidate in UNICODE_BANGLA_FONTS:
             if is_font_installed(candidate):
-                return candidate, (
-                    f"{LEGACY_BANGLA_FONT} is not installed; keeping Bangla text Unicode "
-                    f"and applying {candidate} instead."
-                )
+                return candidate, None
         return None, (
             f"{LEGACY_BANGLA_FONT} is not installed and no Unicode Bangla font was found; "
             "keeping Bangla text Unicode without a Bangla font override."
@@ -147,9 +142,7 @@ def _contains_bangla_text(blob: bytes) -> bool:
     return False
 
 
-def _rewrite_part(
-    data: bytes, font: str, legacy: bool, converter: object | None
-) -> tuple[bytes, bool]:
+def _rewrite_part(data: bytes, font: str, legacy: bool, converter: Any) -> tuple[bytes, bool]:
     root = etree.fromstring(data)
     changed = False
     for run in list(root.iter(f"{{{W}}}r")):
@@ -178,22 +171,24 @@ def _rewrite_part(
                 bangla = part is not None and BENGALI.fullmatch(part) is not None
                 # bijoy2unicode loops indefinitely on a leading pre-kar (OCR can
                 # leave one after a character from another script).
-                unsafe_legacy = legacy and bangla and part[0] in "িেৈ"
-                original_font = fonts.get(f"{{{W}}}hAnsi") or fonts.get(f"{{{W}}}ascii") or "Aptos"
-                if original_font.lower().replace(" ", "") == "sutonnymj":
-                    original_font = "Aptos"
-                selected = ("Nirmala UI" if unsafe_legacy else font) if bangla else original_font
-                for slot in ("ascii", "hAnsi", "cs", "eastAsia"):
-                    fonts.set(f"{{{W}}}{slot}", selected)
-                for slot in ("asciiTheme", "hAnsiTheme", "cstheme", "eastAsiaTheme"):
-                    fonts.attrib.pop(f"{{{W}}}{slot}", None)
+                unsafe_legacy = legacy and part is not None and bangla and part[0] in "িেৈ"
+                if bangla:
+                    selected = "Nirmala UI" if unsafe_legacy else font
+                    for slot in ("ascii", "hAnsi", "cs", "eastAsia"):
+                        fonts.set(f"{{{W}}}{slot}", selected)
+                    for slot in ("asciiTheme", "hAnsiTheme", "cstheme", "eastAsiaTheme"):
+                        fonts.attrib.pop(f"{{{W}}}{slot}", None)
+                else:
+                    for slot in ("ascii", "hAnsi"):
+                        if _is_legacy_font(fonts.get(f"{{{W}}}{slot}", "")):
+                            fonts.set(f"{{{W}}}{slot}", "Aptos")
                 new.append(pr)
                 content = deepcopy(child)
                 if part is not None:
                     # Padding guards the converter lookahead at word endings.
                     # Its soft-hyphen la-phala is absent from SutonnyMJ; use ø.
                     content.text = (
-                        converter.convertUnicodeToBijoy(part + "  ")[:-2].replace(  # type: ignore[attr-defined]
+                        converter.convertUnicodeToBijoy(part + "  ")[:-2].replace(
                             "\u00ad", "\u00f8"
                         )
                         if bangla and legacy and not unsafe_legacy

@@ -126,6 +126,8 @@ def render_table(renderer: DocxRenderer, node: Table) -> None:
             set_cell_margins(cell, *(renderer.config.table.cell_padding_twips for _ in range(4)))
             p = cell.paragraphs[0]
             p.style = renderer._style("MD Normal")
+            if row_node.header and r_idx + 1 < len(node.rows):
+                p.paragraph_format.keep_with_next = True
             renderer._render_inlines(p, cell_node.children)
             renderer._apply_text_direction(p._p, renderer._plain_inline_text(cell_node.children))
             if cell_node.header:

@@ -266,7 +266,7 @@ def test_auto_uses_an_installed_unicode_font(monkeypatch):
     monkeypatch.setattr(bangla, "installed_font_stems", lambda: frozenset({"nirmala"}))
     font, warning = resolve_bangla_font("auto")
     assert font == "Nirmala UI"
-    assert warning is not None and "SutonnyMJ is not installed" in warning
+    assert warning is None
 
 
 def test_auto_without_any_bangla_font_disables_the_pass(monkeypatch):
@@ -394,6 +394,7 @@ def test_foreign_package_is_detected(monkeypatch):
 
 def test_warnings_reach_stderr_during_a_conversion(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("mddocx.cli.conflicting_distributions", lambda: ())
+    monkeypatch.setattr("mddocx.cli.add_recent", lambda **kwargs: None)
     monkeypatch.setattr(bangla, "installed_font_stems", lambda: frozenset())
     source = tmp_path / "bangla.md"
     source.write_text("# শিরোনাম\n\nবাংলা লেখা\n", encoding="utf-8")
@@ -407,6 +408,7 @@ def test_warnings_reach_stderr_during_a_conversion(tmp_path, monkeypatch, capsys
 
 def test_silent_conversion_writes_nothing_to_stderr(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("mddocx.cli.conflicting_distributions", lambda: ())
+    monkeypatch.setattr("mddocx.cli.add_recent", lambda **kwargs: None)
     source = tmp_path / "plain.md"
     source.write_text("# Report\n\nLatin only.\n", encoding="utf-8")
 

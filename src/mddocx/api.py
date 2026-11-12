@@ -23,6 +23,7 @@ from .metadata import (
     scrub_generated_docx_core_properties,
 )
 from .normalize import Normalizer
+from .output import write_docx
 from .parser import MarkdownParser
 from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
@@ -65,8 +66,14 @@ class MarkdownWord:
         try:
             markdown = acquire_markdown_source(input_path, self.config.limits.max_input_bytes).text
             blob = self._compile(markdown, input_path.parent, source_file=str(input_path))
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(blob)
+            protected = [input_path]
+            if self.config.template is not None:
+                protected.append(Path(self.config.template).expanduser())
+            for path in (self.config.citations.bibliography, self.config.citations.style_file):
+                if path is not None:
+                    path = Path(path)
+                    protected.append(path if path.is_absolute() else input_path.parent / path)
+            write_docx(output_path, blob, protected_paths=protected)
         except MddocxError as exc:
             self._record_error(exc)
             raise
@@ -304,13 +311,13 @@ def _apply_front_matter(
         cfg.keywords = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
     if metadata.get("theme") is not None and can_use(cfg.theme, defaults.theme):
         cfg.theme = str(metadata["theme"])
-    if metadata.get("page_size") in {"A4", "Letter"} and can_use(cfg.page.size, defaults.page.size):
+    if metadata.get("page_size") in ("A4", "Letter") and can_use(cfg.page.size, defaults.page.size):
         cfg.page.size = metadata["page_size"]
-    if metadata.get("orientation") in {"portrait", "landscape"} and can_use(
+    if metadata.get("orientation") in ("portrait", "landscape") and can_use(
         cfg.page.orientation, defaults.page.orientation
     ):
         cfg.page.orientation = metadata["orientation"]
-    if metadata.get("rtl") in {"off", "auto", "force"} and can_use(cfg.rtl, defaults.rtl):
+    if metadata.get("rtl") in ("off", "auto", "force") and can_use(cfg.rtl, defaults.rtl):
         cfg.rtl = metadata["rtl"]
     if metadata.get("toc") is not None and can_use(cfg.toc.enabled, defaults.toc.enabled):
         cfg.toc.enabled = bool(metadata["toc"])
@@ -329,7 +336,7 @@ def _apply_front_matter(
     if metadata.get("footer") is not None and can_use(cfg.footer.text, defaults.footer.text):
         cfg.footer.text = str(metadata["footer"])
         cfg.footer.enabled = True
-    if metadata.get("notes") in {"footnote", "endnote"} and can_use(
+    if metadata.get("notes") in ("footnote", "endnote") and can_use(
         cfg.notes.style, defaults.notes.style
     ):
         cfg.notes.style = str(metadata["notes"])
@@ -337,7 +344,7 @@ def _apply_front_matter(
         cfg.citations.bibliography, defaults.citations.bibliography
     ):
         cfg.citations.bibliography = Path(str(metadata["bibliography"]))
-    if metadata.get("citation_style") in {"author-year", "apa", "ieee", "numeric"} and can_use(
+    if metadata.get("citation_style") in ("author-year", "apa", "ieee", "numeric") and can_use(
         cfg.citations.style, defaults.citations.style
     ):
         cfg.citations.style = str(metadata["citation_style"])
@@ -389,11 +396,11 @@ def _apply_front_matter(
             )
         except (TypeError, ValueError):
             pass
-    if metadata.get("equation_numbering") in {"document", "section"} and can_use(
+    if metadata.get("equation_numbering") in ("document", "section") and can_use(
         cfg.references.equation_number_format, defaults.references.equation_number_format
     ):
         cfg.references.equation_number_format = str(metadata["equation_numbering"])
-    if metadata.get("caption_numbering") in {"document", "section"} and can_use(
+    if metadata.get("caption_numbering") in ("document", "section") and can_use(
         cfg.references.caption_number_format, defaults.references.caption_number_format
     ):
         cfg.references.caption_number_format = str(metadata["caption_numbering"])

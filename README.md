@@ -61,25 +61,25 @@ and math engine it will actually use, and whether another distribution is compet
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.4.1-py3-none-any.whl
+python -m pip install ./mddocx_native-1.4.2-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.4.1-py3-none-any.whl
+python -m pip install .\mddocx_native-1.4.2-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.4.1 GitHub Release:
+You can also install the wheel directly from the v1.4.2 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.1/mddocx_native-1.4.1-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.2/mddocx_native-1.4.2-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.1"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.2"
 ```
 
 ### Install for local development
@@ -135,9 +135,9 @@ bundled MathJax sidecar is used automatically when a JavaScript runtime is avail
   library at run time (not just the Python package). Install it with the usual system package for
   your platform, or convert the SVG to PNG first; every other document feature works without it,
   and `mddocx doctor` reports the exact reason when it is missing.
-- **Bangla text looks wrong in Word.** The default `SutonnyMJ` font is not bundled. Install the
-  font, or pass `--bengali-font auto` to keep Bangla Unicode while applying an installed
-  Unicode Bangla font, or `--bengali-font none` to skip the Bangla output pass entirely.
+- **Bangla text looks wrong in Word.** The default automatically chooses SutonnyMJ when it is
+  installed, or an installed Unicode Bangla font otherwise. Install the selected font on the
+  machine opening the DOCX, or use `--bengali-font none` to keep Bangla text as Unicode.
 - **`mddocx` starts the interactive console.** Running it with no arguments on a terminal opens
   the guided console. `mddocx --help` lists every command, and `mddocx FILE.md` converts
   directly.
@@ -160,6 +160,10 @@ Create a file named report.md:
 Convert it to Word:
 
     mddocx report.md -o report.docx
+
+The output must be different from the input and template files. Project builds also protect
+their source and resource files. Documents are replaced only after a complete file has been
+written, so a failed write leaves any previous output intact.
 
 ## Command-line interface
 
@@ -189,6 +193,9 @@ For interactive use:
 
 Every command is also available as `python -m mddocx ...` when the console script is not on
 `PATH`.
+
+Conversion warnings are shown in single-file, batch, and interactive mode. Diagnostic report
+paths must differ from the input, generated DOCX, and each other.
 
 Run mddocx --help for the complete command reference.
 
@@ -242,13 +249,11 @@ exit code 3 when any equation requires a fallback.
 Markdown and the canonical AST are always Unicode. Script-specific fonts and direction are
 applied only to the generated Word XML:
 
-- **Bengali** runs use `SutonnyMJ` by default with Bijoy glyph encoding at the DOCX boundary.
-  Set `RenderConfig.fonts.bengali` to a Unicode font (for example `Nirmala UI`) for Unicode
-  output, or to `None` to disable the output pass. From the command line, use
-  `--bengali-font "Nirmala UI"`, `--bengali-font none`, or `--bengali-font auto`, which uses
-  `SutonnyMJ` when it is installed and an installed Unicode Bangla font otherwise. English text
-  keeps a Latin font, and mddocx warns (diagnostic `FONT301`) when a configured Bangla font is
-  not installed instead of silently emitting unreadable glyphs.
+- **Bengali** is detected automatically within mixed-language documents. The default prefers
+  `SutonnyMJ` with Bijoy glyph encoding when that font is installed and otherwise chooses an
+  installed Unicode Bangla font. Set `RenderConfig.fonts.bengali` or `--bengali-font` to a
+  specific font, or use `None` / `--bengali-font none` to keep Unicode without an override.
+  Other scripts retain their own font slots. A missing usable font is reported as `FONT301`.
 - **Other complex scripts** — Devanagari, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada,
   Malayalam, Sinhala, Thai, Lao, Tibetan, Myanmar, Khmer, Ethiopic, Mongolian, Syriac, Thaana,
   Arabic, and Hebrew — use the `--complex-script-font` slot. Left-to-right scripts stay LTR.
@@ -307,7 +312,7 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
-See the [1.4.1 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.1.md)
+See the [1.4.2 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.2.md)
 for install diagnostics, collision safety, and equation-engine reporting, the
 [1.4.0 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.0.md)
 for multilingual script coverage, and the existing
@@ -350,9 +355,9 @@ Released under the [MIT License](LICENSE).
 
 ### Bangla document forms and scanned-document transcriptions
 
-Use `mddocx input.md -o output.docx --theme bengali-document` for compact
-Bangla documents (10 pt, single spacing). Bangla output runs use SutonnyMJ
-by default, with Unicode-to-Bijoy encoding applied only to Word XML. The output contains editable
+The default theme detects Bangla alongside other languages. The optional legacy
+`--theme bengali-document` remains available for compact documents (10 pt, single spacing).
+When SutonnyMJ is installed, Unicode-to-Bijoy encoding is applied only to Word XML. The output contains editable
 Word tables and can be imported into Google Docs. Google Docs may substitute fonts
 and reflow pages; verify the imported document before relying on page fidelity.
 
@@ -398,7 +403,7 @@ SutonnyMJ on the machine used to open or export DOCX; the font is not bundled.
 Mixed English text retains a Latin font. Bijoy-encoded DOCX text depends on
 SutonnyMJ and does not have Unicode Bangla copy/search semantics. The PDF
 preview provides the intended visual result. `RenderConfig.fonts.bengali`
-defaults to `SutonnyMJ`; set it to a Unicode font for Unicode output, or `None`
+defaults to `auto`; set it to a Unicode font for Unicode output, or `None`
 to disable this output pass. Bijoy conversion uses the pinned MPL-2.0
 [bijoy2unicode library](https://github.com/Mad-FOX/bijoy2unicode), with padding
 for its end-of-word lookahead and a SutonnyMJ-compatible la-phala glyph fix.

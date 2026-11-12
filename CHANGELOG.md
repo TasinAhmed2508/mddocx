@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.2 — Flowcharts, tables, and conversion safety
+
+- Preserve labeled Mermaid flowchart connections and divide long diagrams into readable,
+  overlapping panels; keep branch conditions and multilingual node labels as editable text.
+- Convert HTML line breaks in Markdown tables to Word line breaks and keep table headers with
+  the first data row.
+- Detect Bangla in mixed-language documents and choose an installed Bangla font automatically,
+  while preserving the font settings for other scripts. The guided theme menu no longer requires
+  a separate Bangla option.
+- Prevent document output and diagnostic reports from overwriting source, template, resource,
+  or other output files; replace DOCX files only after writing a complete temporary file.
+- Report invalid project settings clearly and show conversion warnings in batch and interactive
+  modes. Invalid YAML value types no longer cause unhandled type errors.
+- Preserve invalid inline math markers as text instead of interrupting conversion.
+
 ## 1.4.1 — Install diagnostics and collision safety
 
 This release fixes the failures that surround a conversion rather than the conversion itself: an

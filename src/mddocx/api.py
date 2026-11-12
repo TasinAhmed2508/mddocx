@@ -61,8 +61,9 @@ class MarkdownWord:
         return self.reporter.to_sarif(indent=indent)
 
     def render_file(self, input_path: str | Path, output_path: str | Path) -> None:
-        input_path = Path(input_path)
-        output_path = Path(output_path)
+        self._render_file(Path(input_path), Path(output_path))
+
+    def _render_file(self, input_path: Path, output_path: Path) -> bytes:
         try:
             markdown = acquire_markdown_source(input_path, self.config.limits.max_input_bytes).text
             blob = self._compile(markdown, input_path.parent, source_file=str(input_path))
@@ -74,6 +75,7 @@ class MarkdownWord:
                     path = Path(path)
                     protected.append(path if path.is_absolute() else input_path.parent / path)
             write_docx(output_path, blob, protected_paths=protected)
+            return blob
         except MddocxError as exc:
             self._record_error(exc)
             raise
@@ -95,14 +97,7 @@ class MarkdownWord:
                 cfg.extensions, self.normalizer.normalize(document)
             )
             enforce_ast_limits(transformed, cfg.limits)
-            plan_start = perf_counter()
-            self.last_layout_plan = call_transform_layout(
-                cfg.extensions, transformed, LayoutPlanner(cfg).plan(transformed)
-            )
-            plan_ms = (perf_counter() - plan_start) * 1000
-            renderer = DocxRenderer(self.reporter)
-            blob = renderer.render(transformed, cfg, self.last_layout_plan)
-            blob = self._finalize_output(blob, cfg)
+            blob, plan_ms, _ = self._render_document(transformed, cfg)
         except MddocxError as exc:
             self._record_error(exc)
             raise
@@ -197,16 +192,7 @@ class MarkdownWord:
             enforce_ast_limits(ast, cfg.limits)
             normalize_ms += (perf_counter() - transform_start) * 1000
 
-            plan_start = perf_counter()
-            self.last_layout_plan = call_transform_layout(
-                cfg.extensions, ast, LayoutPlanner(cfg).plan(ast)
-            )
-            plan_ms = (perf_counter() - plan_start) * 1000
-            render_start = perf_counter()
-            renderer = DocxRenderer(self.reporter)
-            blob = renderer.render(ast, cfg, self.last_layout_plan)
-            blob = self._finalize_output(blob, cfg)
-            render_ms = (perf_counter() - render_start) * 1000
+            blob, plan_ms, render_ms = self._render_document(ast, cfg)
             total_ms = (perf_counter() - total_start) * 1000
 
             peak = None
@@ -230,6 +216,16 @@ class MarkdownWord:
         finally:
             if started_tracemalloc and tracemalloc.is_tracing():
                 tracemalloc.stop()
+
+    def _render_document(self, document: Document, cfg: RenderConfig) -> tuple[bytes, float, float]:
+        plan_start = perf_counter()
+        self.last_layout_plan = call_transform_layout(
+            cfg.extensions, document, LayoutPlanner(cfg).plan(document)
+        )
+        render_start = perf_counter()
+        renderer = DocxRenderer(self.reporter)
+        blob = self._finalize_output(renderer.render(document, cfg, self.last_layout_plan), cfg)
+        return blob, (render_start - plan_start) * 1000, (perf_counter() - render_start) * 1000
 
     @staticmethod
     def _finalize_output(blob: bytes, cfg: RenderConfig) -> bytes:

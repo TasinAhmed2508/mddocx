@@ -34,6 +34,8 @@ def test_normalizer_assigns_unique_stable_heading_identifiers():
         children=[
             Heading(level=1, children=[Text(text="Repeated Heading")]),
             Heading(level=2, children=[Text(text="Repeated Heading")]),
+            Heading(level=2, identifier="repeated-heading-3"),
+            Heading(level=2, children=[Text(text="Repeated Heading")]),
         ]
     )
 
@@ -42,6 +44,8 @@ def test_normalizer_assigns_unique_stable_heading_identifiers():
     assert [node.identifier for node in normalized.children] == [
         "repeated-heading",
         "repeated-heading-2",
+        "repeated-heading-3",
+        "repeated-heading-4",
     ]
 
 

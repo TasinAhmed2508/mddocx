@@ -7,9 +7,7 @@ from lxml import etree
 
 from .config import ValidationConfig
 from .diagnostics import Diagnostic, MddocxError
-from .inspection import inspect_docx_bytes
-
-_REQUIRED_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml"}
+from .inspection import _REQUIRED_PARTS, _inspect_parts
 
 
 def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
@@ -35,6 +33,10 @@ def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
                 name.lower().endswith("vbaproject.bin") for name in names
             ):
                 _fail("DOCX408", "Macro-enabled content is not permitted in generated DOCX output.")
+            roots: dict[str, etree._Element] = {}
+            parser = etree.XMLParser(
+                resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
+            )
             for name in names:
                 normalized = name.replace("\\", "/")
                 if normalized.startswith("/") or ".." in normalized.split("/"):
@@ -45,17 +47,14 @@ def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
                 if info.file_size > config.max_xml_part_size:
                     _fail("DOCX405", f"XML package part exceeds configured limit: {name}")
                 data = archive.read(name)
-                parser = etree.XMLParser(
-                    resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
-                )
                 try:
-                    etree.fromstring(data, parser=parser)
+                    roots[name] = etree.fromstring(data, parser=parser)
                 except (etree.XMLSyntaxError, ValueError) as exc:
                     raise MddocxError(
                         Diagnostic("error", "DOCX406", f"Invalid XML package part: {name}")
                     ) from exc
 
-        inspection = inspect_docx_bytes(blob)
+        inspection = _inspect_parts(names, roots)
         if inspection.duplicate_parts:
             _fail(
                 "DOCX409",

@@ -108,20 +108,19 @@ def render_table(renderer: DocxRenderer, node: Table) -> None:
     widths = table_widths(renderer, node, cols)
     set_table_fixed_layout(table)
     set_table_grid_widths(table, [int(width.mm * 56.6929133858) for width in widths])
-    for c_idx, width in enumerate(widths):
-        for row in table.rows:
-            row.cells[c_idx].width = width
     header_fill = renderer.config.table.header_shading
     if header_fill == "EDEDED" and renderer.config.theme != "default":
         header_fill = renderer._theme.table_header_fill
-    for r_idx, row_node in enumerate(node.rows):
-        row = table.rows[r_idx]
+    for r_idx, (row, row_node) in enumerate(zip(table.rows, node.rows)):
+        cells = row.cells
+        for cell, width in zip(cells, widths):
+            cell.width = width
         if row_node.header and renderer.config.table.repeat_header:
             set_repeat_table_header(row)
-        row_chars = sum(len(renderer._plain_inline_text(c.children)) for c in row_node.cells)
+        cell_texts = [renderer._plain_inline_text(cell.children) for cell in row_node.cells]
+        row_chars = sum(map(len, cell_texts))
         set_row_cant_split(row, row_chars <= renderer.config.table.short_row_character_limit)
-        for c_idx, cell_node in enumerate(row_node.cells):
-            cell = row.cells[c_idx]
+        for cell, cell_node, text in zip(cells, row_node.cells, cell_texts):
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
             set_cell_margins(cell, *(renderer.config.table.cell_padding_twips for _ in range(4)))
             p = cell.paragraphs[0]
@@ -129,7 +128,7 @@ def render_table(renderer: DocxRenderer, node: Table) -> None:
             if row_node.header and r_idx + 1 < len(node.rows):
                 p.paragraph_format.keep_with_next = True
             renderer._render_inlines(p, cell_node.children)
-            renderer._apply_text_direction(p._p, renderer._plain_inline_text(cell_node.children))
+            renderer._apply_text_direction(p._p, text)
             if cell_node.header:
                 set_cell_shading(cell, header_fill)
                 for run in p.runs:

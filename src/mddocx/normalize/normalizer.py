@@ -22,12 +22,14 @@ class Normalizer:
     def __init__(self, reporter: DiagnosticReporter | None = None) -> None:
         self.reporter = reporter or DiagnosticReporter()
         self._identifiers: dict[str, Node] = {}
+        self._heading_suffixes: dict[str, int] = {}
         self.index = SemanticIndex()
 
     def normalize(self, document: Document) -> Document:
         if not isinstance(document, Document):
             raise TypeError("Normalizer requires a Document root.")
-        self._identifiers = {}
+        self._identifiers.clear()
+        self._heading_suffixes.clear()
         document.children = self._normalize_list(document.children)
         for label, nodes in list(document.footnotes.items()):
             document.footnotes[label] = self._normalize_list(nodes)
@@ -39,12 +41,13 @@ class Normalizer:
             node.text for node in self._walk_nodes(heading.children) if isinstance(node, Text)
         )
         base = re.sub(r"[^a-z0-9]+", "-", text.casefold()).strip("-") or "heading"
-        candidate = base
-        suffix = 2
-        while candidate in self._identifiers:
-            candidate = f"{base}-{suffix}"
+        if base not in self._identifiers:
+            return base
+        suffix = self._heading_suffixes.get(base, 2)
+        while f"{base}-{suffix}" in self._identifiers:
             suffix += 1
-        return candidate
+        self._heading_suffixes[base] = suffix + 1
+        return f"{base}-{suffix}"
 
     def _walk_nodes(self, value: Any):
         if isinstance(value, list):

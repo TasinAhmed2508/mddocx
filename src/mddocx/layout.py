@@ -111,7 +111,13 @@ class LayoutPlanner:
             target_available = (
                 self._landscape_available_width_mm() if orientation == "landscape" else available
             )
-            target_allocation = allocate_table_widths_mm(node, self.config, target_available)
+            target_allocation = (
+                portrait_allocation
+                if target_available == available
+                else _fit_table_widths(
+                    portrait_allocation.intrinsic_widths_mm, self.config, target_available
+                )
+            )
             decisions.append(
                 TableLayoutDecision(
                     node_identity=id(node),
@@ -208,9 +214,16 @@ def allocate_table_widths_mm(
     configured maximum.
     """
     columns = max((len(row.cells) for row in table.rows), default=0)
-    if columns == 0:
-        return TableWidthAllocation(available_width_mm, (), ())
     intrinsic = tuple(_column_intrinsic_width_mm(table, config, i) for i in range(columns))
+    return _fit_table_widths(intrinsic, config, available_width_mm)
+
+
+def _fit_table_widths(
+    intrinsic: tuple[float, ...], config: RenderConfig, available_width_mm: float
+) -> TableWidthAllocation:
+    columns = len(intrinsic)
+    if not columns:
+        return TableWidthAllocation(available_width_mm, (), ())
     min_mm = min(config.table.min_column_width_mm, available_width_mm / columns)
     max_mm = max(min_mm, config.table.max_column_width_mm)
     widths = [max(min_mm, min(max_mm, value)) for value in intrinsic]

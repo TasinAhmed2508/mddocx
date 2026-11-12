@@ -16,19 +16,14 @@ class SourceDocument:
 def acquire_markdown_source(path: str | Path, max_bytes: int) -> SourceDocument:
     """Read one bounded UTF-8 Markdown source with stable failures."""
     source = Path(path)
+    data = bytearray()
     try:
-        if source.stat().st_size > max_bytes:
-            raise MddocxError(
-                Diagnostic(
-                    "error",
-                    "LIMIT401",
-                    f"Markdown input exceeds {max_bytes} bytes.",
-                    str(source),
-                )
-            )
-        data = source.read_bytes()
-    except MddocxError:
-        raise
+        with source.open("rb") as stream:
+            while len(data) <= max_bytes:
+                chunk = stream.read(min(256 * 1024, max_bytes + 1 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
     except OSError as exc:
         raise MddocxError(
             Diagnostic(
@@ -39,6 +34,12 @@ def acquire_markdown_source(path: str | Path, max_bytes: int) -> SourceDocument:
                 remediation="Verify that the file exists and is readable.",
             )
         ) from exc
+    if len(data) > max_bytes:
+        raise MddocxError(
+            Diagnostic(
+                "error", "LIMIT401", f"Markdown input exceeds {max_bytes} bytes.", str(source)
+            )
+        )
     try:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError as exc:

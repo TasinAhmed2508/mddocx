@@ -20,13 +20,14 @@ from .ast.inline import Image
 from .config import RenderConfig
 from .diagnostics import Diagnostic, MddocxError
 from .normalize import Normalizer
-from .output import write_docx
+from .output import atomic_write_bytes, write_docx
 from .parser import MarkdownParser
 from .parser.frontmatter import split_front_matter
 from .metadata import sanitize_markdown_metadata
+from .source import acquire_markdown_source
 
 _PROJECT_SCHEMA_VERSION = 1
-_PROJECT_ENGINE_VERSION = "mddocx-project-v2"
+_PROJECT_ENGINE_VERSION = "mddocx-project-v3"
 _INCLUDE_RE = re.compile(
     r"^[ \t]{0,3}@include[ \t]+(?:\"(?P<double>[^\"]+)\"|'(?P<single>[^']+)'|(?P<bare>[^\s#]+))[ \t]*$"
 )
@@ -146,7 +147,8 @@ class ProjectCompiler:
         self._dependencies.add(path)
         self._stack.append(path)
         try:
-            raw = path.read_text(encoding="utf-8-sig")
+            source = acquire_markdown_source(path, self.config.limits.max_input_bytes)
+            raw = source.text.replace("\r\n", "\n").replace("\r", "\n")
             sanitized = sanitize_markdown_metadata(raw, self.config.metadata)
             metadata, body, front_offset = split_front_matter(sanitized.markdown)
             chunks = _split_include_chunks(body)
@@ -418,7 +420,7 @@ def build_project(
     manifest = project if isinstance(project, ProjectManifest) else load_project(project)
     output_path = Path(output).resolve() if output is not None else manifest.output
     state_path = manifest.root / ".mddocx" / "build-state.json"
-    if not force:
+    if not force and config is None:
         current = _try_current_state(manifest, state_path, output_path)
         if current is not None:
             return ProjectBuildResult(
@@ -447,18 +449,20 @@ def build_project(
         sorted((p.resolve() for p in dependencies), key=lambda p: str(p).casefold())
     )
     fingerprint = _fingerprint(manifest.path, dependency_tuple)
-    state_path.parent.mkdir(parents=True, exist_ok=True)
     output_sha256 = hashlib.sha256(blob).hexdigest()
-    state = {
-        "schema": 1,
-        "engine": _PROJECT_ENGINE_VERSION,
-        "manifest": str(manifest.path),
-        "output": str(output_path),
-        "dependencies": [str(p) for p in dependency_tuple],
-        "fingerprint": fingerprint,
-        "output_sha256": output_sha256,
-    }
-    state_path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if config is None:
+        state = {
+            "schema": 1,
+            "engine": _PROJECT_ENGINE_VERSION,
+            "manifest": str(manifest.path),
+            "output": str(output_path),
+            "dependencies": [str(p) for p in dependency_tuple],
+            "fingerprint": fingerprint,
+            "output_sha256": output_sha256,
+        }
+        atomic_write_bytes(
+            state_path, (json.dumps(state, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        )
     return ProjectBuildResult(
         project_file=manifest.path,
         output_path=output_path,
@@ -776,7 +780,8 @@ def _fingerprint(manifest_path: Path, dependencies: Iterable[Path]) -> str:
         digest.update(str(path).encode("utf-8"))
         digest.update(b"\0")
         if path.is_file():
-            digest.update(hashlib.sha256(path.read_bytes()).digest())
+            with path.open("rb") as stream:
+                digest.update(hashlib.file_digest(stream, "sha256").digest())
         else:
             digest.update(b"MISSING")
         digest.update(b"\0")
@@ -790,6 +795,8 @@ def _try_current_state(
         return None
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(state, dict):
+            return None
         if state.get("schema") != 1 or state.get("engine") != _PROJECT_ENGINE_VERSION:
             return None
         if Path(state.get("manifest", "")).resolve() != manifest.path.resolve():
@@ -801,11 +808,11 @@ def _try_current_state(
         if fingerprint != state.get("fingerprint"):
             return None
         expected_output_hash = str(state.get("output_sha256") or "")
-        if (
-            not expected_output_hash
-            or hashlib.sha256(output_path.read_bytes()).hexdigest() != expected_output_hash
-        ):
+        if not expected_output_hash:
             return None
+        with output_path.open("rb") as stream:
+            if hashlib.file_digest(stream, "sha256").hexdigest() != expected_output_hash:
+                return None
         return deps, fingerprint, expected_output_hash
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return None

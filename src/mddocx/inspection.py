@@ -152,32 +152,22 @@ class DocxInspection:
         return "\n".join(lines)
 
 
+_REQUIRED_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml"}
+
+
 def inspect_docx(path: str | Path) -> DocxInspection:
     return inspect_docx_bytes(Path(path).read_bytes())
 
 
 def inspect_docx_bytes(blob: bytes) -> DocxInspection:
-    report = DocxInspection()
     try:
         archive = ZipFile(BytesIO(blob), "r")
     except (BadZipFile, OSError, ValueError):
-        return report
+        return DocxInspection()
 
     with archive:
-        report.valid_zip = True
-        infos = archive.infolist()
-        names = [info.filename for info in infos]
-        report.package_parts = len(names)
-        seen: set[str] = set()
-        dupes: set[str] = set()
-        for name in names:
-            if name in seen:
-                dupes.add(name)
-            seen.add(name)
-        report.duplicate_parts = sorted(dupes)
-        required = {"[Content_Types].xml", "_rels/.rels", "word/document.xml"}
-        report.missing_required_parts = sorted(required.difference(seen))
-
+        names = archive.namelist()
+        invalid_xml_parts: list[str] = []
         roots: dict[str, etree._Element] = {}
         parser = etree.XMLParser(
             resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
@@ -188,139 +178,148 @@ def inspect_docx_bytes(blob: bytes) -> DocxInspection:
             try:
                 roots[name] = etree.fromstring(archive.read(name), parser=parser)
             except (etree.XMLSyntaxError, ValueError, KeyError):
-                report.invalid_xml_parts.append(name)
+                invalid_xml_parts.append(name)
 
-        report.invalid_xml_parts.sort()
-        report.broken_relationships = _broken_relationships(roots, seen)
-        report.duplicate_relationship_ids = _count_duplicate_relationship_ids(roots)
-        report.chart_relationship_issues = _count_chart_relationship_issues(roots, seen)
+    return _inspect_parts(names, roots, invalid_xml_parts)
 
-        document = roots.get("word/document.xml")
-        if document is None:
-            return report
 
-        report.duplicate_drawing_ids = _count_duplicate_drawing_ids(document)
-        report.paragraphs = len(document.xpath(".//w:p", namespaces=NS))
-        report.headings = len(
-            document.xpath(
-                './/w:p[w:pPr/w:pStyle[starts-with(@w:val,"Heading") or starts-with(@w:val,"MD Heading") or starts-with(@w:val,"MDHeading")]]',
-                namespaces=NS,
-            )
-        )
-        report.tables = len(document.xpath(".//w:tbl", namespaces=NS))
-        content_roots = [
-            root
-            for name, root in roots.items()
-            if name == "word/document.xml"
-            or name in {"word/footnotes.xml", "word/endnotes.xml"}
-            or name.startswith("word/header")
-            or name.startswith("word/footer")
-        ]
-        report.equations = sum(
-            len(root.xpath(".//m:oMath", namespaces=NS)) for root in content_roots
-        )
-        report.nary_operators = sum(
-            len(root.xpath(".//m:nary", namespaces=NS)) for root in content_roots
-        )
-        report.empty_nary_operands = sum(_count_empty_nary_operands(root) for root in content_roots)
-        report.radicals = sum(len(root.xpath(".//m:rad", namespaces=NS)) for root in content_roots)
-        report.radicals_missing_degree = sum(
-            len(root.xpath(".//m:rad[not(m:deg)]", namespaces=NS)) for root in content_roots
-        )
-        report.matrices = sum(len(root.xpath(".//m:m", namespaces=NS)) for root in content_roots)
-        report.native_list_paragraphs = len(document.xpath(".//w:p[w:pPr/w:numPr]", namespaces=NS))
-        report.task_checkboxes = len(document.xpath(".//w14:checkbox", namespaces=NS))
-        report.footnote_references = len(document.xpath(".//w:footnoteReference", namespaces=NS))
-        report.endnote_references = len(document.xpath(".//w:endnoteReference", namespaces=NS))
-        report.drawings = sum(
-            len(root.xpath(".//w:drawing", namespaces=NS)) for root in content_roots
-        )
-        report.hyperlinks = sum(
-            len(root.xpath(".//w:hyperlink", namespaces=NS)) for root in content_roots
-        )
-        report.internal_hyperlinks = len(document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS))
-        bookmark_nodes = document.xpath(".//w:bookmarkStart", namespaces=NS)
-        report.bookmarks = len(bookmark_nodes)
-        bookmark_names = [n.get(f"{{{W}}}name") for n in bookmark_nodes if n.get(f"{{{W}}}name")]
-        report.duplicate_bookmark_names = len(bookmark_names) - len(set(bookmark_names))
-        anchors = [
-            n.get(f"{{{W}}}anchor")
-            for n in document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS)
-        ]
-        report.dangling_internal_hyperlinks = sum(
-            1 for a in anchors if a and a not in set(bookmark_names)
-        )
-        report.comment_references = len(document.xpath(".//w:commentReference", namespaces=NS))
-        field_nodes = [
-            n for root in content_roots for n in root.xpath(".//w:instrText", namespaces=NS)
-        ]
-        report.fields = len(field_nodes)
-        report.seq_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("SEQ "))
-        report.ref_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("REF "))
-        ref_targets = []
-        for n in field_nodes:
-            text = (n.text or "").strip()
-            if text.startswith("REF "):
-                parts = text.split()
-                if len(parts) >= 2:
-                    ref_targets.append(parts[1])
-        report.dangling_ref_fields = sum(
-            1 for name in ref_targets if name not in set(bookmark_names)
-        )
-        report.images_missing_alt = len(
-            document.xpath(
-                ".//wp:docPr[(not(@descr) or normalize-space(@descr)='') and not(.//adec:decorative[@val='1'])]",
-                namespaces=NS,
-            )
-        )
-        report.sections = len(document.xpath(".//w:sectPr", namespaces=NS))
-        report.landscape_sections = _count_landscape_sections(document)
-        report.table_overflow_candidates = _count_table_overflow_candidates(document)
+def _inspect_parts(
+    names: list[str],
+    roots: dict[str, etree._Element],
+    invalid_xml_parts: Iterable[str] = (),
+) -> DocxInspection:
+    report = DocxInspection()
+    report.valid_zip = True
+    report.package_parts = len(names)
+    seen: set[str] = set()
+    dupes: set[str] = set()
+    for name in names:
+        if name in seen:
+            dupes.add(name)
+        seen.add(name)
+    report.duplicate_parts = sorted(dupes)
+    report.missing_required_parts = sorted(_REQUIRED_PARTS.difference(seen))
+    report.invalid_xml_parts = sorted(invalid_xml_parts)
+    report.broken_relationships = _broken_relationships(roots, seen)
+    report.duplicate_relationship_ids = _count_duplicate_relationship_ids(roots)
+    report.chart_relationship_issues = _count_chart_relationship_issues(roots, seen)
 
-        footnotes = roots.get("word/footnotes.xml")
-        if footnotes is not None:
-            ids = []
-            for node in footnotes.xpath("./w:footnote", namespaces=NS):
-                raw = node.get(f"{{{W}}}id")
-                try:
-                    value = int(raw) if raw is not None else -999
-                except ValueError:
-                    continue
-                if value > 0:
-                    ids.append(value)
-            report.footnote_definitions = len(ids)
-            report.duplicate_note_ids += len(ids) - len(set(ids))
+    document = roots.get("word/document.xml")
+    if document is None:
+        return report
 
-        endnotes = roots.get("word/endnotes.xml")
-        if endnotes is not None:
-            ids = []
-            for node in endnotes.xpath("./w:endnote", namespaces=NS):
-                raw = node.get(f"{{{W}}}id")
-                try:
-                    value = int(raw) if raw is not None else -999
-                except ValueError:
-                    continue
-                if value > 0:
-                    ids.append(value)
-            report.endnote_definitions = len(ids)
-            report.duplicate_note_ids += len(ids) - len(set(ids))
+    report.duplicate_drawing_ids = _count_duplicate_drawing_ids(document)
+    report.paragraphs = len(document.xpath(".//w:p", namespaces=NS))
+    report.headings = len(
+        document.xpath(
+            './/w:p[w:pPr/w:pStyle[starts-with(@w:val,"Heading") or starts-with(@w:val,"MD Heading") or starts-with(@w:val,"MDHeading")]]',
+            namespaces=NS,
+        )
+    )
+    report.tables = len(document.xpath(".//w:tbl", namespaces=NS))
+    content_roots = [
+        root
+        for name, root in roots.items()
+        if name == "word/document.xml"
+        or name in {"word/footnotes.xml", "word/endnotes.xml"}
+        or name.startswith("word/header")
+        or name.startswith("word/footer")
+    ]
+    report.equations = sum(len(root.xpath(".//m:oMath", namespaces=NS)) for root in content_roots)
+    report.nary_operators = sum(
+        len(root.xpath(".//m:nary", namespaces=NS)) for root in content_roots
+    )
+    report.empty_nary_operands = sum(_count_empty_nary_operands(root) for root in content_roots)
+    report.radicals = sum(len(root.xpath(".//m:rad", namespaces=NS)) for root in content_roots)
+    report.radicals_missing_degree = sum(
+        len(root.xpath(".//m:rad[not(m:deg)]", namespaces=NS)) for root in content_roots
+    )
+    report.matrices = sum(len(root.xpath(".//m:m", namespaces=NS)) for root in content_roots)
+    report.native_list_paragraphs = len(document.xpath(".//w:p[w:pPr/w:numPr]", namespaces=NS))
+    report.task_checkboxes = len(document.xpath(".//w14:checkbox", namespaces=NS))
+    report.footnote_references = len(document.xpath(".//w:footnoteReference", namespaces=NS))
+    report.endnote_references = len(document.xpath(".//w:endnoteReference", namespaces=NS))
+    report.drawings = sum(len(root.xpath(".//w:drawing", namespaces=NS)) for root in content_roots)
+    report.hyperlinks = sum(
+        len(root.xpath(".//w:hyperlink", namespaces=NS)) for root in content_roots
+    )
+    report.internal_hyperlinks = len(document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS))
+    bookmark_nodes = document.xpath(".//w:bookmarkStart", namespaces=NS)
+    report.bookmarks = len(bookmark_nodes)
+    bookmark_names = [n.get(f"{{{W}}}name") for n in bookmark_nodes if n.get(f"{{{W}}}name")]
+    bookmark_targets = set(bookmark_names)
+    report.duplicate_bookmark_names = len(bookmark_names) - len(bookmark_targets)
+    anchors = [
+        n.get(f"{{{W}}}anchor") for n in document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS)
+    ]
+    report.dangling_internal_hyperlinks = sum(1 for a in anchors if a and a not in bookmark_targets)
+    report.comment_references = len(document.xpath(".//w:commentReference", namespaces=NS))
+    field_nodes = [n for root in content_roots for n in root.xpath(".//w:instrText", namespaces=NS)]
+    report.fields = len(field_nodes)
+    report.seq_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("SEQ "))
+    report.ref_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("REF "))
+    ref_targets = []
+    for n in field_nodes:
+        text = (n.text or "").strip()
+        if text.startswith("REF "):
+            parts = text.split()
+            if len(parts) >= 2:
+                ref_targets.append(parts[1])
+    report.dangling_ref_fields = sum(1 for name in ref_targets if name not in bookmark_targets)
+    report.images_missing_alt = len(
+        document.xpath(
+            ".//wp:docPr[(not(@descr) or normalize-space(@descr)='') and not(.//adec:decorative[@val='1'])]",
+            namespaces=NS,
+        )
+    )
+    report.sections = len(document.xpath(".//w:sectPr", namespaces=NS))
+    report.landscape_sections = _count_landscape_sections(document)
+    report.table_overflow_candidates = _count_table_overflow_candidates(document)
 
-        comments = roots.get("word/comments.xml")
-        if comments is not None:
-            report.comment_definitions = len(comments.xpath("./w:comment", namespaces=NS))
+    footnotes = roots.get("word/footnotes.xml")
+    if footnotes is not None:
+        ids = []
+        for node in footnotes.xpath("./w:footnote", namespaces=NS):
+            raw = node.get(f"{{{W}}}id")
+            try:
+                value = int(raw) if raw is not None else -999
+            except ValueError:
+                continue
+            if value > 0:
+                ids.append(value)
+        report.footnote_definitions = len(ids)
+        report.duplicate_note_ids += len(ids) - len(set(ids))
 
-        report.media_parts = sum(
-            1 for name in names if name.startswith("word/media/") and not name.endswith("/")
-        )
-        report.native_charts = sum(
-            1 for name in names if name.startswith("word/charts/chart") and name.endswith(".xml")
-        )
-        report.embedded_workbooks = sum(
-            1
-            for name in names
-            if name.startswith("word/embeddings/") and name.lower().endswith(".xlsx")
-        )
-        report.suspicious_placeholder_chars = _placeholder_counts(roots.values())
+    endnotes = roots.get("word/endnotes.xml")
+    if endnotes is not None:
+        ids = []
+        for node in endnotes.xpath("./w:endnote", namespaces=NS):
+            raw = node.get(f"{{{W}}}id")
+            try:
+                value = int(raw) if raw is not None else -999
+            except ValueError:
+                continue
+            if value > 0:
+                ids.append(value)
+        report.endnote_definitions = len(ids)
+        report.duplicate_note_ids += len(ids) - len(set(ids))
+
+    comments = roots.get("word/comments.xml")
+    if comments is not None:
+        report.comment_definitions = len(comments.xpath("./w:comment", namespaces=NS))
+
+    report.media_parts = sum(
+        1 for name in names if name.startswith("word/media/") and not name.endswith("/")
+    )
+    report.native_charts = sum(
+        1 for name in names if name.startswith("word/charts/chart") and name.endswith(".xml")
+    )
+    report.embedded_workbooks = sum(
+        1
+        for name in names
+        if name.startswith("word/embeddings/") and name.lower().endswith(".xlsx")
+    )
+    report.suspicious_placeholder_chars = _placeholder_counts(roots.values())
     return report
 
 

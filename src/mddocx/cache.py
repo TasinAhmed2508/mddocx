@@ -6,6 +6,7 @@ from pathlib import Path
 from .ast.base import Document
 from .ast.codec import document_from_json, document_to_json
 from .config import CacheConfig
+from .output import atomic_write_bytes
 
 _AST_CACHE_SCHEMA = "mddocx-ast-v2"
 
@@ -39,8 +40,4 @@ class AstCache:
         data = text.encode("utf-8")
         if len(data) > self.config.max_entry_bytes:
             return
-        self.directory.mkdir(parents=True, exist_ok=True)
-        target = self.directory / f"{key}.json"
-        temp = self.directory / f".{key}.tmp"
-        temp.write_bytes(data)
-        temp.replace(target)
+        atomic_write_bytes(self.directory / f"{key}.json", data)

@@ -213,9 +213,9 @@ class Compiler:
         source = Path(input_path)
         target = Path(output_path)
         compiler = MarkdownWord(self.config)
-        compiler.render_file(source, target)
+        output = compiler._render_file(source, target)
         return CompilationResult(
-            target.read_bytes(),
+            output,
             compiler.diagnostics,
             compiler.last_stats,
             target,

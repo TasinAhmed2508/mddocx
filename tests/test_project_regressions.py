@@ -22,6 +22,26 @@ def test_project_build_is_reproducible_and_skips_unchanged_input(tmp_path: Path)
     assert manifest.output.is_file()
 
 
+def test_project_cache_does_not_reuse_explicit_config_output(tmp_path: Path):
+    manifest = load_project(init_project(tmp_path / "report"))
+    default = build_project(manifest)
+    custom = build_project(manifest, config=RenderConfig(title="Caller title"))
+    restored = build_project(manifest)
+
+    assert custom.built and custom.output_sha256 != default.output_sha256
+    assert restored.built
+    assert build_project(manifest).skipped
+
+
+def test_project_rebuilds_when_cache_state_is_not_a_mapping(tmp_path: Path):
+    manifest = load_project(init_project(tmp_path / "report"))
+    build_project(manifest)
+    state_path = manifest.root / ".mddocx" / "build-state.json"
+    state_path.write_text("[]", encoding="utf-8")
+
+    assert build_project(manifest).built
+
+
 def test_project_includes_are_combined_and_tracked(tmp_path: Path):
     root = tmp_path / "book"
     root.mkdir()
@@ -86,6 +106,17 @@ def test_project_detects_include_cycles(tmp_path: Path):
 
     with pytest.raises(MddocxError, match="Include cycle"):
         compile_project(root)
+
+
+def test_project_includes_use_the_markdown_input_limit(tmp_path: Path):
+    (tmp_path / "main.md").write_text("@include chapter.md", encoding="utf-8")
+    (tmp_path / "chapter.md").write_text("x" * 257, encoding="utf-8")
+    (tmp_path / "mddocx.yml").write_text("version: 1\nsources: [main.md]\n", encoding="utf-8")
+    config = RenderConfig()
+    config.limits.max_input_bytes = 256
+
+    with pytest.raises(MddocxError, match="LIMIT401"):
+        compile_project(tmp_path, config=config)
 
 
 def test_explicit_project_config_overrides_manifest_render_values(tmp_path: Path):

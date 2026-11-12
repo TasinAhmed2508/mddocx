@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.3 — Compiler maintenance and performance
+
+- Reuse validated equation conversions, table measurements, flowchart parsing and layout levels,
+  and parsed DOCX parts. File compilation returns the bytes it wrote without reopening the output.
+- Share the layout, rendering, and finalization path for Markdown and document AST inputs.
+  Use one atomic file writer for DOCX output and compiler caches.
+- Keep project builds with explicit configuration out of the manifest cache. Rebuild if the
+  saved state is malformed, and stream dependency hashes without loading whole files into memory.
+- Apply the Markdown input size limit to each project source and include before parsing.
+- Remove unused private math helpers and avoid repeated bookmark and heading identifier lookups.
+
 ## 1.4.2 — Flowcharts, tables, and conversion safety
 
 - Preserve labeled Mermaid flowchart connections and divide long diagrams into readable,

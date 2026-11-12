@@ -144,6 +144,17 @@ def test_docx_validation_rejects_traversal_macros_and_oversized_xml():
     assert oversized.value.diagnostic.code == "DOCX405"
 
 
+def test_validation_and_inspection_report_the_same_malformed_part():
+    from mddocx import inspect_docx_bytes
+
+    name = "word/broken.xml"
+    blob = _package(name, b"<unclosed>")
+    assert inspect_docx_bytes(blob).invalid_xml_parts == [name]
+    with pytest.raises(MddocxError, match=name) as malformed:
+        validate_docx_package(blob, ValidationConfig())
+    assert malformed.value.diagnostic.code == "DOCX406"
+
+
 def test_ai_metadata_cleaning_preserves_render_config_and_code_examples():
     markdown = """---
 conversation_id: secret-chat

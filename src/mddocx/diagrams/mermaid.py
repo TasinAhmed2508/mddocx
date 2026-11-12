@@ -64,7 +64,8 @@ class MermaidRenderer:
         if target.exists():
             return target
         if re.match(r"^(?:flowchart|graph)\b", first, flags=re.I):
-            self._render_flowchart(significant, target)
+            direction, nodes, edges = self._parse_flow(significant)
+            self._render_flowchart(direction, nodes, edges, self._levels(nodes, edges), target)
         elif first.lower() == "sequencediagram":
             self._render_sequence(significant, target)
         elif re.match(r"^pie\b", first, flags=re.I):
@@ -130,7 +131,13 @@ class MermaidRenderer:
             )
         if len(levels) <= max_levels:
             self._render_flowchart(
-                lines, target, numbered_edges=True, display_labels=display_labels
+                direction,
+                nodes,
+                edges,
+                levels,
+                target,
+                numbered_edges=True,
+                display_labels=display_labels,
             )
             return [target], legend, node_key
 
@@ -153,7 +160,10 @@ class MermaidRenderer:
             box = (first, 0, last, height) if horizontal else (0, first, width, last)
             page = target.with_name(f"{target.stem}-part-{len(pages) + 1}.png")
             self._render_flowchart(
-                lines,
+                direction,
+                nodes,
+                edges,
+                levels,
                 page,
                 numbered_edges=True,
                 display_labels=display_labels,
@@ -351,7 +361,10 @@ class MermaidRenderer:
 
     def _render_flowchart(
         self,
-        lines: list[str],
+        direction: str,
+        nodes: dict[str, _Node],
+        edges: list[_Edge],
+        levels: list[list[str]],
         target: Path,
         *,
         numbered_edges: bool = False,
@@ -363,8 +376,6 @@ class MermaidRenderer:
             from PIL import Image, ImageDraw
         except ImportError as exc:
             raise MermaidRenderError("Mermaid rendering requires Pillow.") from exc
-        direction, nodes, edges = self._parse_flow(lines)
-        levels = self._levels(nodes, edges)
         horizontal = direction in {"LR", "RL"}
         margin = _FLOW_MARGIN
         width, height = self._flow_size(levels, horizontal)
@@ -396,14 +407,14 @@ class MermaidRenderer:
         label_font = self._font(15)
 
         label_number = 0
-        grouped: dict[tuple[str, str], list[int]] = {}
+        grouped: dict[tuple[str, str], list[str]] = {}
         for edge in edges:
-            numbers = grouped.setdefault((edge.src, edge.dst), [])
+            labels = grouped.setdefault((edge.src, edge.dst), [])
             if edge.label:
                 label_number += 1
-                numbers.append(label_number)
+                labels.append(str(label_number) if numbered_edges else edge.label)
         by_level = {ident: level for level, group in enumerate(levels) for ident in group}
-        for (src, dst), numbers in grouped.items():
+        for (src, dst), labels in grouped.items():
             if src == dst:
                 raise MermaidRenderError("Self-loop flowcharts are not supported by the renderer.")
             if src not in positions or dst not in positions:
@@ -417,16 +428,8 @@ class MermaidRenderer:
             else:
                 self._arrow(draw, sx, sy, dx, dy)
                 mx, my = (sx + dx) / 2, (sy + dy) / 2
-            if numbers:
-                label = (
-                    ",".join(map(str, numbers))
-                    if numbered_edges
-                    else " / ".join(
-                        edge.label
-                        for edge in edges
-                        if edge.src == src and edge.dst == dst and edge.label
-                    )
-                )
+            if labels:
+                label = ("," if numbered_edges else " / ").join(labels)
                 box = draw.textbbox((0, 0), label, font=label_font)
                 half_width = max(12, (box[2] - box[0]) / 2 + 5)
                 draw.rounded_rectangle(

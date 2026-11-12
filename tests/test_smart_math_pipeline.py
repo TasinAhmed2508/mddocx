@@ -48,6 +48,25 @@ def test_engine_failure_falls_through_and_is_observable():
     assert result.semantic_fingerprint
 
 
+def test_repeated_equations_share_engine_work_but_keep_separate_xml():
+    converter = DefaultMathConverter()
+    converter._sidecar.executable = None
+    calls = []
+
+    def engine(latex):
+        calls.append(latex)
+        return '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>'
+
+    converter._external = engine
+    first = converter.latex_to_omml("x")
+    first.set("modified", "true")
+    second = converter.latex_to_omml("x")
+    converter.latex_to_omml("x", display=True)
+
+    assert calls == ["x", "x"]
+    assert first is not second and second.get("modified") is None
+
+
 def test_external_engine_semantic_token_loss_falls_through():
     converter = DefaultMathConverter(cache=False)
     converter._sidecar.executable = None

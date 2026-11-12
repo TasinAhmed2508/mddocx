@@ -61,25 +61,25 @@ and math engine it will actually use, and whether another distribution is compet
 Download the `.whl` file from the [latest GitHub Release](https://github.com/TasinAhmed2508/mddocx/releases/latest), open a terminal in the download directory, and run:
 
 ```bash
-python -m pip install ./mddocx_native-1.4.2-py3-none-any.whl
+python -m pip install ./mddocx_native-1.4.3-py3-none-any.whl
 ```
 
 On Windows PowerShell, the equivalent command is:
 
 ```powershell
-python -m pip install .\mddocx_native-1.4.2-py3-none-any.whl
+python -m pip install .\mddocx_native-1.4.3-py3-none-any.whl
 ```
 
-You can also install the wheel directly from the v1.4.2 GitHub Release:
+You can also install the wheel directly from the v1.4.3 GitHub Release:
 
 ```bash
-python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.2/mddocx_native-1.4.2-py3-none-any.whl"
+python -m pip install "https://github.com/TasinAhmed2508/mddocx/releases/download/v1.4.3/mddocx_native-1.4.3-py3-none-any.whl"
 ```
 
 ### Install from GitHub
 
 ```bash
-python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.2"
+python -m pip install "git+https://github.com/TasinAhmed2508/mddocx.git@v1.4.3"
 ```
 
 ### Install for local development
@@ -312,7 +312,7 @@ Document settings can be defined at the top of a Markdown file:
 
 Detailed documentation is available in the docs directory, including compatibility, API stability, interactive CLI, charts and data, AI export metadata, accessibility, and extensions.
 
-See the [1.4.2 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.2.md)
+See the [1.4.3 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.3.md)
 for install diagnostics, collision safety, and equation-engine reporting, the
 [1.4.0 release notes](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/RELEASE_NOTES_1.4.0.md)
 for multilingual script coverage, and the existing

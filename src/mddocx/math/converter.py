@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-import re
 from typing import Protocol
 
 from .latex import BasicLatexToMathML, UnsupportedLatexError
@@ -30,6 +29,7 @@ class DefaultMathConverter:
         self._sidecar = sidecar or MathJaxSidecar()
         self._cache_enabled = cache
         self._mathml_cache: dict[str, str] = {}
+        self._conversions: dict[tuple[str, bool], MathConversion] = {}
         self._omml_cache: dict[tuple[str, bool], object] = {}
         try:
             from latex2mathml.converter import convert  # type: ignore
@@ -55,16 +55,6 @@ class DefaultMathConverter:
             self._mathml_cache[latex] = value
         return value
 
-    @staticmethod
-    def _reject_unconverted_commands(mathml: str) -> None:
-        """Do not treat literal TeX commands in external MathML as success."""
-        root = validate_mathml(mathml)
-        literal = re.search(r"\\([A-Za-z]+)", "".join(root.itertext()))
-        if literal:
-            raise UnsupportedLatexError(
-                f"Unsupported LaTeX command left unconverted by math engine: \\{literal.group(1)}"
-            )
-
     def mathml_to_omml(self, mathml: str, display: bool):
         key = (mathml, display)
         if self._cache_enabled and key in self._omml_cache:
@@ -78,6 +68,9 @@ class DefaultMathConverter:
         return self.convert(latex, display).omml
 
     def convert(self, latex: str, display: bool = False) -> MathConversion:
+        key = (latex, display)
+        if key in self._conversions:
+            return deepcopy(self._conversions[key])
         normalized = normalize_equation(latex)
         failures: list[str] = []
         engines = []
@@ -107,7 +100,7 @@ class DefaultMathConverter:
             except Exception as exc:
                 failures.append(f"{engine}: {exc}")
                 continue
-            return MathConversion(
+            result = MathConversion(
                 source_text=latex,
                 normalized_text=normalized.text,
                 display=display,
@@ -120,4 +113,9 @@ class DefaultMathConverter:
                 semantic_fingerprint=fingerprint,
                 label=normalized.label,
             )
+            if self._cache_enabled and not failures:
+                if len(self._conversions) == 128:
+                    del self._conversions[next(iter(self._conversions))]
+                self._conversions[key] = deepcopy(result)
+            return result
         raise UnsupportedLatexError("; ".join(failures) or "No math conversion engine available")

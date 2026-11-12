@@ -656,16 +656,6 @@ def protect_escaped_footnote_references(markdown: str) -> str:
     )
 
 
-def _restore_escaped_footnotes(text: str) -> str:
-    pattern = re.compile(rf"{FOOTNOTE_ESCAPE_SENTINEL}([A-Za-z0-9_-]+)ENDNOTE")
-
-    def _replace(match: re.Match[str]) -> str:
-        decoded = _try_decode_inline_math(match.group(1))
-        return f"[^{decoded}]" if decoded is not None else match.group(0)
-
-    return pattern.sub(_replace, text)
-
-
 _CALLOUT_KINDS = {"note", "tip", "important", "warning", "caution", "example"}
 
 

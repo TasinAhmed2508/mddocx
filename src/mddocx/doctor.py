@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 import importlib.util
 from importlib import metadata
 import json
+import os
 import platform
 import shutil
 import sys
@@ -72,10 +73,20 @@ class DoctorReport:
 
     @property
     def visual_qa_ready(self) -> bool:
-        return bool(
-            (self.executables.get("libreoffice") or self.executables.get("soffice"))
-            and self.executables.get("pdftoppm")
-        )
+        """Whether the optional page-render cross-check can run on this machine.
+
+        This mirrors what ``visual_qa.render_docx_pages`` actually accepts: a PDF
+        rasterizer plus either LibreOffice/soffice, or Microsoft Word driven through
+        COM automation on Windows. Document conversion needs none of it, which is why
+        it stays out of ``ok``.
+        """
+        if not self.executables.get("pdftoppm"):
+            return False
+        if self.executables.get("libreoffice") or self.executables.get("soffice"):
+            return True
+        if os.name != "nt":
+            return False
+        return bool(self.executables.get("powershell") or self.executables.get("pwsh"))
 
     @property
     def ok(self) -> bool:
@@ -136,13 +147,15 @@ class DoctorReport:
         )
         for name, value in self.dependencies.items():
             lines.append(f"  {name}: {value}")
-        lines.append("External QA tools:")
+        lines.append("Optional visual QA tools:")
         for name, value in self.executables.items():
             lines.append(f"  {name}: {value or 'not found'}")
         lines.append(f"Visual DOCX regression ready: {'yes' if self.visual_qa_ready else 'no'}")
         if not self.visual_qa_ready:
             lines.append(
-                "  Visual QA needs LibreOffice/soffice plus pdftoppm; document conversion itself does not."
+                "  Visual QA is an optional page-render cross-check for layout. It needs "
+                "pdftoppm plus LibreOffice/soffice, or Microsoft Word on Windows; document "
+                "conversion itself does not need any of them."
             )
         return "\n".join(lines)
 
@@ -209,7 +222,10 @@ def run_doctor() -> DoctorReport:
         machine=platform.machine(),
         mddocx_version=mddocx_version,
         dependencies=deps,
-        executables={name: shutil.which(name) for name in ("libreoffice", "soffice", "pdftoppm")},
+        executables={
+            name: shutil.which(name)
+            for name in ("libreoffice", "soffice", "pdftoppm", "powershell", "pwsh")
+        },
         temp_directory_writable=temp_ok,
         mathjax_sidecar=(
             str(sidecar.executable)

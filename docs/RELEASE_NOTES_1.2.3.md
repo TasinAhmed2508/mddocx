@@ -26,4 +26,4 @@ Allowing HTTPS preserves scheme, public-address, redirect, MIME, size, and SVG s
 Base64 data URIs remain local and never use the network.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [V2_MIGRATION.md](V2_MIGRATION.md), and
-[feature-matrix.json](feature-matrix.json) for the full design and compatibility contract.
+[feature-matrix.json](../src/mddocx/feature-matrix.json) for the full design and compatibility contract.

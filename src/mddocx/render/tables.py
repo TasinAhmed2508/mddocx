@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING
 from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm
 
 from mddocx.ast.block import Table
 from mddocx.layout import allocate_table_widths_mm
+from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.utils import (
     set_cell_margins,
     set_cell_shading,
@@ -151,14 +151,6 @@ def table_widths(renderer: DocxRenderer, node: Table, cols: int):
 
 def remove_table_borders(table) -> None:
     """Strip every border from a table (used by the numbered-equation surface)."""
-    tbl_pr = table._tbl.tblPr
-    borders = tbl_pr.find(qn("w:tblBorders"))
-    if borders is None:
-        borders = OxmlElement("w:tblBorders")
-        tbl_pr.append(borders)
+    borders = get_or_add(table._tbl.tblPr, "w:tblBorders")
     for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        el = borders.find(qn(f"w:{edge}"))
-        if el is None:
-            el = OxmlElement(f"w:{edge}")
-            borders.append(el)
-        el.set(qn("w:val"), "nil")
+        get_or_add(borders, f"w:{edge}").set(qn("w:val"), "nil")

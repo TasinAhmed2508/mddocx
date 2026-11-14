@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mddocx-native"
-version = "1.4.3"
+version = "1.5.0rc1"
 description = "Deterministic Markdown to native, editable Microsoft Word DOCX compiler"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -80,7 +80,7 @@ py-modules = ["mddocx_launcher"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-mddocx = ["math/bin/*.mjs", "math/README.md", "resources/README.md"]
+mddocx = ["feature-matrix.json", "diagnostic-catalog.json", "math/bin/*.mjs", "math/README.md", "resources/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -12,6 +12,7 @@ from lxml import etree
 from mddocx.ast.block import ImageBlock
 from mddocx.ooxml.fields import add_hyperlink
 from mddocx.ooxml.text import clean_xml_text
+from mddocx.diagnostics import MddocxError
 from mddocx.resources import ResourceFallback, ResourceRequest
 
 from . import citations
@@ -71,6 +72,17 @@ def add_image(
         )
     )
     if isinstance(result, ResourceFallback):
+        if renderer.config.recover and result.diagnostic.code in {
+            "RESOURCE201",
+            "RESOURCE203",
+            "RESOURCE205",
+            "RESOURCE208",
+            "RESOURCE209",
+            "RESOURCE210",
+            "RESOURCE211",
+        }:
+            result.diagnostic.severity = "error"
+            raise MddocxError(result.diagnostic)
         renderer.reporter.emit(result.diagnostic)
         label = alt or title or src
         if getattr(renderer.config.resources, "image_failure", "clickable_fallback") == "literal":
@@ -144,6 +156,12 @@ def add_image_path(
             if title:
                 docpr.set("title", clean_xml_text(title))
             if renderer.config.accessibility.image_alt_required and not alt:
-                renderer.reporter.warn("A11Y201", f"Image has no alt text: {path.name}")
-    except Exception:
-        pass
+                renderer.reporter.warn("A11Y101", f"Image has no alt text: {path.name}")
+    except Exception as exc:
+        # The image is already in the document; only its accessibility metadata is
+        # missing. Report it instead of passing silently, so the defect is visible.
+        renderer.reporter.warn(
+            "A11Y202",
+            f"Unable to attach accessibility metadata to {path.name}: {type(exc).__name__}",
+            remediation="The image renders, but Word will not expose alt text for it.",
+        )

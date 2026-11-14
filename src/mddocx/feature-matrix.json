@@ -2,7 +2,11 @@
   "schema": "mddocx-feature-matrix",
   "version": 1,
   "baseline": "CommonMark/GFM via markdown-it-py plus documented mddocx extensions",
-  "fidelity_dimensions": ["semantic", "native_editability", "presentation"],
+  "fidelity_dimensions": [
+    "semantic",
+    "native_editability",
+    "presentation"
+  ],
   "features": [
     {
       "id": "core-text",
@@ -11,8 +15,11 @@
       "ooxml": "w:p, w:r, w:rPr and w:hyperlink",
       "malformed_diagnostic": "Markdown is preserved as literal text where CommonMark does not recognize markup",
       "word365": "implemented; structural regression tested",
-      "libreoffice": "automated visual smoke",
-      "tests": ["tests/test_core_regressions.py"]
+      "optional_renderer": "automated visual smoke",
+      "tests": [
+        "tests/test_core_regressions.py"
+      ],
+      "verify": "Paragraph text, line breaks and hyperlink destinations"
     },
     {
       "id": "headings-toc-fields",
@@ -21,8 +28,12 @@
       "ooxml": "heading paragraph styles, outline levels, bookmarks and complex fields",
       "malformed_diagnostic": "NORM401 for invalid canonical heading levels",
       "word365": "implemented; field updates requested on open",
-      "libreoffice": "structural support; pagination may differ",
-      "tests": ["tests/test_technical_report.py", "tests/test_compiler_and_normalizer.py"]
+      "optional_renderer": "structural support; pagination may differ",
+      "tests": [
+        "tests/test_technical_report.py",
+        "tests/test_compiler_and_normalizer.py"
+      ],
+      "verify": "Heading levels and heading bookmarks"
     },
     {
       "id": "lists-and-tasks",
@@ -31,8 +42,13 @@
       "ooxml": "native w:numPr numbering and checkbox content controls",
       "malformed_diagnostic": "invalid source falls back to CommonMark paragraph semantics",
       "word365": "implemented; structural regression tested",
-      "libreoffice": "automated visual smoke coverage",
-      "tests": ["tests/test_core_regressions.py", "tests/test_technical_report.py", "tests/test_fidelity_corpora.py"]
+      "optional_renderer": "automated visual smoke coverage",
+      "tests": [
+        "tests/test_core_regressions.py",
+        "tests/test_technical_report.py",
+        "tests/test_fidelity_corpora.py"
+      ],
+      "verify": "Native nesting levels and task state"
     },
     {
       "id": "tables",
@@ -41,8 +57,12 @@
       "ooxml": "native w:tbl with widths, alignment, repeated headers and non-splitting short rows",
       "malformed_diagnostic": "NORM201 for irregular canonical rows",
       "word365": "implemented; automatic landscape planning tested",
-      "libreoffice": "automated visual smoke",
-      "tests": ["tests/test_layout_regressions.py", "tests/test_technical_report.py"]
+      "optional_renderer": "automated visual smoke",
+      "tests": [
+        "tests/test_layout_regressions.py",
+        "tests/test_technical_report.py"
+      ],
+      "verify": "Row and cell dimensions and text"
     },
     {
       "id": "math",
@@ -51,8 +71,14 @@
       "ooxml": "native m:oMath and m:oMathPara/OMML",
       "malformed_diagnostic": "MATH101 for unmatched explicit delimiters; MATH201 for conversion fallback",
       "word365": "qualified in Word 365 with 22-equation AI fixture",
-      "libreoffice": "automated visual smoke",
-      "tests": ["tests/test_ai_math_compatibility.py", "tests/test_smart_math_pipeline.py", "tests/test_equation_conformance_corpus.py", "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"]
+      "optional_renderer": "automated visual smoke",
+      "tests": [
+        "tests/test_ai_math_compatibility.py",
+        "tests/test_smart_math_pipeline.py",
+        "tests/test_equation_conformance_corpus.py",
+        "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"
+      ],
+      "verify": "Presence of native OMML"
     },
     {
       "id": "images-and-figures",
@@ -61,8 +87,13 @@
       "ooxml": "native DrawingML image, docPr alternative text, caption and bookmark",
       "malformed_diagnostic": "RESOURCE/IMAGE/A11Y diagnostic families",
       "word365": "qualified in Word 365 with a nine-image Base64 AI conversation fixture",
-      "libreoffice": "supported",
-      "tests": ["tests/test_security_and_metadata.py", "tests/test_resilient_resources.py", "tests/test_release_contract.py"]
+      "optional_renderer": "supported",
+      "tests": [
+        "tests/test_security_and_metadata.py",
+        "tests/test_resilient_resources.py",
+        "tests/test_release_contract.py"
+      ],
+      "verify": "Native drawing presence and alternative text"
     },
     {
       "id": "equation-figure-table-references",
@@ -71,8 +102,12 @@
       "ooxml": "bookmarks and REF/SEQ fields",
       "malformed_diagnostic": "REF201 for unresolved references with source location",
       "word365": "implemented; structural regression tested",
-      "libreoffice": "fields supported with rendering differences",
-      "tests": ["tests/test_diagnostic_locations.py", "tests/test_technical_report.py"]
+      "optional_renderer": "fields supported with rendering differences",
+      "tests": [
+        "tests/test_diagnostic_locations.py",
+        "tests/test_technical_report.py"
+      ],
+      "verify": "Presence of native OMML"
     },
     {
       "id": "citations-bibliography",
@@ -81,8 +116,13 @@
       "ooxml": "editable Word text with deterministic bibliography ordering",
       "malformed_diagnostic": "CITE201/CITE202 for missing database or key",
       "word365": "implemented; structural regression tested",
-      "libreoffice": "supported",
-      "tests": ["tests/test_technical_report.py", "tests/test_diagnostic_locations.py", "tests/test_academic_references.py"]
+      "optional_renderer": "supported",
+      "tests": [
+        "tests/test_technical_report.py",
+        "tests/test_diagnostic_locations.py",
+        "tests/test_academic_references.py"
+      ],
+      "verify": "See offline verification scope in the README"
     },
     {
       "id": "notes",
@@ -91,8 +131,13 @@
       "ooxml": "native footnotes.xml or endnotes.xml parts and relationships",
       "malformed_diagnostic": "NOTE201 for unresolved notes",
       "word365": "implemented; structural regression tested",
-      "libreoffice": "supported",
-      "tests": ["tests/test_technical_report.py", "tests/test_diagnostic_locations.py", "tests/test_fidelity_corpora.py"]
+      "optional_renderer": "supported",
+      "tests": [
+        "tests/test_technical_report.py",
+        "tests/test_diagnostic_locations.py",
+        "tests/test_fidelity_corpora.py"
+      ],
+      "verify": "Native note links and supported note body text"
     },
     {
       "id": "charts-and-data",
@@ -101,8 +146,11 @@
       "ooxml": "native ChartML with embedded XLSX workbook",
       "malformed_diagnostic": "CHART/DATA diagnostic families",
       "word365": "implemented; manual advanced-axis review required",
-      "libreoffice": "structural compatibility tested",
-      "tests": ["tests/test_technical_report.py"]
+      "optional_renderer": "structural compatibility tested",
+      "tests": [
+        "tests/test_technical_report.py"
+      ],
+      "verify": "Native ChartML and workbook relationships"
     },
     {
       "id": "callouts-comments-code",
@@ -111,8 +159,11 @@
       "ooxml": "styled paragraphs/tables, native comments part and editable code runs",
       "malformed_diagnostic": "unsupported containers remain literal source",
       "word365": "implemented",
-      "libreoffice": "supported with theme differences",
-      "tests": ["tests/test_technical_report.py"]
+      "optional_renderer": "supported with theme differences",
+      "tests": [
+        "tests/test_technical_report.py"
+      ],
+      "verify": "See offline verification scope in the README"
     },
     {
       "id": "rtl-unicode-xml",
@@ -121,8 +172,11 @@
       "ooxml": "XML-safe text and bidi paragraph/run properties",
       "malformed_diagnostic": "invalid XML characters are sanitized",
       "word365": "implemented; broader manual language corpus planned",
-      "libreoffice": "supported with font-dependent layout",
-      "tests": ["tests/test_release_contract.py"]
+      "optional_renderer": "supported with font-dependent layout",
+      "tests": [
+        "tests/test_release_contract.py"
+      ],
+      "verify": "See offline verification scope in the README"
     },
     {
       "id": "templates-professional-features",
@@ -131,8 +185,12 @@
       "ooxml": "template styles/sections, headers, footers and fields",
       "malformed_diagnostic": "CONFIG301/CONFIG302/DOCX301 for invalid templates",
       "word365": "implemented; template-specific manual qualification required",
-      "libreoffice": "supported with template-dependent differences",
-      "tests": ["tests/test_release_contract.py", "tests/test_technical_report.py"]
+      "optional_renderer": "supported with template-dependent differences",
+      "tests": [
+        "tests/test_release_contract.py",
+        "tests/test_technical_report.py"
+      ],
+      "verify": "See offline verification scope in the README"
     },
     {
       "id": "privacy-security",
@@ -141,8 +199,11 @@
       "ooxml": "scrubbed core properties and contained package relationships",
       "malformed_diagnostic": "META, RESOURCE, IMAGE, LIMIT and DOCX diagnostic families",
       "word365": "package opens without repair for qualification fixture",
-      "libreoffice": "package accepted in automated smoke",
-      "tests": ["tests/test_security_and_metadata.py"]
+      "optional_renderer": "package accepted in automated smoke",
+      "tests": [
+        "tests/test_security_and_metadata.py"
+      ],
+      "verify": "See offline verification scope in the README"
     },
     {
       "id": "scripts-and-languages",
@@ -151,8 +212,12 @@
       "ooxml": "per-run ascii/hAnsi/eastAsia/cs font slots, w:rtl runs, w:bidi paragraphs, and the boundary Unicode-to-Bijoy pass",
       "malformed_diagnostic": "invalid XML characters are sanitized in every part; existing MATH/RESOURCE diagnostics are unchanged",
       "word365": "implemented; script fonts and direction applied to body text, title page, captions, bibliography, headers, footers, and notes",
-      "libreoffice": "supported with font-substitution differences",
-      "tests": ["tests/test_multilingual_output.py", "tests/test_bangla_document_layout.py"]
+      "optional_renderer": "supported with font-substitution differences",
+      "tests": [
+        "tests/test_multilingual_output.py",
+        "tests/test_bangla_document_layout.py"
+      ],
+      "verify": "See offline verification scope in the README"
     }
   ]
 }

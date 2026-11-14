@@ -130,6 +130,26 @@ def test_explicit_project_config_overrides_manifest_render_values(tmp_path: Path
     assert compiler.config.theme == "academic"
 
 
+def test_project_render_precedence_and_recovery_preserve_manifest_context(tmp_path: Path):
+    from docx import Document
+
+    source = tmp_path / "main.md"
+    source.write_text("---\ntitle: From source\n---\n\nBody.", encoding="utf-8")
+    manifest = tmp_path / "mddocx.yml"
+    manifest.write_text(
+        "version: 1\nsources: [main.md]\nrender:\n  title: From manifest\n  header: Common header\n",
+        encoding="utf-8",
+    )
+    result = build_project(manifest, recover=True)
+    output = Document(result.output_path)
+    assert output.core_properties.title == "From source"
+    assert output.sections[0].header.paragraphs[0].text == "Common header"
+    result = build_project(manifest, RenderConfig(title="From caller"))
+    output = Document(result.output_path)
+    assert output.core_properties.title == "From caller"
+    assert output.sections[0].header.paragraphs[0].text == "Common header"
+
+
 @pytest.mark.parametrize(
     ("setting", "code"),
     [

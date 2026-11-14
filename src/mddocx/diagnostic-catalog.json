@@ -1,0 +1,1033 @@
+[
+  {
+    "code": "CACHE401",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CACHE402",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CACHE403",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART100",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART101",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART202",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART203",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART204",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART205",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART206",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART207",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART208",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART209",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART210",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CHART301",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CITE201",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CONFIG301",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CONFIG302",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CONFIG401",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Correct the invalid configuration value before compiling."
+    ]
+  },
+  {
+    "code": "DATA100",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA201",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA202",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA203",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA204",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA205",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA206",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA207",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA208",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DATA209",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DIAGRAM101",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DIAGRAM201",
+    "severities": [
+      "error",
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX301",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX402",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX403",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX404",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX405",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX406",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX407",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX408",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX409",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX410",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX411",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX412",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX413",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX414",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX415",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX416",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX417",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX418",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX419",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX420",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX421",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX422",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "DOCX423",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "EXT301",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "FONT301",
+    "severities": [
+      "warning"
+    ],
+    "remediations": [
+      "Install the configured Bangla font, or use --bengali-font auto to let mddocx choose an installed Unicode Bangla font."
+    ]
+  },
+  {
+    "code": "FOOTNOTE201",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE201",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE202",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE203",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE204",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE205",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE206",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE207",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE208",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE209",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE210",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "IMAGE211",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LAYOUT401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LIMIT401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LIMIT402",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LIMIT403",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LIMIT404",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LIMIT405",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "LIMIT406",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "MATH101",
+    "severities": [
+      "warning"
+    ],
+    "remediations": [
+      "Close the explicit math delimiter/fence or escape it when literal text is intended."
+    ]
+  },
+  {
+    "code": "MATH201",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Run 'mddocx math-check' to locate unsupported TeX; simplify the expression or install the math extra."
+    ]
+  },
+  {
+    "code": "META101",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "META102",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "NORM201",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "NORM202",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "NORM401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "OUTPUT401",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Choose a different output path."
+    ]
+  },
+  {
+    "code": "PARSE350",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PARSE351",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PARSE352",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PARSE353",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Fix or remove the YAML block between the leading '---' fences."
+    ]
+  },
+  {
+    "code": "PARSE354",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN402",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN403",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN405",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN406",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN407",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN408",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PLUGIN409",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Return a LayoutPlan using the installed LAYOUT_SCHEMA_VERSION."
+    ]
+  },
+  {
+    "code": "PROJECT800",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT801",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT803",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT804",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT805",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT807",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT808",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT809",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT810",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT811",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT812",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT813",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT814",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT815",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT817",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT818",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT819",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT820",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT821",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT822",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT823",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT824",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT826",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT827",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT828",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "PROJECT829",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RECOVER201",
+    "severities": [
+      "warning"
+    ],
+    "remediations": [
+      "Correct the declaration and rerun in strict mode."
+    ]
+  },
+  {
+    "code": "REF201",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "REF202",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE201",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Allow remote resources in configuration or use --allow-remote-resources for this render."
+    ]
+  },
+  {
+    "code": "RESOURCE203",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE204",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE205",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE206",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE207",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE208",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE209",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE210",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE211",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "RESOURCE212",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "SOURCE401",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Verify that the file exists and is readable."
+    ]
+  },
+  {
+    "code": "SOURCE402",
+    "severities": [
+      "error"
+    ],
+    "remediations": [
+      "Save the Markdown file as UTF-8 (a UTF-8 BOM is accepted)."
+    ]
+  },
+  {
+    "code": "TABLE301",
+    "severities": [
+      "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "VERIFY301",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "VERIFY302",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "VERIFY303",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "VERIFY304",
+    "severities": [
+      "warning"
+    ],
+    "remediations": []
+  }
+]

@@ -29,6 +29,7 @@ for await (const line of lines) {
     if (request.tex.length > Math.min(request.max_expression_chars || 100000, 100000)) {
       throw new Error('Equation exceeds maximum length');
     }
+    tex.reset();
     const tree = document.convert(request.tex, {
       display: Boolean(request.display), em: 16, ex: 8,
       containerWidth: 1280, end: STATE.CONVERT,

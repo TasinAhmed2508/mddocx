@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import traceback
 
 from . import __version__
 from .batch import collect_markdown_inputs, render_many
@@ -88,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--fail-fast", action="store_true", help="Stop batch conversion after the first failure"
+    )
+    p.add_argument("--jobs", type=int, default=1, help="Number of concurrent batch conversions")
+    p.add_argument(
+        "--recover", action="store_true", help="Write annotated output for recoverable blocks"
     )
     p.add_argument("--check", action="store_true", help="Parse and validate without writing DOCX")
     p.add_argument("--theme", choices=sorted(THEMES), default="default")
@@ -286,6 +291,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Open the generated DOCX with the operating-system default application",
     )
+    p.add_argument(
+        "--traceback",
+        action="store_true",
+        help="Print the full Python traceback when an unexpected internal error occurs",
+    )
     return p
 
 
@@ -374,6 +384,7 @@ def _config_from_args(args: argparse.Namespace) -> RenderConfig:
             enabled=args.profile or args.profile_memory, track_memory=args.profile_memory
         ),
         limits=CompilationLimits(max_input_bytes=args.max_input_bytes),
+        recover=args.recover,
         reproducibility=ReproducibilityConfig(enabled=not args.no_reproducible),
         validation=ValidationConfig(validate_output=not args.no_validate_output),
         cache=CacheConfig(
@@ -398,7 +409,7 @@ def _config_from_args(args: argparse.Namespace) -> RenderConfig:
     )
 
 
-def _main_inspect(argv: list[str]) -> int:
+def _parser_inspect() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx inspect",
         description="Inspect DOCX structure for common rendering/package defects.",
@@ -408,6 +419,11 @@ def _main_inspect(argv: list[str]) -> int:
     p.add_argument(
         "--strict", action="store_true", help="Return exit code 2 when structural issues are found"
     )
+    return p
+
+
+def _main_inspect(argv: list[str]) -> int:
+    p = _parser_inspect()
     args = p.parse_args(argv)
     try:
         report = inspect_docx(args.docx)
@@ -418,7 +434,65 @@ def _main_inspect(argv: list[str]) -> int:
     return 2 if args.strict and not report.ok else 0
 
 
-def _main_accessibility(argv: list[str]) -> int:
+def _parser_verify() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mddocx verify", description="Verify DOCX fidelity offline."
+    )
+    parser.add_argument("source", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--bengali-font", help="Font selection used for conversion")
+    parser.add_argument("--theme", choices=sorted(THEMES), default="default")
+    parser.add_argument("--template", type=Path)
+    parser.add_argument("--notes", choices=("footnote", "endnote"), default="footnote")
+    parser.add_argument("--no-crossrefs", action="store_true")
+    parser.add_argument("--equation-numbering", choices=("document", "section"), default="document")
+    parser.add_argument("--caption-numbering", choices=("document", "section"), default="document")
+    return parser
+
+
+def _main_verify(argv: list[str]) -> int:
+    parser = _parser_verify()
+    args = parser.parse_args(argv)
+    config = RenderConfig(
+        theme=args.theme,
+        template=args.template,
+        notes=NotesConfig(style=args.notes),
+        references=ReferenceConfig(
+            enabled=not args.no_crossrefs,
+            captions=not args.no_crossrefs,
+            equation_number_format=args.equation_numbering,
+            caption_number_format=args.caption_numbering,
+        ),
+    )
+    if args.bengali_font is not None:
+        config.fonts.bengali = _bangla_font_choice(args.bengali_font)
+    try:
+        result = Compiler(config).verify(args.source, args.output)
+    except (MddocxError, OSError, ValueError) as exc:
+        if args.json:
+            import json
+
+            message = (
+                exc.diagnostic.to_dict() if isinstance(exc, MddocxError) else {"message": str(exc)}
+            )
+            print(json.dumps({"ok": False, "error": message}))
+        else:
+            print(exc, file=sys.stderr)
+        return 2
+    if args.json:
+        print(result.to_json())
+    else:
+        print(
+            f"mddocx verify: {'PASS' if result.ok else 'ISSUES'} ({result.checked_units} checked units)"
+        )
+        for finding in result.findings:
+            location = f"{finding.source_file}:{finding.line}" if finding.line else ""
+            print(f"{finding.code} {finding.part} {location} {finding.message}")
+    return 0 if result.ok else 3
+
+
+def _parser_accessibility() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx accessibility",
         description="Audit a DOCX for common Word accessibility issues.",
@@ -427,6 +501,11 @@ def _main_accessibility(argv: list[str]) -> int:
     p.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     p.add_argument("--strict", action="store_true", help="Fail on medium-or-higher findings")
     p.add_argument("--fail-on", choices=["high", "medium", "low", "info"], default=None)
+    return p
+
+
+def _main_accessibility(argv: list[str]) -> int:
+    p = _parser_accessibility()
     args = p.parse_args(argv)
     try:
         report = audit_docx_accessibility(args.docx)
@@ -438,7 +517,7 @@ def _main_accessibility(argv: list[str]) -> int:
     return 0 if report.passes(threshold) else 2
 
 
-def _main_benchmark(argv: list[str]) -> int:
+def _parser_benchmark() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx benchmark",
         description="Run the deterministic large-document performance gate.",
@@ -447,6 +526,11 @@ def _main_benchmark(argv: list[str]) -> int:
     p.add_argument("--max-seconds", type=float, default=15.0)
     p.add_argument("--max-peak-mb", type=float, default=512.0)
     p.add_argument("--json", action="store_true")
+    return p
+
+
+def _main_benchmark(argv: list[str]) -> int:
+    p = _parser_benchmark()
     args = p.parse_args(argv)
     report = run_performance_gate(
         sections=max(1, args.sections),
@@ -457,11 +541,16 @@ def _main_benchmark(argv: list[str]) -> int:
     return 0 if report.ok else 2
 
 
-def _main_api(argv: list[str]) -> int:
+def _parser_api() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx api", description="Show the frozen mddocx v1 public API manifest."
     )
     p.add_argument("--json", action="store_true")
+    return p
+
+
+def _main_api(argv: list[str]) -> int:
+    p = _parser_api()
     args = p.parse_args(argv)
     manifest = get_public_api_manifest()
     if args.json:
@@ -475,12 +564,17 @@ def _main_api(argv: list[str]) -> int:
     return 0
 
 
-def _main_doctor(argv: list[str]) -> int:
+def _parser_doctor() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx doctor",
         description="Check the local mddocx runtime and optional QA capabilities.",
     )
     p.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    return p
+
+
+def _main_doctor(argv: list[str]) -> int:
+    p = _parser_doctor()
     args = p.parse_args(argv)
     report = run_doctor()
     print(report.to_json() if args.json else report.to_text())
@@ -492,7 +586,12 @@ def _main_visual_qa(argv: list[str]) -> int:
 
     p = argparse.ArgumentParser(
         prog="mddocx visual-qa",
-        description="Render a DOCX to pages and compare it with a visual baseline.",
+        description=(
+            "Render a DOCX to pages and compare it with a visual baseline. Optional: this is a "
+            "secondary layout cross-check for maintainers, and it needs LibreOffice/soffice plus "
+            "pdftoppm or Microsoft Word on Windows. Converting a document and validating its "
+            "structure need none of them."
+        ),
     )
     p.add_argument("docx", type=Path)
     p.add_argument("--baseline-dir", type=Path, required=True)
@@ -546,7 +645,7 @@ def _resolve_project_output(manifest, raw: Path | None) -> Path | None:
     return raw.resolve() if raw.is_absolute() else (manifest.root / raw).resolve()
 
 
-def _main_build(argv: list[str]) -> int:
+def _parser_build() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx build", description="Build a multi-file mddocx project from mddocx.yml."
     )
@@ -562,16 +661,28 @@ def _main_build(argv: list[str]) -> int:
     )
     p.add_argument("--json", action="store_true", help="Emit machine-readable build information")
     p.add_argument("--open", action="store_true", help="Open the generated project DOCX")
+    p.add_argument(
+        "--recover", action="store_true", help="Write annotated output for recoverable blocks"
+    )
+    return p
+
+
+def _main_build(argv: list[str]) -> int:
+    p = _parser_build()
     args = p.parse_args(argv)
+    target = None
+    published = False
     try:
         manifest = load_project(args.project)
+        target = _resolve_project_output(manifest, args.output) or manifest.output
         if args.check:
-            compiled = compile_project(manifest)
+            compiled = compile_project(manifest, recover=args.recover)
             payload = {
                 "manifest": str(manifest.path),
                 "sources": compiled.source_count,
                 "includes": compiled.include_count,
                 "dependencies": [str(x) for x in compiled.dependencies],
+                "diagnostics": [item.to_dict() for item in compiled.diagnostics],
             }
             if args.json:
                 import json
@@ -582,12 +693,15 @@ def _main_build(argv: list[str]) -> int:
                 print(f"Sources: {compiled.source_count}")
                 print(f"Includes: {compiled.include_count}")
                 print(f"Dependencies: {len(compiled.dependencies)}")
+                _report_diagnostics(compiled.diagnostics)
             return 0
         result = build_project(
             manifest,
-            output=_resolve_project_output(manifest, args.output),
+            recover=args.recover,
+            output=target,
             force=args.force,
         )
+        published = result.built
         if args.json:
             print(result.to_json())
         else:
@@ -595,6 +709,7 @@ def _main_build(argv: list[str]) -> int:
             print(f"{status} {result.output_path}")
             print(f"Dependencies: {len(result.dependencies)}")
             print(f"Fingerprint: {result.fingerprint}")
+            _report_diagnostics(result.diagnostics)
         add_recent(
             source=result.project_file,
             output=result.output_path,
@@ -604,18 +719,24 @@ def _main_build(argv: list[str]) -> int:
         )
         if args.open:
             open_path(result.output_path)
-        return 0
+        return 3 if result.recovered else 0
     except (MddocxError, OSError, ValueError) as exc:
         print(exc if isinstance(exc, MddocxError) else f"ERROR: {exc}", file=sys.stderr)
+        if not args.check and not published:
+            _report_previous_output(target)
         return 2
 
 
-def _main_watch(argv: list[str]) -> int:
+def _parser_watch() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="mddocx watch", description="Watch a project and rebuild its DOCX when inputs change."
+        prog="mddocx watch", description="Watch Markdown or a project and rebuild on changes."
     )
     p.add_argument(
-        "project", nargs="?", default=".", type=Path, help="Project directory or mddocx.yml"
+        "project",
+        nargs="?",
+        default=".",
+        type=Path,
+        help="Markdown file, project directory, or mddocx.yml",
     )
     p.add_argument("-o", "--output", type=Path, help="Override the project output path")
     p.add_argument("--interval", type=float, help="Polling interval in seconds")
@@ -623,8 +744,43 @@ def _main_watch(argv: list[str]) -> int:
         "--once", action="store_true", help="Build once using the watch pipeline, then exit"
     )
     p.add_argument("--quiet", action="store_true")
+    return p
+
+
+def _main_watch(argv: list[str]) -> int:
+    p = _parser_watch()
     args = p.parse_args(argv)
     try:
+        if (
+            args.project.suffix.lower() in {".md", ".markdown", ".mdown", ".mkd"}
+            and not args.project.is_dir()
+        ):
+            from .watch import watch_file
+
+            source = args.project.resolve()
+            target = args.output or source.with_suffix(".docx")
+            interval = args.interval if args.interval is not None else 0.25
+            if not 0 < interval < float("inf"):
+                raise ValueError("watch interval must be positive and finite")
+
+            def show_file(result) -> None:
+                if not args.quiet:
+                    print(f"BUILT {result.output_path}", flush=True)
+                    _report_diagnostics(result.diagnostics)
+
+            def show_error(exc: Exception) -> None:
+                print(exc, file=sys.stderr, flush=True)
+                _report_previous_output(target)
+
+            watch_file(
+                source,
+                target,
+                interval=interval,
+                once=args.once,
+                on_build=show_file,
+                on_error=show_error,
+            )
+            return 0
         manifest = load_project(args.project)
         output = _resolve_project_output(manifest, args.output)
 
@@ -793,7 +949,7 @@ def _main_metadata(argv: list[str]) -> int:
     return 0
 
 
-def _main_math_check(argv: list[str]) -> int:
+def _parser_math_check() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mddocx math-check",
         description="Inspect equations before DOCX conversion.",
@@ -805,6 +961,11 @@ def _main_math_check(argv: list[str]) -> int:
         action="store_true",
         help="Return exit code 3 when any equation needs a fallback",
     )
+    return parser
+
+
+def _main_math_check(argv: list[str]) -> int:
+    parser = _parser_math_check()
     args = parser.parse_args(argv)
     try:
         report = inspect_math_file(args.input)
@@ -815,7 +976,7 @@ def _main_math_check(argv: list[str]) -> int:
     return 3 if args.strict and not report.ok else 0
 
 
-def _main_link_check(argv: list[str]) -> int:
+def _parser_link_check() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mddocx link-check",
         description="Check ordinary Markdown and bibliography links without changing the document.",
@@ -828,6 +989,11 @@ def _main_link_check(argv: list[str]) -> int:
         "--offline", action="store_true", help="Collect links without network access"
     )
     parser.add_argument("--timeout", type=float, default=8.0)
+    return parser
+
+
+def _main_link_check(argv: list[str]) -> int:
+    parser = _parser_link_check()
     args = parser.parse_args(argv)
     try:
         markdown = args.input.read_text(encoding="utf-8-sig")
@@ -842,12 +1008,17 @@ def _main_link_check(argv: list[str]) -> int:
     return 3 if args.strict and any(item.broken for item in results) else 0
 
 
-def _main_shell(argv: list[str]) -> int:
+def _parser_shell() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx shell", description="Open the interactive mddocx console."
     )
     p.add_argument("workspace", nargs="?", default=".", type=Path)
     p.add_argument("--no-menu", action="store_true", help="Start directly at the REPL prompt")
+    return p
+
+
+def _main_shell(argv: list[str]) -> int:
+    p = _parser_shell()
     args = p.parse_args(argv)
     try:
         return run_shell(args.workspace, show_menu=not args.no_menu)
@@ -856,13 +1027,18 @@ def _main_shell(argv: list[str]) -> int:
         return 2
 
 
-def _main_recent(argv: list[str]) -> int:
+def _parser_recent() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx recent",
         description="Show recently generated DOCX files. Paths/settings only are stored; document content is never stored.",
     )
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--json", action="store_true")
+    return p
+
+
+def _main_recent(argv: list[str]) -> int:
+    p = _parser_recent()
     args = p.parse_args(argv)
     items = load_recent(limit=max(0, args.limit))
     if args.json:
@@ -878,12 +1054,17 @@ def _main_recent(argv: list[str]) -> int:
     return 0
 
 
-def _main_open(argv: list[str]) -> int:
+def _parser_open() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mddocx open",
         description="Open a DOCX using the operating-system default application.",
     )
     p.add_argument("docx", nargs="?", type=Path)
+    return p
+
+
+def _main_open(argv: list[str]) -> int:
+    p = _parser_open()
     args = p.parse_args(argv)
     target = args.docx
     if target is None:
@@ -960,47 +1141,99 @@ def _main_first_run() -> int:
     return _main_shell([])
 
 
+def _parser_completions() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="mddocx completions")
+    parser.add_argument("shell", choices=("bash", "zsh", "fish", "powershell"))
+    return parser
+
+
+def _main_completions(argv: list[str]) -> int:
+    from .completions import completion_script
+
+    args = _parser_completions().parse_args(argv)
+    print(
+        completion_script(
+            args.shell,
+            build_parser(),
+            {name: factory() if factory else None for name, (_, factory) in _COMMANDS.items()},
+        )
+    )
+    return 0
+
+
+def _parser_capabilities() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="mddocx capabilities")
+    parser.add_argument("--json", action="store_true")
+    return parser
+
+
+def _main_capabilities(argv: list[str]) -> int:
+    import json
+    from importlib.resources import files
+
+    args = _parser_capabilities().parse_args(argv)
+    data = files("mddocx")
+    matrix = json.loads(data.joinpath("feature-matrix.json").read_text(encoding="utf-8"))
+    if args.json:
+        from dataclasses import fields, is_dataclass
+
+        def config_keys(config, prefix=""):
+            for item in fields(config):
+                name = prefix + item.name
+                value = getattr(config, item.name)
+                if is_dataclass(value):
+                    yield from config_keys(value, name + ".")
+                else:
+                    yield name
+
+        matrix["diagnostics"] = json.loads(
+            data.joinpath("diagnostic-catalog.json").read_text(encoding="utf-8")
+        )
+        matrix["commands"] = sorted(_COMMANDS)
+        matrix["python_config_keys"] = sorted(config_keys(RenderConfig()))
+        print(json.dumps(matrix, ensure_ascii=True, indent=2))
+    else:
+        for feature in matrix["features"]:
+            print(f"{feature['id']}: {feature['syntax']}")
+    return 0
+
+
+_COMMANDS = {
+    "shell": (_main_shell, _parser_shell),
+    "recent": (_main_recent, _parser_recent),
+    "open": (_main_open, _parser_open),
+    "build": (_main_build, _parser_build),
+    "watch": (_main_watch, _parser_watch),
+    "project": (_main_project, None),
+    "inspect": (_main_inspect, _parser_inspect),
+    "verify": (_main_verify, _parser_verify),
+    "doctor": (_main_doctor, _parser_doctor),
+    "accessibility": (_main_accessibility, _parser_accessibility),
+    "benchmark": (_main_benchmark, _parser_benchmark),
+    "api": (_main_api, _parser_api),
+    "visual-qa": (_main_visual_qa, None),
+    "template": (_main_template, None),
+    "data": (_main_data, None),
+    "metadata": (_main_metadata, None),
+    "math-check": (_main_math_check, _parser_math_check),
+    "link-check": (_main_link_check, _parser_link_check),
+    "completions": (_main_completions, _parser_completions),
+    "capabilities": (_main_capabilities, _parser_capabilities),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     warn_about_import_conflict()
     if not raw:
         return _main_first_run()
-    if raw[0] == "shell":
-        return _main_shell(raw[1:])
-    if raw and raw[0] == "recent":
-        return _main_recent(raw[1:])
-    if raw and raw[0] == "open":
-        return _main_open(raw[1:])
-    if raw and raw[0] == "build":
-        return _main_build(raw[1:])
-    if raw and raw[0] == "watch":
-        return _main_watch(raw[1:])
-    if raw and raw[0] == "project":
-        return _main_project(raw[1:])
-    if raw and raw[0] == "inspect":
-        return _main_inspect(raw[1:])
-    if raw and raw[0] == "doctor":
-        return _main_doctor(raw[1:])
-    if raw and raw[0] == "accessibility":
-        return _main_accessibility(raw[1:])
-    if raw and raw[0] == "benchmark":
-        return _main_benchmark(raw[1:])
-    if raw and raw[0] == "api":
-        return _main_api(raw[1:])
-    if raw and raw[0] == "visual-qa":
-        return _main_visual_qa(raw[1:])
-    if raw and raw[0] == "template":
-        return _main_template(raw[1:])
-    if raw and raw[0] == "data":
-        return _main_data(raw[1:])
-    if raw and raw[0] == "metadata":
-        return _main_metadata(raw[1:])
-    if raw and raw[0] == "math-check":
-        return _main_math_check(raw[1:])
-    if raw and raw[0] == "link-check":
-        return _main_link_check(raw[1:])
+    command = _COMMANDS.get(raw[0])
+    if command is not None:
+        return command[0](raw[1:])
     args = build_parser().parse_args(raw)
     config = _config_from_args(args)
+    output = None
+    published = False
     try:
         sources = collect_markdown_inputs(args.input, recursive=args.recursive)
         if not sources:
@@ -1015,8 +1248,9 @@ def main(argv: list[str] | None = None) -> int:
             for source in sources:
                 compiler = Compiler(config)
                 try:
-                    compiler.check_file(source)
+                    checked = compiler.check_file(source)
                     print(source)
+                    _report_diagnostics(checked.diagnostics)
                 except MddocxError as exc:
                     print(exc, file=sys.stderr)
                     status = 2
@@ -1032,12 +1266,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 2
             output_dir = args.output_dir or Path(".")
-            results = render_many(sources, output_dir, config, fail_fast=args.fail_fast)
+            results = render_many(
+                sources, output_dir, config, fail_fast=args.fail_fast, jobs=args.jobs
+            )
             status = 0
             for batch_result in results:
                 if batch_result.ok:
                     print(batch_result.output_path)
                     _report_diagnostics(batch_result.diagnostics)
+                    if batch_result.recovered and status == 0:
+                        status = 3
                 else:
                     print(f"ERROR {batch_result.input_path}: {batch_result.error}", file=sys.stderr)
                     status = 2
@@ -1061,7 +1299,11 @@ def main(argv: list[str] | None = None) -> int:
         for index, path in enumerate(diagnostic_paths):
             other_paths = diagnostic_paths[:index] + diagnostic_paths[index + 1 :]
             validate_output_path(path, [*protected, *other_paths])
-        result = compiler.compile_file(source, output)
+        if diagnostic_paths:
+            result = compiler.compile_file(source, output, report_paths=tuple(diagnostic_paths))
+        else:
+            result = compiler.compile_file(source, output)
+        published = True
         print(output)
         _report_diagnostics(result.diagnostics)
         add_recent(
@@ -1077,13 +1319,39 @@ def main(argv: list[str] | None = None) -> int:
         _write_text_target(args.diagnostics_sarif, result.diagnostics_sarif())
         if args.profile or args.profile_memory:
             print(result.stats.to_json())
-        return 0
+        return 3 if result.recovered else 0
     except MddocxError as exc:
         print(exc, file=sys.stderr)
+        if not published:
+            _report_previous_output(output)
         return 2
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        if not published:
+            _report_previous_output(output)
         return 2
+    except Exception as exc:  # noqa: BLE001 - a user must never see a raw traceback
+        # Anything reaching here is an mddocx defect rather than a bad document,
+        # so say so instead of dumping an internal stack trace.
+        print(
+            f"ERROR INTERNAL500 Unexpected {type(exc).__name__} while converting: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "  This is an mddocx defect. Re-run with --traceback for the full stack, "
+            "and report it at https://github.com/TasinAhmed2508/mddocx/issues",
+            file=sys.stderr,
+        )
+        if getattr(args, "traceback", False):
+            traceback.print_exc()
+        if not published:
+            _report_previous_output(output)
+        return 2
+
+
+def _report_previous_output(path: Path | None) -> None:
+    if path is not None and path.is_file():
+        print(f"Previous output left in place: {path}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -39,4 +39,4 @@ remain enforced. Base64 data URIs are always decoded locally and never use the n
 - Public Python API compatibility level remains v1; the staged compiler is additive.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [V2_MIGRATION.md](V2_MIGRATION.md), and
-[feature-matrix.json](feature-matrix.json) for implementation and compatibility details.
+[feature-matrix.json](../src/mddocx/feature-matrix.json) for implementation and compatibility details.

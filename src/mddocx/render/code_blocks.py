@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import RGBColor
 
@@ -13,8 +12,10 @@ from mddocx.ast.block import CodeBlock
 from mddocx.diagnostics import Diagnostic, MddocxError
 from mddocx.diagrams import MermaidRenderer, MermaidRenderError
 from mddocx.ooxml.text import clean_xml_text
+from mddocx.ooxml.sequence import get_or_add
+from mddocx.recovery import recovery_block
 
-from . import citations, figures
+from . import citations, figures, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -40,8 +41,18 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
                 / 914400,
             )
         except MermaidRenderError as exc:
+            diagnostic = Diagnostic("error", "DIAGRAM201", str(exc))
+            if renderer.config.recover:
+                if str(exc).startswith("Unsupported") or str(exc) == "Empty Mermaid diagram.":
+                    placeholder = recovery_block(
+                        renderer.reporter, diagnostic, node.code, node.source
+                    )
+                    text_blocks.render_block_quote(renderer, placeholder)
+                    return
+                if "limit" in str(exc).lower():
+                    raise MddocxError(diagnostic) from exc
             if renderer.config.mermaid.fallback == "error":
-                raise MddocxError(Diagnostic("error", "DIAGRAM201", str(exc))) from exc
+                raise MddocxError(diagnostic) from exc
             renderer.reporter.warn(
                 "DIAGRAM201",
                 f"Mermaid kept as editable code: {exc}",
@@ -150,10 +161,8 @@ def write_fenced_code(renderer: DocxRenderer, node: CodeBlock) -> None:
         renderer._apply_planned_paragraph_layout(p, node)
         p.paragraph_format.space_before = 0
         p.paragraph_format.space_after = 0
-        ppr = p._p.get_or_add_pPr()
-        shd = OxmlElement("w:shd")
+        shd = get_or_add(p._p.get_or_add_pPr(), "w:shd")
         shd.set(qn("w:fill"), "FFF2CC" if line_no in highlighted else "F3F3F3")
-        ppr.append(shd)
         if line_numbers:
             prefix = f"{line_no:>{width}}  "
             nr = p.add_run(prefix)

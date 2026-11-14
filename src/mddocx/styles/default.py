@@ -7,28 +7,21 @@ from docx.shared import Pt, RGBColor
 
 from mddocx.config import RenderConfig
 from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
+from mddocx.ooxml.sequence import get_or_add
 from .fonts import FontSlots
 from .themes import get_theme
 
 
 def _outline(style, level: int) -> None:
     ppr = style.element.get_or_add_pPr()
-    existing = ppr.find(qn("w:outlineLvl"))
-    if existing is None:
-        existing = OxmlElement("w:outlineLvl")
-        ppr.append(existing)
-    existing.set(qn("w:val"), str(level))
+    get_or_add(ppr, "w:outlineLvl").set(qn("w:val"), str(level))
 
 
 def _set_font(
     style, latin: str, east_asia: str | None = None, complex_script: str | None = None
 ) -> None:
     style.font.name = latin
-    rpr = style.element.get_or_add_rPr()
-    rfonts = rpr.find(qn("w:rFonts"))
-    if rfonts is None:
-        rfonts = OxmlElement("w:rFonts")
-        rpr.insert(0, rfonts)
+    rfonts = get_or_add(style.element.get_or_add_rPr(), "w:rFonts")
     rfonts.set(qn("w:ascii"), latin)
     rfonts.set(qn("w:hAnsi"), latin)
     if east_asia:
@@ -160,11 +153,7 @@ def resolve_style_name(document, config: RenderConfig, canonical: str) -> str:
 
 
 def _set_paragraph_shading(style, fill: str) -> None:
-    ppr = style.element.get_or_add_pPr()
-    shd = ppr.find(qn("w:shd"))
-    if shd is None:
-        shd = OxmlElement("w:shd")
-        ppr.append(shd)
+    shd = get_or_add(style.element.get_or_add_pPr(), "w:shd")
     shd.set(qn("w:val"), "clear")
     shd.set(qn("w:fill"), fill)
 

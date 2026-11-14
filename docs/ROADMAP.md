@@ -8,13 +8,26 @@ week, **L** ≈ a multi-week program.
 Every item lists an acceptance criterion, because a roadmap without a definition of done
 is a wish list.
 
+## Implementation status
+
+- **Published in 1.4.3:** shared Markdown and AST rendering, single-pass inspection of
+  validated XML parts, atomic DOCX and cache writes, and per-file project source limits.
+- **Integration branch:** OOXML ordering checks, source-located front-matter diagnostics,
+  accessibility diagnostics, and tests for conversion without office tooling.
+- **Implemented in the local candidate:** structural corpus and field lint, offline verification,
+  opt-in recovery, aggregate project input limits, single-file watch, batch workers,
+  capabilities, completions, and bounded MathJax batching. See [performance results](PERFORMANCE.md).
+- **Pending:** cross-platform CI and release publication. Broader verification coverage,
+  the optional renderer corpus, and compatibility changes remain staged.
+  Strict conversion is the default, and annotated output recovery is opt-in.
+
 ## Part 1 — Usability and performance for users
 
 | # | Item | Priority | Size | Acceptance criterion |
 |---|---|---|---|---|
 | U1 | `python -m mddocx` parity with the console script | done | S | `python -m mddocx --version` and every subcommand work; guarded by `tests/test_release_contract.py` |
 | U2 | Shell completions: `mddocx completions bash\|zsh\|fish\|powershell` | P1 | S | Generated scripts complete subcommands and flags; one test per shell |
-| U3 | Single-file watch mode: `mddocx watch document.md` | P1 | M | Rebuild on change in under one second for a 100-section document, debounced, reusing `mddocx cache` and project fingerprints |
+| U3 | Single-file watch mode: `mddocx watch document.md` (project watch already exists) | P1 | M | Rebuild on change in under one second for a 100-section document, debounced, reusing `mddocx cache` and project fingerprints |
 | U4 | Word-native change report: `mddocx diff old.docx new.docx` | P1 | M | Structural report of headings, tables, equations, notes, images, references, and chapters added/removed/changed, built on `inspection.py`; supports `--json` |
 | U5 | Machine-readable catalog: `mddocx capabilities --json` | P1 | S | Emits the feature matrix, every diagnostic code with severity and remediation, and supported config keys, generated from source so it cannot drift |
 | U6 | Parallel batch conversion: `--jobs N` for `render_many` | P2 | M | 4× throughput on a 20-document project with byte-identical output to serial rendering |
@@ -22,7 +35,7 @@ is a wish list.
 | U8 | Markdown dialect profiles: `--profile gfm\|commonmark\|ai\|academic` | P2 | M | One flag reproduces the documented config bundles; profiles are covered by fixtures |
 | U9 | Accessibility assistant: alt-text suggestions + missing-alt report | P2 | M | `mddocx accessibility --suggest` proposes alt text from caption/title/context and lists every image missing it |
 | U10 | Chart coverage: stacked, area, combo, secondary axes for bar and line | P2 | L | New types render editable ChartML with embedded workbook and pass the chart conformance corpus |
-| U11 | Tagged PDF export path | P3 | L | Documented, tested LibreOffice pipeline that preserves heading structure and image alt text |
+| U11 | Tagged PDF export path | P3 | L | Documented pipeline that preserves heading structure and image alt text; the documented path must not require an office suite, so it either writes the PDF structure directly or documents an optional external converter as an explicit opt-in, never as a requirement |
 | U12 | Block-surface plugin API v2 | P3 | L | Third-party surfaces receive a typed host contract instead of the raw renderer; documented in `EXTENSIONS.md` |
 | U13 | Rename the internal `mddocx/render` package | P3 | M | Removes the name collision with the public `render()` function (see Known warts), with a compatibility shim for one release |
 
@@ -34,17 +47,17 @@ of defect into a build failure rather than a user report.
 
 | # | Item | Priority | Size | Acceptance criterion |
 |---|---|---|---|---|
-| Q1 | OOXML schema-order validation in `validation.py` | P1 | M | `--strict` rejects `w:pPr` that is not first, bookmarks that straddle paragraph boundaries, and out-of-sequence `w:r` children; regression tests reproduce today's two fixed bugs |
+| Q1 | OOXML schema-order validation | done | M | `mddocx inspect --strict` and render-time validation reject out-of-sequence paragraph, run, table, cell, section, style, and numbering children (`DOCX422`); regression tests reproduce the 1.4.0 bookmark defect, and every shipped fixture renders clean. Bookmarks that straddle paragraph boundaries are deliberately not reported: Word bookmarks a multi-paragraph range as an ordinary edit, so failing on it would reject valid templates |
 | Q2 | Field-code lint with an allow-list | P1 | S | A test fails if any emitted `w:instrText` uses an unknown switch or a control character; the allow-list lives next to `ooxml/fields.py` |
 | Q3 | Golden render corpus in CI | P1 | M | `tests/fixtures/golden/` stores hashes for the 18-document corpus, with `--update-goldens`; the suite fails on unintended output changes |
 | Q4 | Differential refactor harness in `scripts/` | P1 | S | `scripts/differential_render.py` renders the corpus with the checked-out and the previous revision and reports differences; CI runs it when `src/mddocx/render/**` changes |
-| Q5 | Fuzz and property tests (Hypothesis) | P2 | M | Generated documents always render, always pass `validate_docx_package`, and render byte-identically twice; no unexpected exception in 10k cases |
+| Q5 | Fuzz and property tests (Hypothesis) | P2 | M | Generated documents always render, always pass `validate_docx_package`, and render byte-identically twice; no unexpected exception in 10k cases. Defined by the conversion-resilience guarantee: no generated input may reach the ladder's dead end ([RESILIENCE_PLAN.md](RESILIENCE_PLAN.md), Part 4) |
 | Q6 | Type-completeness ratchet | P2 | L | `DocxRenderer` state is typed, surfaces take a `RendererHost` protocol, `mddocx.render` joins the mypy subset, and the package-wide error count is recorded in a budget file that may only shrink |
 | Q7 | Coverage gate and mutation testing | P2 | M | Branch coverage ≥ 90% for `mddocx/ooxml` and `mddocx/render`; mutation score ≥ 80% for `fields.py`, `tables.py`, `notes.py` |
 | Q8 | Generated diagnostics catalog | P2 | S | `docs/DIAGNOSTICS.md` is generated from source; a test fails on a duplicated or undocumented code |
 | Q9 | Error-path matrix | P2 | M | One test per diagnostic code asserting code, severity, and remediation text; a coverage report lists codes without a test |
 | U14 | Pre-commit hooks and nightly stress | P2 | S | Hooks run ruff, ruff-format, the mypy subset, and the fast tests; a nightly job renders a 500-section, 5 MB document within the benchmark budget |
-| Q10 | Visual regression expansion | P3 | L | Nightly Word 365 and LibreOffice visual diffs on the corpus with documented tolerances, plus a curated layout corpus |
+| Q10 | Visual regression expansion | P3 | L | Curated layout corpus with documented tolerances, checked nightly against at least one real renderer. This is an optional maintainer cross-check and never a user requirement or the primary fidelity gate: the dependency-free fidelity self-check in [RESILIENCE_PLAN.md](RESILIENCE_PLAN.md) (R12) is the gate, and the visual job reports *not run* rather than a pass when no renderer is installed |
 | Q11 | Security fuzz for the resource resolver | P3 | M | Property tests for path traversal, redirect chains, MIME mismatches, decompression bombs, and size limits |
 
 ## Part 3 — Known warts and deferred work
@@ -56,7 +69,7 @@ rest are structural debts.
 |---|---|---|
 | W1 | Section-scoped figure/table/listing reset fields carried a carriage return instead of the Word `\r` switch, so counters never restarted | fixed |
 | W2 | Heading and caption bookmarks were written before `w:pPr`, violating the `CT_P` sequence | fixed |
-| W3 | `figures.add_image_path` swallows every exception while attaching alt text, so an accessibility failure can pass silently | planned (Q9): emit a diagnostic instead of `pass` |
+| W3 | `figures.add_image_path` swallows every exception while attaching alt text, so an accessibility failure can pass silently | fixed on the integration branch (`A11Y202`) |
 | W4 | `mddocx.render` as an attribute is the public `render()` function, shadowing the internal subpackage; `import mddocx.render` therefore surprises tooling | planned (U13) |
 | W5 | Package-wide mypy reports 321 errors; CI checks only an 11-file subset | planned (Q6) |
 | W6 | `RenderConfig` values set through front matter are assigned without validation of literal types (`api.py`, `project.py`) | planned (Q6) |
@@ -79,5 +92,10 @@ rest are structural debts.
 - Each PR addresses one row and states its acceptance criterion in the description.
 - New rows go in the table rather than into issue text, so the plan stays readable and
   reviewable in the repository.
+- The guaranteed-output program (the fallback ladder that lets a document convert when one
+  element or one internal defect fails) is planned separately in
+  [RESILIENCE_PLAN.md](RESILIENCE_PLAN.md), because it changes behaviour and exit codes on
+  inputs that fail today and so needs its own decisions. Its fixtures are the concrete form of
+  Q5 and Q9.
 - When an item ships, move the row into `CHANGELOG.md` and delete it here; this file is a
   plan, not a history.

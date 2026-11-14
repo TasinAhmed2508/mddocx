@@ -62,7 +62,8 @@ from .compatibility import (
 from .frontmatter import split_front_matter
 from mddocx.attributes import parse_attribute_list, parse_line_spec
 from mddocx.extensions.base import call_configure_markdown, parse_custom_block, parse_custom_inline
-from mddocx.diagnostics import Diagnostic, MddocxError
+from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
+from mddocx.recovery import recovery_block
 from mddocx.config import MetadataConfig
 from mddocx.metadata import MetadataSanitizationReport, sanitize_markdown_metadata
 
@@ -105,8 +106,13 @@ class MarkdownParser:
         ]
 
     def __init__(
-        self, extensions: tuple[object, ...] = (), metadata_config: MetadataConfig | None = None
+        self,
+        extensions: tuple[object, ...] = (),
+        metadata_config: MetadataConfig | None = None,
+        *,
+        recovery_reporter: DiagnosticReporter | None = None,
     ) -> None:
+        self.recovery_reporter = recovery_reporter
         self.extensions = extensions
         self.metadata_config = metadata_config or MetadataConfig()
         self.last_metadata_report = MetadataSanitizationReport(
@@ -137,7 +143,7 @@ class MarkdownParser:
             self.last_metadata_report = MetadataSanitizationReport(
                 policy=self.metadata_config.ai_export
             )
-        metadata, body, line_offset = split_front_matter(markdown)
+        metadata, body, line_offset = split_front_matter(markdown, source_file=self.source_file)
         body = normalize_export_citations(body, strip=self.metadata_config.ai_export != "keep")
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
@@ -169,7 +175,7 @@ class MarkdownParser:
         return SourcePosition(file=self.source_file, line=line, column=1 if line else None)
 
     def _parse_blocks(self, tokens: list[Token], i: int, stop: str | None) -> tuple[list, int]:
-        nodes = []
+        nodes: list = []
         while i < len(tokens):
             t = tokens[i]
             if stop and t.type == stop:
@@ -269,135 +275,33 @@ class MarkdownParser:
                     nodes.append(DefinitionList(items=items, source=self._pos(t)))
                 else:
                     language, identifier, attrs = self._parse_fence_info(info)
-                    if (language or "").lower() in {"chart", "mddocx-chart"}:
-                        spec = self._parse_yaml_mapping(t.content, "chart", t)
-                        series = spec.get("series") or []
-                        if isinstance(series, dict):
-                            series = [{"name": str(k), "values": v} for k, v in series.items()]
-                        if not isinstance(series, list):
-                            raise MddocxError(
-                                Diagnostic(
+                    kind = (language or "").lower()
+                    chart = kind in {"chart", "mddocx-chart"}
+                    if chart or kind in {"data-table", "datatable", "mddocx-data-table"}:
+                        parse = self._chart_block if chart else self._data_table_block
+                        try:
+                            node = parse(t, identifier, attrs)
+                        except (MddocxError, TypeError, ValueError, OverflowError) as exc:
+                            position = self._pos(t)
+                            diagnostic = (
+                                exc.diagnostic
+                                if isinstance(exc, MddocxError)
+                                else Diagnostic(
                                     "error",
-                                    "PARSE351",
-                                    "Chart 'series' must be a list or mapping.",
-                                    self.source_file,
-                                    getattr(self._pos(t), "line", None),
+                                    "PARSE354",
+                                    f"Invalid {kind} declaration: {exc}",
+                                    position.file,
+                                    position.line,
                                 )
                             )
-                        raw_fields = spec.get("series_fields") or spec.get("values") or []
-                        if isinstance(raw_fields, str):
-                            raw_fields = [raw_fields]
-                        categories = spec.get("categories") or []
-                        if not isinstance(categories, list):
-                            categories = []
-                        x_axis = spec.get("x_axis") if isinstance(spec.get("x_axis"), dict) else {}
-                        y_axis = spec.get("y_axis") if isinstance(spec.get("y_axis"), dict) else {}
-                        secondary_axis = (
-                            spec.get("secondary_axis")
-                            if isinstance(spec.get("secondary_axis"), dict)
-                            else {}
-                        )
-                        raw_secondary = spec.get("secondary_series") or []
-                        if isinstance(raw_secondary, str):
-                            raw_secondary = [raw_secondary]
-                        legend = spec.get("legend", "right")
-                        if isinstance(legend, bool):
-                            legend = "right" if legend else "none"
-                        nodes.append(
-                            ChartBlock(
-                                chart_type=str(spec.get("type") or "column"),
-                                title=str(spec.get("title") or ""),
-                                categories=list(categories),
-                                series=list(series),
-                                source_path=str(spec.get("source")) if spec.get("source") else None,
-                                category_field=str(spec.get("category") or spec.get("x"))
-                                if (spec.get("category") or spec.get("x"))
-                                else None,
-                                series_fields=tuple(str(v) for v in raw_fields),
-                                identifier=identifier
-                                or (str(spec.get("id")) if spec.get("id") else None),
-                                caption=attrs.get("caption")
-                                or (str(spec.get("caption")) if spec.get("caption") else None),
-                                width_mm=float(spec["width_mm"])
-                                if spec.get("width_mm") is not None
-                                else None,
-                                height_mm=float(spec["height_mm"])
-                                if spec.get("height_mm") is not None
-                                else None,
-                                x_axis_title=str(x_axis.get("title"))
-                                if x_axis.get("title") is not None
-                                else None,
-                                y_axis_title=str(y_axis.get("title"))
-                                if y_axis.get("title") is not None
-                                else None,
-                                x_min=float(x_axis["min"])
-                                if x_axis.get("min") is not None
-                                else None,
-                                x_max=float(x_axis["max"])
-                                if x_axis.get("max") is not None
-                                else None,
-                                y_min=float(y_axis["min"])
-                                if y_axis.get("min") is not None
-                                else None,
-                                y_max=float(y_axis["max"])
-                                if y_axis.get("max") is not None
-                                else None,
-                                x_number_format=str(x_axis.get("number_format"))
-                                if x_axis.get("number_format") is not None
-                                else None,
-                                y_number_format=str(y_axis.get("number_format"))
-                                if y_axis.get("number_format") is not None
-                                else None,
-                                legend_position=str(legend).lower(),
-                                data_labels=bool(spec.get("data_labels", False)),
-                                show_gridlines=bool(spec.get("gridlines", True)),
-                                secondary_series=tuple(str(v) for v in raw_secondary),
-                                secondary_axis_title=str(secondary_axis.get("title"))
-                                if secondary_axis.get("title") is not None
-                                else None,
-                                secondary_min=float(secondary_axis["min"])
-                                if secondary_axis.get("min") is not None
-                                else None,
-                                secondary_max=float(secondary_axis["max"])
-                                if secondary_axis.get("max") is not None
-                                else None,
-                                secondary_number_format=str(secondary_axis.get("number_format"))
-                                if secondary_axis.get("number_format") is not None
-                                else None,
-                                style=int(spec["style"]) if spec.get("style") is not None else None,
-                                source=self._pos(t),
+                            if self.recovery_reporter is None:
+                                if isinstance(exc, MddocxError):
+                                    raise
+                                raise MddocxError(diagnostic) from exc
+                            node = recovery_block(
+                                self.recovery_reporter, diagnostic, t.content, position
                             )
-                        )
-                    elif (language or "").lower() in {
-                        "data-table",
-                        "datatable",
-                        "mddocx-data-table",
-                    }:
-                        spec = self._parse_yaml_mapping(t.content, "data table", t)
-                        raw_columns = spec.get("columns") or []
-                        if isinstance(raw_columns, str):
-                            raw_columns = [raw_columns]
-                        if not spec.get("source"):
-                            raise MddocxError(
-                                Diagnostic(
-                                    "error",
-                                    "PARSE352",
-                                    "Data table requires a source path.",
-                                    self.source_file,
-                                    getattr(self._pos(t), "line", None),
-                                )
-                            )
-                        nodes.append(
-                            DataTableBlock(
-                                source_path=str(spec["source"]),
-                                columns=tuple(str(v) for v in raw_columns),
-                                identifier=identifier
-                                or (str(spec.get("id")) if spec.get("id") else None),
-                                caption=attrs.get("caption")
-                                or (str(spec.get("caption")) if spec.get("caption") else None),
-                                source=self._pos(t),
-                            )
-                        )
+                        nodes.append(node)
                     else:
                         nodes.append(
                             CodeBlock(
@@ -474,6 +378,115 @@ class MarkdownParser:
             else:
                 i += 1
         return nodes, i
+
+    def _chart_block(self, t: Token, identifier: str | None, attrs: dict[str, str]) -> ChartBlock:
+        spec = self._parse_yaml_mapping(t.content, "chart", t)
+        series = spec.get("series") or []
+        if isinstance(series, dict):
+            series = [{"name": str(k), "values": v} for k, v in series.items()]
+        if not isinstance(series, list):
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "PARSE351",
+                    "Chart 'series' must be a list or mapping.",
+                    self.source_file,
+                    getattr(self._pos(t), "line", None),
+                )
+            )
+        raw_fields = spec.get("series_fields") or spec.get("values") or []
+        if isinstance(raw_fields, str):
+            raw_fields = [raw_fields]
+        categories = spec.get("categories") or []
+        if not isinstance(categories, list):
+            categories = []
+        x_axis = spec.get("x_axis")
+        y_axis = spec.get("y_axis")
+        secondary_axis = spec.get("secondary_axis")
+        if not isinstance(x_axis, dict):
+            x_axis = {}
+        if not isinstance(y_axis, dict):
+            y_axis = {}
+        if not isinstance(secondary_axis, dict):
+            secondary_axis = {}
+        raw_secondary = spec.get("secondary_series") or []
+        if isinstance(raw_secondary, str):
+            raw_secondary = [raw_secondary]
+        legend = spec.get("legend", "right")
+        if isinstance(legend, bool):
+            legend = "right" if legend else "none"
+        return ChartBlock(
+            chart_type=str(spec.get("type") or "column"),
+            title=str(spec.get("title") or ""),
+            categories=list(categories),
+            series=list(series),
+            source_path=str(spec.get("source")) if spec.get("source") else None,
+            category_field=str(spec.get("category") or spec.get("x"))
+            if (spec.get("category") or spec.get("x"))
+            else None,
+            series_fields=tuple(str(v) for v in raw_fields),
+            identifier=identifier or (str(spec.get("id")) if spec.get("id") else None),
+            caption=attrs.get("caption")
+            or (str(spec.get("caption")) if spec.get("caption") else None),
+            width_mm=float(spec["width_mm"]) if spec.get("width_mm") is not None else None,
+            height_mm=float(spec["height_mm"]) if spec.get("height_mm") is not None else None,
+            x_axis_title=str(x_axis.get("title")) if x_axis.get("title") is not None else None,
+            y_axis_title=str(y_axis.get("title")) if y_axis.get("title") is not None else None,
+            x_min=float(x_axis["min"]) if x_axis.get("min") is not None else None,
+            x_max=float(x_axis["max"]) if x_axis.get("max") is not None else None,
+            y_min=float(y_axis["min"]) if y_axis.get("min") is not None else None,
+            y_max=float(y_axis["max"]) if y_axis.get("max") is not None else None,
+            x_number_format=str(x_axis.get("number_format"))
+            if x_axis.get("number_format") is not None
+            else None,
+            y_number_format=str(y_axis.get("number_format"))
+            if y_axis.get("number_format") is not None
+            else None,
+            legend_position=str(legend).lower(),
+            data_labels=bool(spec.get("data_labels", False)),
+            show_gridlines=bool(spec.get("gridlines", True)),
+            secondary_series=tuple(str(v) for v in raw_secondary),
+            secondary_axis_title=str(secondary_axis.get("title"))
+            if secondary_axis.get("title") is not None
+            else None,
+            secondary_min=float(secondary_axis["min"])
+            if secondary_axis.get("min") is not None
+            else None,
+            secondary_max=float(secondary_axis["max"])
+            if secondary_axis.get("max") is not None
+            else None,
+            secondary_number_format=str(secondary_axis.get("number_format"))
+            if secondary_axis.get("number_format") is not None
+            else None,
+            style=int(spec["style"]) if spec.get("style") is not None else None,
+            source=self._pos(t),
+        )
+
+    def _data_table_block(
+        self, t: Token, identifier: str | None, attrs: dict[str, str]
+    ) -> DataTableBlock:
+        spec = self._parse_yaml_mapping(t.content, "data table", t)
+        raw_columns = spec.get("columns") or []
+        if isinstance(raw_columns, str):
+            raw_columns = [raw_columns]
+        if not spec.get("source"):
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "PARSE352",
+                    "Data table requires a source path.",
+                    self.source_file,
+                    getattr(self._pos(t), "line", None),
+                )
+            )
+        return DataTableBlock(
+            source_path=str(spec["source"]),
+            columns=tuple(str(v) for v in raw_columns),
+            identifier=identifier or (str(spec.get("id")) if spec.get("id") else None),
+            caption=attrs.get("caption")
+            or (str(spec.get("caption")) if spec.get("caption") else None),
+            source=self._pos(t),
+        )
 
     def _parse_yaml_mapping(self, text: str, label: str, token: Token) -> dict:
         try:
@@ -774,7 +787,7 @@ class MarkdownParser:
                 self._attach_inline_source(children, source)
 
     def _inline_range(self, tokens: list[Token], i: int, stop: str | None):
-        nodes = []
+        nodes: list = []
         while i < len(tokens):
             t = tokens[i]
             if stop and t.type == stop:

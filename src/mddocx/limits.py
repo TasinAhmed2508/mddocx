@@ -11,7 +11,10 @@ from .diagnostics import Diagnostic, MddocxError
 
 
 def enforce_input_limit(markdown: str, limits: CompilationLimits) -> None:
-    size = len(markdown.encode("utf-8"))
+    # Lone surrogates cannot be encoded as strict UTF-8, but they must not abort
+    # the check: the renderer drops them at the XML boundary exactly like every
+    # other code point XML 1.0 forbids, so the document still compiles.
+    size = len(markdown.encode("utf-8", errors="surrogatepass"))
     if size > limits.max_input_bytes:
         raise MddocxError(
             Diagnostic(

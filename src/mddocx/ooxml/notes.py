@@ -34,6 +34,7 @@ from mddocx.ooxml.package import (
     write_parts,
 )
 from mddocx.ooxml.text import clean_xml_text
+from mddocx.ooxml.sequence import insert_ordered
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,18 +316,18 @@ def _append_run(
     run = OxmlElement("w:r")
     if bold or italic or strike or code:
         properties = OxmlElement("w:rPr")
+        insert_ordered(run, properties)
         if bold:
-            properties.append(OxmlElement("w:b"))
+            insert_ordered(properties, OxmlElement("w:b"))
         if italic:
-            properties.append(OxmlElement("w:i"))
+            insert_ordered(properties, OxmlElement("w:i"))
         if strike:
-            properties.append(OxmlElement("w:strike"))
+            insert_ordered(properties, OxmlElement("w:strike"))
         if code:
             fonts = OxmlElement("w:rFonts")
             fonts.set(qn("w:ascii"), "Consolas")
             fonts.set(qn("w:hAnsi"), "Consolas")
-            properties.append(fonts)
-        run.append(properties)
+            insert_ordered(properties, fonts)
     content = OxmlElement("w:t")
     if text[:1].isspace() or text[-1:].isspace() or "  " in text:
         content.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")

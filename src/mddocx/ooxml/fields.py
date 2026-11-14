@@ -6,6 +6,38 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
+from mddocx.ooxml.sequence import insert_ordered
+
+
+_FIELD_SWITCHES = {
+    "TOC": {"o", "h", "z", "u"},
+    "SEQ": {"*", "c", "r", "s"},
+    "REF": {"h"},
+    "STYLEREF": {"n"},
+    "DATE": {"@"},
+    "CREATEDATE": {"@"},
+    "SAVEDATE": {"@"},
+    "FILENAME": {"p"},
+    **{
+        name: set()
+        for name in ("PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "AUTHOR", "DOCPROPERTY")
+    },
+}
+
+
+def field_instruction_issue(instruction: str) -> str | None:
+    """Return the first problem in a field instruction emitted by mddocx."""
+    if any(ord(char) < 32 or ord(char) == 127 for char in instruction):
+        return "control character in field instruction"
+    tokens = re.findall(r'"[^"]*"|\S+', instruction)
+    command = tokens[0].upper() if tokens else ""
+    if command not in _FIELD_SWITCHES:
+        return f"unsupported field command {command!r}"
+    for token in tokens[1:]:
+        if token.startswith("\\") and token[1:].lower() not in _FIELD_SWITCHES[command]:
+            return f"unsupported {command} switch {token!r}"
+    return None
+
 
 def add_hyperlink(
     paragraph,
@@ -23,30 +55,30 @@ def add_hyperlink(
     hyperlink.set(qn("r:id"), r_id)
     run = OxmlElement("w:r")
     r_pr = OxmlElement("w:rPr")
+    insert_ordered(run, r_pr)
     color = OxmlElement("w:color")
     color.set(qn("w:val"), "0563C1")
-    r_pr.append(color)
+    insert_ordered(r_pr, color)
     underline = OxmlElement("w:u")
     underline.set(qn("w:val"), "single")
-    r_pr.append(underline)
+    insert_ordered(r_pr, underline)
     if font_name:
         fonts = OxmlElement("w:rFonts")
         fonts.set(qn("w:ascii"), font_name)
         fonts.set(qn("w:hAnsi"), font_name)
         if rtl:
             fonts.set(qn("w:cs"), font_name)
-        r_pr.append(fonts)
+        insert_ordered(r_pr, fonts)
     if bold:
-        r_pr.append(OxmlElement("w:b"))
+        insert_ordered(r_pr, OxmlElement("w:b"))
     if italic:
-        r_pr.append(OxmlElement("w:i"))
+        insert_ordered(r_pr, OxmlElement("w:i"))
     if strike:
-        r_pr.append(OxmlElement("w:strike"))
+        insert_ordered(r_pr, OxmlElement("w:strike"))
     if rtl:
         rtl_el = OxmlElement("w:rtl")
         rtl_el.set(qn("w:val"), "1")
-        r_pr.append(rtl_el)
-    run.append(r_pr)
+        insert_ordered(r_pr, rtl_el)
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
     t.text = text
@@ -129,13 +161,13 @@ def add_internal_hyperlink(paragraph, text: str, anchor: str):
     hyperlink.set(qn("w:anchor"), anchor)
     run = OxmlElement("w:r")
     r_pr = OxmlElement("w:rPr")
+    insert_ordered(run, r_pr)
     color = OxmlElement("w:color")
     color.set(qn("w:val"), "0563C1")
-    r_pr.append(color)
+    insert_ordered(r_pr, color)
     underline = OxmlElement("w:u")
     underline.set(qn("w:val"), "single")
-    r_pr.append(underline)
-    run.append(r_pr)
+    insert_ordered(r_pr, underline)
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
     t.text = text

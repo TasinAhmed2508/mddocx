@@ -137,7 +137,7 @@ class MarkdownParser:
             self.last_metadata_report = MetadataSanitizationReport(
                 policy=self.metadata_config.ai_export
             )
-        metadata, body, line_offset = split_front_matter(markdown)
+        metadata, body, line_offset = split_front_matter(markdown, source_file=self.source_file)
         body = normalize_export_citations(body, strip=self.metadata_config.ai_export != "keep")
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
@@ -169,7 +169,7 @@ class MarkdownParser:
         return SourcePosition(file=self.source_file, line=line, column=1 if line else None)
 
     def _parse_blocks(self, tokens: list[Token], i: int, stop: str | None) -> tuple[list, int]:
-        nodes = []
+        nodes: list = []
         while i < len(tokens):
             t = tokens[i]
             if stop and t.type == stop:
@@ -290,13 +290,15 @@ class MarkdownParser:
                         categories = spec.get("categories") or []
                         if not isinstance(categories, list):
                             categories = []
-                        x_axis = spec.get("x_axis") if isinstance(spec.get("x_axis"), dict) else {}
-                        y_axis = spec.get("y_axis") if isinstance(spec.get("y_axis"), dict) else {}
-                        secondary_axis = (
-                            spec.get("secondary_axis")
-                            if isinstance(spec.get("secondary_axis"), dict)
-                            else {}
-                        )
+                        x_axis = spec.get("x_axis")
+                        y_axis = spec.get("y_axis")
+                        secondary_axis = spec.get("secondary_axis")
+                        if not isinstance(x_axis, dict):
+                            x_axis = {}
+                        if not isinstance(y_axis, dict):
+                            y_axis = {}
+                        if not isinstance(secondary_axis, dict):
+                            secondary_axis = {}
                         raw_secondary = spec.get("secondary_series") or []
                         if isinstance(raw_secondary, str):
                             raw_secondary = [raw_secondary]
@@ -774,7 +776,7 @@ class MarkdownParser:
                 self._attach_inline_source(children, source)
 
     def _inline_range(self, tokens: list[Token], i: int, stop: str | None):
-        nodes = []
+        nodes: list = []
         while i < len(tokens):
             t = tokens[i]
             if stop and t.type == stop:

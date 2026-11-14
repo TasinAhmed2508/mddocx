@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import traceback
 
 from . import __version__
 from .batch import collect_markdown_inputs, render_many
@@ -286,6 +287,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Open the generated DOCX with the operating-system default application",
     )
+    p.add_argument(
+        "--traceback",
+        action="store_true",
+        help="Print the full Python traceback when an unexpected internal error occurs",
+    )
     return p
 
 
@@ -492,7 +498,12 @@ def _main_visual_qa(argv: list[str]) -> int:
 
     p = argparse.ArgumentParser(
         prog="mddocx visual-qa",
-        description="Render a DOCX to pages and compare it with a visual baseline.",
+        description=(
+            "Render a DOCX to pages and compare it with a visual baseline. Optional: this is a "
+            "secondary layout cross-check for maintainers, and it needs LibreOffice/soffice plus "
+            "pdftoppm or Microsoft Word on Windows. Converting a document and validating its "
+            "structure need none of them."
+        ),
     )
     p.add_argument("docx", type=Path)
     p.add_argument("--baseline-dir", type=Path, required=True)
@@ -1083,6 +1094,21 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001 - a user must never see a raw traceback
+        # Anything reaching here is an mddocx defect rather than a bad document,
+        # so say so instead of dumping an internal stack trace.
+        print(
+            f"ERROR INTERNAL500 Unexpected {type(exc).__name__} while converting: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "  This is an mddocx defect. Re-run with --traceback for the full stack, "
+            "and report it at https://github.com/TasinAhmed2508/mddocx/issues",
+            file=sys.stderr,
+        )
+        if getattr(args, "traceback", False):
+            traceback.print_exc()
         return 2
 
 

@@ -1,5 +1,94 @@
 # Changelog
 
+## Unreleased — content-model validation
+
+Generated documents are now validated against the WordprocessingML content model, not only
+against the ZIP and relationship structure that surrounds it. Until now a document whose
+`w:pPr` followed a run, whose `w:rPr` followed its text, or whose `w:tblBorders` followed
+`w:tblLook` was well-formed XML that still opened, so nothing reported it: Word either
+declined the content or quietly ignored the misplaced element. Those sequences are now
+checked before the file is written.
+
+### Added
+
+- `mddocx.ooxml.sequence` owns the ECMA-376 sibling sequences mddocx emits — paragraph, run,
+table, table-row, table-cell, section, paragraph-border, cell-margin, table-border, style and
+list-level properties — and the two operations that follow from them: `insert_ordered()`,
+used by every emitter that builds an element by hand, and `get_or_add()`, which reuses the
+single child the schema allows instead of writing a second one. `mddocx.schema_order` reads
+the same tables to check a finished document, so a sequence is defined exactly once.
+- `inspect_docx`/`inspect_docx_bytes` report `schema_order_violations` for the body,
+headers, footers, footnotes, endnotes, comments, styles and the numbering part; they count
+as structural issues, so `mddocx inspect --strict` exits 2 and names each departure.
+- Render-time validation raises the new `DOCX422` diagnostic instead of writing a document
+Word may refuse, with `ValidationConfig.validate_schema_order` (default `True`) and the
+existing `--no-validate-output` flag as the single-render escape hatch.
+- Regression coverage reproduces the 1.4.0 bookmark defect (`w:pPr` written after a
+bookmark), checks run properties that trail their text, and renders the shipped fixtures and
+the hand-written XML surfaces with zero violations.
+
+### Changed
+
+- The library's positioning now leads with the property most users care about: mddocx writes
+  OOXML directly, so a conversion needs no office suite, no Microsoft Word, no LibreOffice, no
+  Java, no browser, and no network, and it verifies its own output in-process. The README states
+  this in its opening section and among the headline capabilities, and
+  `docs/COMPATIBILITY_MATRIX.md` gained explicit runtime rows for the office suite, Java, browser
+  and external converters all reading "not required".
+- The optional page-render cross-check is labelled as optional wherever it appears: `mddocx
+  visual-qa` says so in its own help text, `docs/PHASE5A.md` marks the section optional and
+  states that nothing in normal conversion depends on it, and `docs/COMPATIBILITY_MATRIX.md`
+  moves it under a maintainer-only heading.
+- The machine-readable fidelity contract records the secondary renderer signal as
+  `optional_renderer` instead of a vendor-named field, so the contract no longer reads as though
+  an office application participates in a conversion. The v1 values and the Word 365 authority
+  column are unchanged; `tests/test_release_contract.py` requires the renamed key.
+- `docs/FIDELITY_FIRST_V2_PLAN.md`, the source of truth for the staged 2.x program, now states
+  the governing constraint up front: the library may not acquire an outside dependency, the
+  dependency-free structural and round-trip checks are the primary fidelity gate, and a renderer
+  is at most an optional secondary signal that never gates a release. `docs/ROADMAP.md` aligns
+  U11, Q10 and Q5 with the same rule.
+
+### Fixed
+
+- Ten out-of-sequence emissions found by the new check: `w:tblBorders` after `w:tblLook`;
+`w:shd` after `w:spacing`/`w:ind` in paragraph properties (body and styles); `w:cantSplit`
+after `w:tblHeader`; `w:tcMar` and `w:shd` after `w:vAlign`; `w:bidi` after `w:jc`;
+`w:rFonts` after `w:u`, `w:i` or `w:strike` in hyperlink and note runs; and `w:suff`
+written after `w:lvlText` in list levels. Emitted XML changes only in element order; rendered
+content is unchanged.
+- List numbering now attaches `w:numPr` through the ordered accessor instead of appending it
+  to `w:pPr`.
+- Malformed YAML front matter no longer escapes as a raw PyYAML traceback with exit code 1.
+  `split_front_matter` raises the new `PARSE353` diagnostic naming the file and the line
+  inside the block, with remediation text, so the failure matches every other unparseable
+  YAML block in the document and exits 2.
+- Markdown containing a lone surrogate no longer crashes the byte-size limit check with an
+  uncaught `UnicodeEncodeError`. The limit is measured with `surrogatepass`, and the invalid
+  code point is dropped at the XML boundary exactly like the other code points XML 1.0
+  forbids, so the document still compiles.
+- `figures.add_image_path` no longer swallows every failure with `pass` while attaching an
+  image's accessibility metadata: it reports `A11Y202` naming the image, because a silently
+  missing alt text is the accessibility defect `mddocx accessibility` is meant to catch. The
+  missing-alt-text warning now uses `A11Y101`, the documented image code, instead of `A11Y201`,
+  which documents a missing table header row.
+- The command-line entry point no longer lets an unexpected exception type reach the terminal as
+  a Python traceback. An internal defect now prints `INTERNAL500` with the exception type, a
+  pointer to the issue tracker, and an exit code of 2; `--traceback` prints the full stack when
+  the report needs it.
+- `mddocx doctor` now reports visual-QA readiness accurately instead of requiring LibreOffice:
+  it recognises Microsoft Word driven through COM automation on Windows, and it labels the whole
+  group "Optional visual QA tools" stating that page rendering is an optional layout
+  cross-check that document conversion does not need. Previously a Windows machine with Word was
+  told visual QA was unavailable even though the renderer would have worked.
+- The optional visual regression test now reports *not run* with a clear reason when no office
+  renderer is installed, rather than failing with an unexplained error or reading as a pass. The
+  CI visual job asserts `visual_qa_ready` before running it, so a runner missing the tools fails
+  loudly instead of silently skipping every visual test.
+- `tests/test_no_office_dependency.py` pins the independence claim: conversion, images, tables,
+  equations, TOC and page fields all render with every office tool hidden from `shutil.which`,
+  `doctor` still passes, and the visual helper raises a clear error rather than hanging.
+
 ## 1.4.3 — Compiler maintenance and performance
 
 - Reuse validated equation conversions, table measurements, flowchart parsing and layout levels,

@@ -6,6 +6,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
+from mddocx.ooxml.sequence import insert_ordered
+
 
 def add_hyperlink(
     paragraph,
@@ -23,30 +25,30 @@ def add_hyperlink(
     hyperlink.set(qn("r:id"), r_id)
     run = OxmlElement("w:r")
     r_pr = OxmlElement("w:rPr")
+    insert_ordered(run, r_pr)
     color = OxmlElement("w:color")
     color.set(qn("w:val"), "0563C1")
-    r_pr.append(color)
+    insert_ordered(r_pr, color)
     underline = OxmlElement("w:u")
     underline.set(qn("w:val"), "single")
-    r_pr.append(underline)
+    insert_ordered(r_pr, underline)
     if font_name:
         fonts = OxmlElement("w:rFonts")
         fonts.set(qn("w:ascii"), font_name)
         fonts.set(qn("w:hAnsi"), font_name)
         if rtl:
             fonts.set(qn("w:cs"), font_name)
-        r_pr.append(fonts)
+        insert_ordered(r_pr, fonts)
     if bold:
-        r_pr.append(OxmlElement("w:b"))
+        insert_ordered(r_pr, OxmlElement("w:b"))
     if italic:
-        r_pr.append(OxmlElement("w:i"))
+        insert_ordered(r_pr, OxmlElement("w:i"))
     if strike:
-        r_pr.append(OxmlElement("w:strike"))
+        insert_ordered(r_pr, OxmlElement("w:strike"))
     if rtl:
         rtl_el = OxmlElement("w:rtl")
         rtl_el.set(qn("w:val"), "1")
-        r_pr.append(rtl_el)
-    run.append(r_pr)
+        insert_ordered(r_pr, rtl_el)
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
     t.text = text
@@ -129,13 +131,13 @@ def add_internal_hyperlink(paragraph, text: str, anchor: str):
     hyperlink.set(qn("w:anchor"), anchor)
     run = OxmlElement("w:r")
     r_pr = OxmlElement("w:rPr")
+    insert_ordered(run, r_pr)
     color = OxmlElement("w:color")
     color.set(qn("w:val"), "0563C1")
-    r_pr.append(color)
+    insert_ordered(r_pr, color)
     underline = OxmlElement("w:u")
     underline.set(qn("w:val"), "single")
-    r_pr.append(underline)
-    run.append(r_pr)
+    insert_ordered(r_pr, underline)
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
     t.text = text

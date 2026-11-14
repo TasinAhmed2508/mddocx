@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from mddocx.diagnostics import Diagnostic, MddocxError
 
-def split_front_matter(markdown: str) -> tuple[dict[str, Any], str, int]:
+
+def split_front_matter(
+    markdown: str, *, source_file: str | None = None
+) -> tuple[dict[str, Any], str, int]:
     """Return (metadata, body, body_line_offset) for YAML-style front matter.
 
     PyYAML is used when available. A deterministic scalar fallback keeps the core
     library usable without adding a hard YAML runtime dependency.
+
+    An unparseable block raises ``MddocxError(PARSE353)`` naming the offending
+    file and line, so malformed settings never surface as a raw PyYAML
+    traceback.
     """
     normalized = markdown.replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.splitlines(keepends=True)
@@ -29,11 +37,30 @@ def split_front_matter(markdown: str) -> tuple[dict[str, Any], str, int]:
     except ImportError:
         data = _fallback_yaml(raw)
     else:
-        loaded = yaml.safe_load(raw)
+        try:
+            loaded = yaml.safe_load(raw)
+        except Exception as exc:
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "PARSE353",
+                    f"Unable to parse YAML front matter: {type(exc).__name__}",
+                    source_file,
+                    _error_line(exc),
+                    "Fix or remove the YAML block between the leading '---' fences.",
+                )
+            ) from exc
         data = loaded if isinstance(loaded, dict) else {}
 
     body = "".join(lines[close_index + 1 :])
     return data, body, close_index + 1
+
+
+def _error_line(exc: Exception) -> int | None:
+    """Return the 1-based body line a PyYAML failure points at, when known."""
+    mark = getattr(exc, "problem_mark", None)
+    line = getattr(mark, "line", None)
+    return line + 2 if isinstance(line, int) else None
 
 
 def _fallback_yaml(raw: str) -> dict[str, Any]:

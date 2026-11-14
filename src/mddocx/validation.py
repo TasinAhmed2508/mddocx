@@ -116,6 +116,12 @@ def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
                 "DOCX421",
                 f"DOCX contains {inspection.chart_relationship_issues} invalid chart/workbook relationship sets.",
             )
+        if config.validate_schema_order and inspection.schema_order_violations:
+            _fail(
+                "DOCX422",
+                "Generated output departs from the WordprocessingML content model: "
+                + "; ".join(inspection.schema_order_violations[:3]),
+            )
     except MddocxError:
         raise
     except (BadZipFile, OSError, ValueError) as exc:

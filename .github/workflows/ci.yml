@@ -47,7 +47,17 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get install -y libreoffice-writer poppler-utils fonts-dejavu-core
       - run: python -m pip install -e ".[dev,academic]"
-      - run: pytest -m visual
+      # Visual QA is an optional cross-check and the tests skip when the office
+      # renderer is missing. Assert it is really here, so a runner that lost the
+      # tools fails loudly instead of silently skipping every visual test.
+      - name: Assert the visual renderer is available
+        shell: bash
+        run: |
+          # doctor exits 2 on any issue, so capture its report and assert on the
+          # capability itself: this step must fail for one reason only.
+          mddocx doctor --json > doctor.json || true
+          python -c "import json,sys; r=json.load(open('doctor.json')); print('visual_qa_ready:', r['visual_qa_ready']); sys.exit(0 if r['visual_qa_ready'] else 1)"
+      - run: pytest -m visual -rs
 
   package:
     runs-on: ubuntu-latest

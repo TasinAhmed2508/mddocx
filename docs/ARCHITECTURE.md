@@ -104,10 +104,17 @@ WordprocessingML goes out.
 | How is a run or paragraph written to Word XML? | [`ooxml/text.py`](../src/mddocx/ooxml/text.py) | `scripts`, `python-docx` XML helpers |
 | How is a package part registered? | [`ooxml/package.py`](../src/mddocx/ooxml/package.py) | `zipfile`, `lxml` |
 | How is a note part built? | [`ooxml/notes.py`](../src/mddocx/ooxml/notes.py) | `ooxml/package.py`, `ooxml/text.py`, inline AST |
+| In what order may Word elements appear? | [`ooxml/sequence.py`](../src/mddocx/ooxml/sequence.py) | `lxml`, `python-docx` XML helpers |
+| Where does a document depart from that order? | [`schema_order.py`](../src/mddocx/schema_order.py) | `ooxml/sequence.py`, `lxml` |
 | Who decides direction and applies policy? | [`render/renderer.py`](../src/mddocx/render/renderer.py) | all of the above |
 
 Flow: `RenderConfig + ThemeSpec → FontSlots`; `text → scripts → (font slot, direction)`;
 `(font slot, direction) → ooxml/text.py → w:r / w:p`; `note AST → ooxml/notes.py → package part`.
+
+Every element mddocx builds by hand is placed by `ooxml/sequence.py` — `insert_ordered()` for a
+new element, `get_or_add()` for the one child the schema allows — so no writer needs to know a
+sequence. `schema_order.py` reads the same tables to report departures from a parsed package,
+which `inspection.py` surfaces and `validation.py` turns into `DOCX422`.
 
 The block renderer is split the same way: [`render/renderer.py`](../src/mddocx/render/renderer.py)
 holds the per-render state, the `render()` sequence, the `_render_block` dispatch table, the inline
@@ -179,9 +186,13 @@ The rules that keep the structure from drifting:
    DrawingML images, ChartML charts, Word numbering, fields, bookmarks,
    footnotes/endnotes, citations, headers, footers, and tables.
 6. **Finalize and validate** scrubs generated metadata when configured,
-   produces deterministic package parts, checks relationships and XML safety,
-   and exposes structural, accessibility, performance, LibreOffice, and Word
-   365 qualification checks.
+   produces deterministic package parts, checks relationships, XML safety, and
+   the WordprocessingML content-model element order — the sequences are owned by
+   `mddocx.ooxml.sequence`, which the writer surfaces use through
+   `insert_ordered()` and `get_or_add()`, and the departure check lives in
+   `mddocx.schema_order` — and exposes structural, accessibility, performance, and
+   Word 365 qualification checks. Every one of these runs in-process; no office
+   application is involved in producing or checking a document.
 
 The v1 façade (`render`, `render_string`, and `MarkdownWord`) remains available.
 The staged `Compiler` additionally exposes parse, normalize, plan, render, check,
@@ -189,4 +200,8 @@ and compile operations with typed results and diagnostics.
 
 The supported construct contract is maintained in
 [`feature-matrix.json`](feature-matrix.json). Word 365 is the primary output
-authority; LibreOffice is used as a secondary automated rendering signal.
+authority. No office application takes part in a conversion or in any automated
+check: the pipeline verifies its own package in-process, which is what lets the
+fidelity contract hold on a machine that has no office suite installed. A page-render
+cross-check exists for maintainers as an optional, secondary signal, and the plan for
+reducing even that reliance is [RESILIENCE_PLAN.md](RESILIENCE_PLAN.md).

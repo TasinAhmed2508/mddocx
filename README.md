@@ -10,9 +10,20 @@ Deterministic Markdown-to-DOCX compilation for professional, editable Microsoft 
 
 mddocx converts Markdown into native Word structures instead of screenshots or flattened pages. Headings, lists, tables, equations, charts, links, references, footnotes, headers, footers, and other document elements remain editable in Microsoft Word.
 
+**Nothing else to install.** It writes OOXML directly, so a conversion needs no office suite,
+no Microsoft Word, no LibreOffice, no Java, no browser, and no network. It also verifies its
+own output before writing it: package structure, relationships, XML safety, and the ECMA-376
+content-model element order of every part, which is what makes a file Word would refuse to
+open fail here instead. A document is the only artifact a conversion produces, and mddocx can
+prove it is correct on any machine Python runs on.
+
 ## What it does
 
 - Converts Markdown files or strings into native DOCX documents.
+- Runs anywhere Python 3.11+ runs: no office suite, no Word, no Java, no browser, and no
+  network access needed to convert, and no external tool needed to check the result.
+- Validates its own output in-process: OOXML content model, relationships, XML safety, and
+  structural fidelity, reported as diagnostics.
 - Preserves editable Word headings, paragraphs, lists, tables, hyperlinks, and code blocks.
 - Supports nested lists, task lists, blockquotes, callouts, page breaks, and section breaks.
 - Produces editable Word equations using OMML rather than images.

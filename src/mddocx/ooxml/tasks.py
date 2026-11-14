@@ -3,6 +3,8 @@ from __future__ import annotations
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+from mddocx.ooxml.sequence import insert_ordered
+
 
 def append_checkbox(
     paragraph, checked: bool, control_id: int, font: str = "Segoe UI Symbol"
@@ -48,11 +50,11 @@ def append_checkbox(
     content = OxmlElement("w:sdtContent")
     run = OxmlElement("w:r")
     rpr = OxmlElement("w:rPr")
+    insert_ordered(run, rpr)
     fonts = OxmlElement("w:rFonts")
     for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
         fonts.set(qn(attr), font)
-    rpr.append(fonts)
-    run.append(rpr)
+    insert_ordered(rpr, fonts)
     text = OxmlElement("w:t")
     text.text = "☒" if checked else "☐"
     run.append(text)

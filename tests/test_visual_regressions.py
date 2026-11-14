@@ -1,13 +1,35 @@
+import os
 from pathlib import Path
+import shutil
 
 import pytest
 
 from mddocx import MarkdownWord, compare_visual_pages, render_docx_pages
 
 
+def require_visual_tools() -> None:
+    """Skip with a reason when no office renderer is installed.
+
+    Visual QA is an optional cross-check for layout, not how mddocx proves its
+    output is correct: page rendering needs LibreOffice/soffice plus pdftoppm, or
+    Microsoft Word on Windows. A machine without them reports *not run* rather
+    than either a pass or an unexplained failure. The CI visual job asserts
+    ``visual_qa_ready`` first, so this skip cannot hide a broken runner.
+    """
+    office = shutil.which("libreoffice") or shutil.which("soffice")
+    word = os.name == "nt" and (shutil.which("powershell") or shutil.which("pwsh"))
+    if shutil.which("pdftoppm") and (office or word):
+        return
+    pytest.skip(
+        "visual QA needs LibreOffice/soffice plus pdftoppm, or Microsoft Word on Windows; "
+        "document conversion does not need any of them"
+    )
+
+
 @pytest.mark.visual
 def test_ai_math_report_renders_repeatably_with_libreoffice(tmp_path: Path):
     """Exercise the real DOCX -> PDF -> PNG path in the Linux CI renderer."""
+    require_visual_tools()
     markdown = r"""# Formula report
 
 Inline math \(x^2+y^2=z^2\) remains in the paragraph.

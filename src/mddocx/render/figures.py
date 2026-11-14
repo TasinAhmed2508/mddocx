@@ -144,6 +144,12 @@ def add_image_path(
             if title:
                 docpr.set("title", clean_xml_text(title))
             if renderer.config.accessibility.image_alt_required and not alt:
-                renderer.reporter.warn("A11Y201", f"Image has no alt text: {path.name}")
-    except Exception:
-        pass
+                renderer.reporter.warn("A11Y101", f"Image has no alt text: {path.name}")
+    except Exception as exc:
+        # The image is already in the document; only its accessibility metadata is
+        # missing. Report it instead of passing silently, so the defect is visible.
+        renderer.reporter.warn(
+            "A11Y202",
+            f"Unable to attach accessibility metadata to {path.name}: {type(exc).__name__}",
+            remediation="The image renders, but Word will not expose alt text for it.",
+        )

@@ -150,7 +150,9 @@ class ProjectCompiler:
             source = acquire_markdown_source(path, self.config.limits.max_input_bytes)
             raw = source.text.replace("\r\n", "\n").replace("\r", "\n")
             sanitized = sanitize_markdown_metadata(raw, self.config.metadata)
-            metadata, body, front_offset = split_front_matter(sanitized.markdown)
+            metadata, body, front_offset = split_front_matter(
+                sanitized.markdown, source_file=str(path)
+            )
             chunks = _split_include_chunks(body)
             children: list[Any] = []
             footnotes: dict[str, list[Any]] = {}

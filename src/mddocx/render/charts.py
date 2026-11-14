@@ -10,8 +10,9 @@ from mddocx.ast.block import ChartBlock
 from mddocx.data import coerce_number, load_tabular_data
 from mddocx.diagnostics import Diagnostic, MddocxError
 from mddocx.ooxml.charts import ChartEntry
+from mddocx.recovery import recovery_block
 
-from . import citations, data_tables
+from . import citations, data_tables, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -26,6 +27,17 @@ def render_chart(renderer: DocxRenderer, node: ChartBlock) -> None:
             getattr(node.source, "line", None),
         )
         return
+    try:
+        entry = prepare_chart_entry(renderer, node)
+    except MddocxError as exc:
+        recoverable = exc.diagnostic.code == "CHART205" or (
+            exc.diagnostic.code == "CHART203" and not node.source_path
+        )
+        if not renderer.config.recover or not recoverable:
+            raise
+        placeholder = recovery_block(renderer.reporter, exc.diagnostic, node.title, node.source)
+        text_blocks.render_block_quote(renderer, placeholder)
+        return
     caption = (
         (node.caption or node.title or ("Chart" if node.identifier else None))
         if renderer.config.references.captions
@@ -33,7 +45,6 @@ def render_chart(renderer: DocxRenderer, node: ChartBlock) -> None:
     )
     if caption and renderer.config.references.figure_caption_position == "above":
         citations.render_caption(renderer, "Figure", caption, node.identifier)
-    entry = prepare_chart_entry(renderer, node)
     token = f"MDDOCX_CHART_{len(renderer._chart_entries) + 1}_PLACEHOLDER"
     entry.token = token
     renderer._chart_entries.append(entry)

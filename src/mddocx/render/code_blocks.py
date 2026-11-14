@@ -13,8 +13,9 @@ from mddocx.diagnostics import Diagnostic, MddocxError
 from mddocx.diagrams import MermaidRenderer, MermaidRenderError
 from mddocx.ooxml.text import clean_xml_text
 from mddocx.ooxml.sequence import get_or_add
+from mddocx.recovery import recovery_block
 
-from . import citations, figures
+from . import citations, figures, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -40,8 +41,15 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
                 / 914400,
             )
         except MermaidRenderError as exc:
+            diagnostic = Diagnostic("error", "DIAGRAM201", str(exc))
+            if renderer.config.recover and (
+                str(exc).startswith("Unsupported") or str(exc) == "Empty Mermaid diagram."
+            ):
+                placeholder = recovery_block(renderer.reporter, diagnostic, node.code, node.source)
+                text_blocks.render_block_quote(renderer, placeholder)
+                return
             if renderer.config.mermaid.fallback == "error":
-                raise MddocxError(Diagnostic("error", "DIAGRAM201", str(exc))) from exc
+                raise MddocxError(diagnostic) from exc
             renderer.reporter.warn(
                 "DIAGRAM201",
                 f"Mermaid kept as editable code: {exc}",

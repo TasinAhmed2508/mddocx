@@ -2,6 +2,17 @@
 
 ## Unreleased — content-model validation
 
+- Add offline source-to-DOCX verification with machine-readable drift and coverage reports.
+- Add explicit recovery for malformed chart and data-table declarations and unsupported
+  Mermaid diagrams, with annotated output and exit code 3. A failed conversion preserves the
+  previous DOCX.
+- Bound cumulative project input after include and variable expansion. Protect discovered local
+  assets from DOCX and diagnostic output collisions.
+- Add single-file watch, opt-in parallel batch builds, shell completions, and a capability catalog.
+- Batch eligible equations through the bundled MathJax sidecar while preserving the normal
+  per-equation validation and fallback path.
+- Add a seven-document structural regression corpus and field-instruction lint.
+
 Generated documents are now validated against the WordprocessingML content model, not only
 against the ZIP and relationship structure that surrounds it. Until now a document whose
 `w:pPr` followed a run, whose `w:rPr` followed its text, or whose `w:tblBorders` followed

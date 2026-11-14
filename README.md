@@ -210,6 +210,40 @@ paths must differ from the input, generated DOCX, and each other.
 
 Run mddocx --help for the complete command reference.
 
+## Verify, recover, and watch
+
+    mddocx verify report.md report.docx --json
+    mddocx report.md -o report.docx --recover
+    mddocx build ./project --recover
+    mddocx watch report.md
+    mddocx ./reports --recursive --output-dir ./word --jobs 4
+    mddocx capabilities --json
+    mddocx completions powershell
+
+Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
+heading levels and bookmarks, hard breaks, list nesting and task status, table cells, hyperlink
+targets, image alt text, native equation presence, footnotes and endnotes, simple captions and
+reference fields, and native chart/workbook relationships. It returns **0** for a match, **3**
+for differences or incomplete coverage, and **2** for invalid input or package errors. Visual
+pagination, equation equivalence, drawing content, workbook cell values, and generated structures
+such as Mermaid panels, template content, and bibliographies require their own checks. The
+machine-readable report identifies constructs the verifier cannot compare.
+
+Conversion is strict by default under the existing image, math, and diagram policies.
+Explicit recovery replaces a malformed chart or data-table declaration or an unsupported
+Mermaid diagram with a visible, editable note. Exit **3** means annotated DOCX was written.
+Exit **2** means conversion failed before publishing, and an existing DOCX is preserved.
+In a batch, a hard failure takes precedence over recovered files in the aggregate exit status.
+
+Python callers can opt in with `Compiler(RenderConfig(recover=True))` and inspect
+`result.recovered` and `result.diagnostics`. Call `Compiler(config).verify(source, output)` with
+the same rendering settings. `render_many(..., jobs=N)` preserves input order and uses serial
+execution with fail-fast or peak-memory profiling.
+
+Single-file watch polls for changes to Markdown and known local dependencies and uses
+the same converter as a direct invocation. Existing project watch accepts its directory or
+manifest. Shell completions are available for Bash, Zsh, Fish, and PowerShell.
+
 ## Python API
 
     from mddocx import RenderConfig, render, render_string
@@ -335,12 +369,12 @@ cover Base64-image, AI-math, compiler, layout, security-policy, and migration su
 The compiler stages and system architecture are described in
 [docs/ARCHITECTURE.md](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/ARCHITECTURE.md).
 The machine-readable supported feature contract is
-[docs/feature-matrix.json](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/feature-matrix.json).
+[src/mddocx/feature-matrix.json](https://github.com/TasinAhmed2508/mddocx/blob/main/src/mddocx/feature-matrix.json).
 
 The forward plan for usability, performance, and defect prevention is
 [docs/ROADMAP.md](https://github.com/TasinAhmed2508/mddocx/blob/main/docs/ROADMAP.md), including the known warts and open quality gaps.
 
-The machine-readable fidelity contract is `docs/feature-matrix.json`; every listed feature links
+The machine-readable fidelity contract is `src/mddocx/feature-matrix.json`; every listed feature links
 its accepted syntax, canonical AST, native Word representation, diagnostic behavior, host status,
 and tracked regression evidence.
 

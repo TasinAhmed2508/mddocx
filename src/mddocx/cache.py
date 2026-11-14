@@ -4,11 +4,11 @@ import hashlib
 from pathlib import Path
 
 from .ast.base import Document
-from .ast.codec import document_from_json, document_to_json
+from .ast.codec import AST_SCHEMA_NAME, AST_SCHEMA_VERSION, document_from_json, document_to_json
 from .config import CacheConfig
 from .output import atomic_write_bytes
 
-_AST_CACHE_SCHEMA = "mddocx-ast-v2"
+_AST_CACHE_SCHEMA = f"{AST_SCHEMA_NAME}-v{AST_SCHEMA_VERSION}"
 
 
 class AstCache:
@@ -23,7 +23,7 @@ class AstCache:
         digest.update(b"\0")
         digest.update((source_file or "").encode("utf-8"))
         digest.update(b"\0")
-        digest.update(markdown.encode("utf-8"))
+        digest.update(markdown.encode("utf-8", errors="surrogatepass"))
         return digest.hexdigest()
 
     def load(self, key: str) -> Document | None:

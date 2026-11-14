@@ -199,7 +199,7 @@ The staged `Compiler` additionally exposes parse, normalize, plan, render, check
 and compile operations with typed results and diagnostics.
 
 The supported construct contract is maintained in
-[`feature-matrix.json`](feature-matrix.json). Word 365 is the primary output
+[`feature-matrix.json`](../src/mddocx/feature-matrix.json). Word 365 is the primary output
 authority. No office application takes part in a conversion or in any automated
 check: the pipeline verifies its own package in-process, which is what lets the
 fidelity contract hold on a machine that has no office suite installed. A page-render

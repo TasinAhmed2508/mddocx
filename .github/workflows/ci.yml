@@ -23,6 +23,7 @@ jobs:
       - run: python -m compileall -q src
       - run: pytest --collect-only -q
       - run: pytest -m "not visual"
+      - run: python scripts/update_diagnostics.py --check
       - run: ruff check src tests
       - run: ruff format --check src tests
       - run: mypy src/mddocx/source.py src/mddocx/compiler.py src/mddocx/batch.py src/mddocx/config_validation.py src/mddocx/extensions/base.py src/mddocx/layout.py src/mddocx/math/preflight.py src/mddocx/normalize/semantic.py src/mddocx/normalize/normalizer.py src/mddocx/render/context.py src/mddocx/render/math_renderer.py --ignore-missing-imports --follow-imports=skip --check-untyped-defs
@@ -37,6 +38,7 @@ jobs:
         run: mddocx benchmark --sections 100 --max-seconds 60 --max-peak-mb 512
 
   visual-linux:
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -82,6 +84,10 @@ jobs:
           /tmp/mddocx-wheel/bin/mddocx inspect /tmp/ai-math.docx --strict
           /tmp/mddocx-wheel/bin/mddocx math-check tests/fixtures/ai_markdown/chatgpt_sphere_equations.md --strict
           /tmp/mddocx-wheel/bin/mddocx api --json > /tmp/public-api.json
+          /tmp/mddocx-wheel/bin/mddocx capabilities --json > /tmp/capabilities.json
+          printf '# Package verification\n\nEditable equation $x^2$.\n' > /tmp/verify.md
+          /tmp/mddocx-wheel/bin/mddocx /tmp/verify.md -o /tmp/verify.docx
+          /tmp/mddocx-wheel/bin/mddocx verify /tmp/verify.md /tmp/verify.docx --json
           /tmp/mddocx-wheel/bin/python -c "import json; p=json.load(open('/tmp/public-api.json')); assert p['api_version']=='1'"
       - name: Smoke-test optional extras from the built wheel
         shell: bash

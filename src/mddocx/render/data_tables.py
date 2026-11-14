@@ -9,8 +9,9 @@ from mddocx.ast.block import DataTableBlock, Table, TableCell, TableRow
 from mddocx.ast.inline import Text
 from mddocx.data import load_tabular_data
 from mddocx.diagnostics import Diagnostic, MddocxError
+from mddocx.recovery import recovery_block
 
-from . import citations, tables
+from . import citations, tables, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -44,15 +45,18 @@ def render_data_table(renderer: DocxRenderer, node: DataTableBlock) -> None:
     columns = list(node.columns) or list(data.columns)
     for name in columns:
         if name not in data.columns:
-            raise MddocxError(
-                Diagnostic(
-                    "error",
-                    "DATA208",
-                    f"Unknown data-table column: {name}",
-                    getattr(node.source, "file", None),
-                    getattr(node.source, "line", None),
-                )
+            diagnostic = Diagnostic(
+                "error",
+                "DATA208",
+                f"Unknown data-table column: {name}",
+                getattr(node.source, "file", None),
+                getattr(node.source, "line", None),
             )
+            if not renderer.config.recover:
+                raise MddocxError(diagnostic)
+            placeholder = recovery_block(renderer.reporter, diagnostic, name, node.source)
+            text_blocks.render_block_quote(renderer, placeholder)
+            return
     rows = [
         TableRow(
             cells=[TableCell(children=[Text(text=name)], header=True) for name in columns],

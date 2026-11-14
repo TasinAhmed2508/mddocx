@@ -14,7 +14,11 @@ is a wish list.
   validated XML parts, atomic DOCX and cache writes, and per-file project source limits.
 - **Integration branch:** OOXML ordering checks, source-located front-matter diagnostics,
   accessibility diagnostics, and tests for conversion without office tooling.
-- **Planned:** the release milestones below describe work beyond the published baseline.
+- **Implemented in the local candidate:** structural corpus and field lint, offline verification,
+  opt-in recovery, aggregate project input limits, single-file watch, batch workers,
+  capabilities, completions, and bounded MathJax batching. See [performance results](PERFORMANCE.md).
+- **Pending:** cross-platform CI and release publication. Broader verification coverage,
+  the optional renderer corpus, and compatibility changes remain staged.
   Strict conversion is the default, and annotated output recovery is opt-in.
 
 ## Part 1 — Usability and performance for users

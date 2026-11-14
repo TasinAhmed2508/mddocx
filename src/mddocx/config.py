@@ -386,3 +386,4 @@ class RenderConfig:
     heading_bookmarks: bool = True
     image_captions_from_title: bool = True
     extensions: tuple[Any, ...] = ()
+    recover: bool = False

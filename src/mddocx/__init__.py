@@ -179,4 +179,4 @@ __all__ = [
     "PUBLIC_API_VERSION",
     "get_public_api_manifest",
 ]
-__version__ = "1.4.3"
+__version__ = "1.5.0rc1"

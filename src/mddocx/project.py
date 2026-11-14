@@ -18,7 +18,8 @@ from .ast.base import Document, Node
 from .ast.block import ImageBlock, ChartBlock, DataTableBlock
 from .ast.inline import Image
 from .config import RenderConfig
-from .diagnostics import Diagnostic, MddocxError
+from .config_validation import validate_render_config
+from .diagnostics import Diagnostic, DiagnosticReporter, MddocxError
 from .normalize import Normalizer
 from .output import atomic_write_bytes, write_docx
 from .parser import MarkdownParser
@@ -27,7 +28,7 @@ from .metadata import sanitize_markdown_metadata
 from .source import acquire_markdown_source
 
 _PROJECT_SCHEMA_VERSION = 1
-_PROJECT_ENGINE_VERSION = "mddocx-project-v3"
+_PROJECT_ENGINE_VERSION = "mddocx-project-v4"
 _INCLUDE_RE = re.compile(
     r"^[ \t]{0,3}@include[ \t]+(?:\"(?P<double>[^\"]+)\"|'(?P<single>[^']+)'|(?P<bare>[^\s#]+))[ \t]*$"
 )
@@ -57,6 +58,7 @@ class ProjectCompilation:
     dependencies: tuple[Path, ...]
     source_count: int
     include_count: int
+    diagnostics: tuple[Diagnostic, ...] = ()
 
 
 @dataclass(slots=True)
@@ -69,6 +71,11 @@ class ProjectBuildResult:
     fingerprint: str
     output_sha256: str
     elapsed_ms: float
+    diagnostics: tuple[Diagnostic, ...] = ()
+
+    @property
+    def recovered(self) -> bool:
+        return any(item.code == "RECOVER201" for item in self.diagnostics)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,6 +87,8 @@ class ProjectBuildResult:
             "fingerprint": self.fingerprint,
             "output_sha256": self.output_sha256,
             "elapsed_ms": round(self.elapsed_ms, 3),
+            "recovered": self.recovered,
+            "diagnostics": [item.to_dict() for item in self.diagnostics],
         }
 
     def to_json(self, indent: int | None = 2) -> str:
@@ -95,14 +104,28 @@ class ProjectWatchEvent:
 
 
 class ProjectCompiler:
-    def __init__(self, manifest: ProjectManifest, config: RenderConfig | None = None):
+    def __init__(
+        self,
+        manifest: ProjectManifest,
+        config: RenderConfig | None = None,
+        *,
+        recover: bool = False,
+    ):
         self.manifest = manifest
         self.config = _config_from_manifest(manifest, config)
-        self.parser = MarkdownParser(self.config.extensions, self.config.metadata)
-        self.normalizer = Normalizer()
+        self.config.recover = self.config.recover or recover
+        validate_render_config(self.config)
+        self.reporter = DiagnosticReporter()
+        self.parser = MarkdownParser(
+            self.config.extensions,
+            self.config.metadata,
+            recovery_reporter=self.reporter if self.config.recover else None,
+        )
+        self.normalizer = Normalizer(self.reporter)
         self._dependencies: set[Path] = {manifest.path.resolve()}
         self._stack: list[Path] = []
         self._include_count = 0
+        self._remaining_bytes = self.config.limits.max_input_bytes
         self._document_metadata: dict[str, Any] = {}
         self._have_primary_metadata = False
 
@@ -126,6 +149,7 @@ class ProjectCompiler:
             dependencies=tuple(sorted(self._dependencies, key=lambda p: str(p).casefold())),
             source_count=len(self.manifest.sources),
             include_count=self._include_count,
+            diagnostics=tuple(self.reporter.diagnostics),
         )
 
     def _compile_file(self, path: Path, depth: int) -> Document:
@@ -167,7 +191,9 @@ class ProjectCompiler:
                         self.manifest.undefined_variables,
                         path,
                         front_offset + body_line,
+                        max_bytes=self._remaining_bytes,
                     )
+                    self._remaining_bytes -= len(expanded.encode("utf-8", errors="surrogatepass"))
                     parsed = self.parser.parse(
                         expanded,
                         source_file=str(path),
@@ -405,10 +431,13 @@ def load_project(project: str | Path = ".") -> ProjectManifest:
 
 
 def compile_project(
-    project: str | Path | ProjectManifest = ".", config: RenderConfig | None = None
+    project: str | Path | ProjectManifest = ".",
+    config: RenderConfig | None = None,
+    *,
+    recover: bool = False,
 ) -> ProjectCompilation:
     manifest = project if isinstance(project, ProjectManifest) else load_project(project)
-    return ProjectCompiler(manifest, config=config).compile()
+    return ProjectCompiler(manifest, config=config, recover=recover).compile()
 
 
 def build_project(
@@ -417,12 +446,13 @@ def build_project(
     *,
     output: str | Path | None = None,
     force: bool = False,
+    recover: bool = False,
 ) -> ProjectBuildResult:
     start = time.perf_counter()
     manifest = project if isinstance(project, ProjectManifest) else load_project(project)
     output_path = Path(output).resolve() if output is not None else manifest.output
     state_path = manifest.root / ".mddocx" / "build-state.json"
-    if not force and config is None:
+    if not force and config is None and not recover:
         current = _try_current_state(manifest, state_path, output_path)
         if current is not None:
             return ProjectBuildResult(
@@ -436,14 +466,22 @@ def build_project(
                 elapsed_ms=(time.perf_counter() - start) * 1000,
             )
 
-    compiler = ProjectCompiler(manifest, config=config)
+    compiler = ProjectCompiler(manifest, config=config, recover=recover)
     compiled = compiler.compile()
     cfg = compiler.config
     cfg.base_dir = manifest.root
     dependencies = set(compiled.dependencies)
-    effective_cfg = _apply_front_matter(deepcopy(cfg), compiled.document.metadata, True)
+    effective_cfg = _apply_front_matter(deepcopy(cfg), compiled.document.metadata, False)
+    if config is not None:
+        _overlay_explicit(effective_cfg, config, RenderConfig())
+    effective_cfg.base_dir = manifest.root
     dependencies.update(_render_dependencies(manifest, effective_cfg))
-    result = Compiler(cfg).render(compiled.document, base_dir=manifest.root)
+    result = Compiler(effective_cfg)._render(
+        compiled.document,
+        manifest.root,
+        compiled.diagnostics,
+        effective_config=True,
+    )
     blob = result.output_bytes
     write_docx(output_path, blob, protected_paths=(*dependencies, state_path))
 
@@ -452,7 +490,7 @@ def build_project(
     )
     fingerprint = _fingerprint(manifest.path, dependency_tuple)
     output_sha256 = hashlib.sha256(blob).hexdigest()
-    if config is None:
+    if config is None and not recover and not result.recovered:
         state = {
             "schema": 1,
             "engine": _PROJECT_ENGINE_VERSION,
@@ -474,6 +512,7 @@ def build_project(
         fingerprint=fingerprint,
         output_sha256=output_sha256,
         elapsed_ms=(time.perf_counter() - start) * 1000,
+        diagnostics=result.diagnostics,
     )
 
 
@@ -584,55 +623,65 @@ def project_info(project: str | Path | ProjectManifest = ".") -> dict[str, Any]:
 
 
 def _config_from_manifest(manifest: ProjectManifest, explicit: RenderConfig | None) -> RenderConfig:
-    cfg = deepcopy(explicit) if explicit is not None else RenderConfig()
-    cfg = _apply_front_matter(cfg, manifest.render, explicit_config=explicit is not None)
+    cfg = _apply_front_matter(RenderConfig(), manifest.render, explicit_config=False)
     # Project render keys that are intentionally not part of Markdown front matter.
     render = manifest.render
-    if explicit is None:
-        if "template" in render and render["template"]:
-            cfg.template = _resolve_manifest_path(
-                manifest.root,
-                str(render["template"]),
-                "PROJECT825",
-                "Template path escapes the project root",
-            )
-        if "font" in render:
-            cfg.fonts.body = str(render["font"])
-        if "heading_font" in render:
-            cfg.fonts.headings = str(render["heading_font"])
-        if "code_font" in render:
-            cfg.fonts.code = str(render["code_font"])
-        if "bengali_font" in render:
-            # 'none' disables the Bangla output pass; 'auto' resolves at render time.
-            value = str(render["bengali_font"]).strip()
-            cfg.fonts.bengali = None if value.casefold() == "none" else value or None
-        if "code_language_labels" in render:
-            cfg.code.show_language_label = bool(render["code_language_labels"])
-        if "syntax_highlighting" in render:
-            cfg.code.syntax_highlighting = bool(render["syntax_highlighting"])
-        if render.get("ai_metadata") in ("auto", "strip", "keep"):
-            cfg.metadata.ai_export = str(render["ai_metadata"])
-        if "different_first_page" in render:
-            cfg.header.different_first_page = bool(render["different_first_page"])
-            cfg.footer.different_first_page = bool(render["different_first_page"])
-        if "different_odd_even" in render:
-            cfg.header.different_odd_even = bool(render["different_odd_even"])
-            cfg.footer.different_odd_even = bool(render["different_odd_even"])
-        if "header" in render:
-            cfg.header.text = str(render["header"])
-            cfg.header.enabled = True
-        if "footer" in render:
-            cfg.footer.text = str(render["footer"])
-            cfg.footer.enabled = True
-        if "num_pages" in render:
-            cfg.footer.num_pages = bool(render["num_pages"])
-            cfg.footer.enabled = cfg.footer.enabled or cfg.footer.num_pages
-        if "auto_bibliography" in render:
-            cfg.citations.auto_bibliography = bool(render["auto_bibliography"])
-        if "bibliography" in render and render["bibliography"]:
-            cfg.citations.bibliography = Path(str(render["bibliography"]))
+    if "template" in render and render["template"]:
+        cfg.template = _resolve_manifest_path(
+            manifest.root,
+            str(render["template"]),
+            "PROJECT825",
+            "Template path escapes the project root",
+        )
+    if "font" in render:
+        cfg.fonts.body = str(render["font"])
+    if "heading_font" in render:
+        cfg.fonts.headings = str(render["heading_font"])
+    if "code_font" in render:
+        cfg.fonts.code = str(render["code_font"])
+    if "bengali_font" in render:
+        # 'none' disables the Bangla output pass; 'auto' resolves at render time.
+        value = str(render["bengali_font"]).strip()
+        cfg.fonts.bengali = None if value.casefold() == "none" else value or None
+    if "code_language_labels" in render:
+        cfg.code.show_language_label = bool(render["code_language_labels"])
+    if "syntax_highlighting" in render:
+        cfg.code.syntax_highlighting = bool(render["syntax_highlighting"])
+    if render.get("ai_metadata") in ("auto", "strip", "keep"):
+        cfg.metadata.ai_export = str(render["ai_metadata"])
+    if "different_first_page" in render:
+        cfg.header.different_first_page = bool(render["different_first_page"])
+        cfg.footer.different_first_page = bool(render["different_first_page"])
+    if "different_odd_even" in render:
+        cfg.header.different_odd_even = bool(render["different_odd_even"])
+        cfg.footer.different_odd_even = bool(render["different_odd_even"])
+    if "header" in render:
+        cfg.header.text = str(render["header"])
+        cfg.header.enabled = True
+    if "footer" in render:
+        cfg.footer.text = str(render["footer"])
+        cfg.footer.enabled = True
+    if "num_pages" in render:
+        cfg.footer.num_pages = bool(render["num_pages"])
+        cfg.footer.enabled = cfg.footer.enabled or cfg.footer.num_pages
+    if "auto_bibliography" in render:
+        cfg.citations.auto_bibliography = bool(render["auto_bibliography"])
+    if "bibliography" in render and render["bibliography"]:
+        cfg.citations.bibliography = Path(str(render["bibliography"]))
+    if explicit is not None:
+        _overlay_explicit(cfg, explicit, RenderConfig())
     cfg.base_dir = manifest.root
     return cfg
+
+
+def _overlay_explicit(target, explicit, default) -> None:
+    for setting in fields(default):
+        name = setting.name
+        value, default_value = getattr(explicit, name), getattr(default, name)
+        if is_dataclass(default_value) and is_dataclass(value):
+            _overlay_explicit(getattr(target, name), value, default_value)
+        elif value != default_value:
+            setattr(target, name, deepcopy(value))
 
 
 def _render_dependencies(manifest: ProjectManifest, cfg: RenderConfig) -> set[Path]:
@@ -700,6 +749,8 @@ def _substitute_variables(
     policy: str,
     source: Path,
     base_line: int,
+    *,
+    max_bytes: int | None = None,
 ) -> str:
     def replace(match: re.Match[str]) -> str:
         name = match.group("name")
@@ -712,7 +763,30 @@ def _substitute_variables(
         line = base_line + text.count("\n", 0, match.start())
         raise _project_error("PROJECT808", f"Undefined project variable: {name}", source, line)
 
-    rendered = _VAR_RE.sub(replace, text)
+    if max_bytes is None:
+        rendered = _VAR_RE.sub(replace, text)
+    else:
+        # Bound expanded output before joining substitutions or parsing another include.
+        chunks = []
+        cursor = 0
+        for match in _VAR_RE.finditer(text):
+            literal = text[cursor : match.start()]
+            value = replace(match)
+            max_bytes -= len(literal.encode("utf-8", errors="surrogatepass"))
+            max_bytes -= len(value.encode("utf-8", errors="surrogatepass"))
+            if max_bytes < 0:
+                raise _project_error(
+                    "LIMIT401", "Expanded project input exceeds the byte limit.", source
+                )
+            chunks.extend((literal, value))
+            cursor = match.end()
+        tail = text[cursor:]
+        if len(tail.encode("utf-8", errors="surrogatepass")) > max_bytes:
+            raise _project_error(
+                "LIMIT401", "Expanded project input exceeds the byte limit.", source
+            )
+        chunks.append(tail)
+        rendered = "".join(chunks)
     return _ESCAPED_VAR_RE.sub(lambda m: m.group(1), rendered)
 
 

@@ -12,7 +12,8 @@ from .ast.base import Document
 from .cache import AstCache
 from .config import RenderConfig
 from .config_validation import validate_render_config
-from .diagnostics import DiagnosticReporter, MddocxError
+from .diagnostics import Diagnostic, DiagnosticReporter, MddocxError
+from .dependencies import local_dependencies
 from .extensions.base import call_transform_document, call_transform_layout
 from .extensions.discovery import load_entrypoint_extensions
 from .limits import enforce_ast_limits, enforce_input_limit
@@ -23,14 +24,14 @@ from .metadata import (
     scrub_generated_docx_core_properties,
 )
 from .normalize import Normalizer
-from .output import write_docx
+from .output import validate_output_path, write_docx
 from .parser import MarkdownParser
 from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
 from .render import DocxRenderer
 from .reproducibility import make_reproducible_docx
 from .source import acquire_markdown_source
-from .validation import validate_docx_package
+from .validation import validate_docx_package, validated_docx_parts
 
 
 class MarkdownWord:
@@ -45,10 +46,15 @@ class MarkdownWord:
             )
             self.config.extensions = tuple(self.config.extensions) + discovered
         self.reporter = DiagnosticReporter()
-        self.parser = MarkdownParser(self.config.extensions, self.config.metadata)
+        self.parser = MarkdownParser(
+            self.config.extensions,
+            self.config.metadata,
+            recovery_reporter=self.reporter if self.config.recover else None,
+        )
         self.normalizer = Normalizer(self.reporter)
         self.last_stats = RenderStats()
         self.last_layout_plan = LayoutPlan()
+        self._dependencies: set[Path] = set()
 
     @property
     def diagnostics(self):
@@ -63,18 +69,17 @@ class MarkdownWord:
     def render_file(self, input_path: str | Path, output_path: str | Path) -> None:
         self._render_file(Path(input_path), Path(output_path))
 
-    def _render_file(self, input_path: Path, output_path: Path) -> bytes:
+    def _render_file(
+        self, input_path: Path, output_path: Path, *, report_paths: tuple[Path, ...] = ()
+    ) -> bytes:
         try:
             markdown = acquire_markdown_source(input_path, self.config.limits.max_input_bytes).text
             blob = self._compile(markdown, input_path.parent, source_file=str(input_path))
-            protected = [input_path]
-            if self.config.template is not None:
-                protected.append(Path(self.config.template).expanduser())
-            for path in (self.config.citations.bibliography, self.config.citations.style_file):
-                if path is not None:
-                    path = Path(path)
-                    protected.append(path if path.is_absolute() else input_path.parent / path)
-            write_docx(output_path, blob, protected_paths=protected)
+            protected = (input_path, *self._dependencies)
+            for index, path in enumerate(report_paths):
+                others = report_paths[:index] + report_paths[index + 1 :]
+                validate_output_path(path, (*protected, output_path, *others))
+            write_docx(output_path, blob, protected_paths=(*protected, *report_paths))
             return blob
         except MddocxError as exc:
             self._record_error(exc)
@@ -88,9 +93,19 @@ class MarkdownWord:
         )
 
     def render_ast(self, document: Document, base_dir: str | Path | None = None) -> bytes:
-        self.reporter.diagnostics.clear()
+        return self._render_ast(document, base_dir, ())
+
+    def _render_ast(
+        self,
+        document: Document,
+        base_dir: str | Path | None,
+        diagnostics: tuple[Diagnostic, ...],
+        *,
+        effective_config: bool = False,
+    ) -> bytes:
+        self.reporter.diagnostics[:] = diagnostics
         base = Path(base_dir) if base_dir is not None else Path(".")
-        cfg = self._config_for_document(base, document.metadata)
+        cfg = self._config_for_document(base, {} if effective_config else document.metadata)
         started = perf_counter()
         try:
             transformed = call_transform_document(
@@ -113,6 +128,7 @@ class MarkdownWord:
 
     def check_file(self, input_path: str | Path) -> None:
         self.reporter.diagnostics.clear()
+        self._dependencies.clear()
         input_path = Path(input_path)
         try:
             markdown = acquire_markdown_source(input_path, self.config.limits.max_input_bytes).text
@@ -149,7 +165,7 @@ class MarkdownWord:
             ast: Document | None = None
             cache: AstCache | None = None
             cache_key: str | None = None
-            if self.config.cache.ast_enabled:
+            if self.config.cache.ast_enabled and not self.config.recover:
                 if self.config.extensions:
                     self.reporter.info(
                         "CACHE402",
@@ -190,6 +206,8 @@ class MarkdownWord:
             transform_start = perf_counter()
             ast = call_transform_document(cfg.extensions, ast)
             enforce_ast_limits(ast, cfg.limits)
+            if source_file is not None:
+                self._dependencies = local_dependencies(ast, cfg, Path(cfg.base_dir or base_dir))
             normalize_ms += (perf_counter() - transform_start) * 1000
 
             blob, plan_ms, render_ms = self._render_document(ast, cfg)
@@ -227,8 +245,7 @@ class MarkdownWord:
         blob = self._finalize_output(renderer.render(document, cfg, self.last_layout_plan), cfg)
         return blob, (render_start - plan_start) * 1000, (perf_counter() - render_start) * 1000
 
-    @staticmethod
-    def _finalize_output(blob: bytes, cfg: RenderConfig) -> bytes:
+    def _finalize_output(self, blob: bytes, cfg: RenderConfig) -> bytes:
         blob = scrub_generated_docx_core_properties(
             blob,
             cfg.metadata,
@@ -244,7 +261,10 @@ class MarkdownWord:
             },
         )
         blob = make_reproducible_docx(blob, cfg.reproducibility)
-        validate_docx_package(blob, cfg.validation)
+        if any(item.code == "RECOVER201" for item in self.diagnostics):
+            validated_docx_parts(blob, cfg.validation)
+        else:
+            validate_docx_package(blob, cfg.validation)
         return blob
 
     def _report_metadata_sanitization(

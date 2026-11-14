@@ -42,12 +42,15 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
             )
         except MermaidRenderError as exc:
             diagnostic = Diagnostic("error", "DIAGRAM201", str(exc))
-            if renderer.config.recover and (
-                str(exc).startswith("Unsupported") or str(exc) == "Empty Mermaid diagram."
-            ):
-                placeholder = recovery_block(renderer.reporter, diagnostic, node.code, node.source)
-                text_blocks.render_block_quote(renderer, placeholder)
-                return
+            if renderer.config.recover:
+                if str(exc).startswith("Unsupported") or str(exc) == "Empty Mermaid diagram.":
+                    placeholder = recovery_block(
+                        renderer.reporter, diagnostic, node.code, node.source
+                    )
+                    text_blocks.render_block_quote(renderer, placeholder)
+                    return
+                if "limit" in str(exc).lower():
+                    raise MddocxError(diagnostic) from exc
             if renderer.config.mermaid.fallback == "error":
                 raise MddocxError(diagnostic) from exc
             renderer.reporter.warn(

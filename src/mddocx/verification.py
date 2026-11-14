@@ -15,6 +15,8 @@ from .ast.base import Document, Node
 from .config import RenderConfig
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
+from .math.normalize import normalize_equation
+from .math.validation import source_tokens_preserved
 from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import clean_xml_text
@@ -73,6 +75,7 @@ def compare_document(
     notes: dict[str, int] = {}
     note_kind = config.notes.style
     note_part = f"word/{note_kind}s.xml"
+    expected_math: list[tuple[str, Node]] = []
 
     def incomplete(reason: str, node: Node | None = None) -> None:
         findings.append(_finding("VERIFY304", reason, node))
@@ -92,6 +95,7 @@ def compare_document(
                 tokens.append(("break",))
             elif isinstance(node, inline.InlineMath):
                 tokens.append(("math",))
+                expected_math.append((node.source_text, node))
             elif isinstance(node, inline.Image):
                 tokens.append(("image", node.alt))
             elif isinstance(node, inline.Link):
@@ -132,18 +136,18 @@ def compare_document(
                 incomplete(f"Inline {type(node).__name__} coverage is incomplete.", node)
         return _merge_text(tokens)
 
-    def captioned(unit: _Unit, label: str, text: str | None, node) -> None:
+    def captioned(units: list[_Unit], label: str, text: str | None, node) -> None:
         if text is None:
-            expected.append(unit)
+            expected.extend(units)
             return
         target = references.get(node.identifier) if node.identifier else None
         caption = _Unit(
             "caption", (label, clean_xml_text(text), target.bookmark if target else None), node
         )
         if getattr(config.references, f"{label.lower()}_caption_position") == "above":
-            expected.extend((caption, unit))
+            expected.extend((caption, *units))
         else:
-            expected.extend((unit, caption))
+            expected.extend((*units, caption))
 
     def blocks(nodes, level: int = 0) -> None:
         for node in nodes:
@@ -210,7 +214,7 @@ def compare_document(
                     if config.references.captions
                     else None
                 )
-                captioned(_Unit("table", rows, node), "Table", title, node)
+                captioned([_Unit("table", rows, node)], "Table", title, node)
             elif isinstance(node, block.ImageBlock):
                 title = (
                     (
@@ -223,15 +227,16 @@ def compare_document(
                 )
                 decorative = node.decorative and config.accessibility.mark_decorative_images
                 token = ("image", "") if decorative else ("image", clean_xml_text(node.alt))
-                captioned(_Unit("paragraph", (token,), node), "Figure", title, node)
+                captioned([_Unit("paragraph", (token,), node)], "Figure", title, node)
             elif isinstance(node, block.ChartBlock) and config.charts.enabled:
                 title = (
                     (node.caption or node.title or ("Chart" if node.identifier else None))
                     if config.references.captions
                     else None
                 )
-                captioned(_Unit("paragraph", (("chart",),), node), "Figure", title, node)
+                captioned([_Unit("paragraph", (("chart",),), node)], "Figure", title, node)
             elif isinstance(node, block.MathBlock):
+                expected_math.append((node.source_text, node))
                 if (
                     node.identifier
                     and config.references.enabled
@@ -247,6 +252,38 @@ def compare_document(
                     expected.append(
                         _Unit("caption", ("", clean_xml_text(node.caption), None), node)
                     )
+            elif isinstance(node, block.CodeBlock) and (node.language or "").lower() not in {
+                "",
+                "text",
+                "plain",
+                "plaintext",
+                "form",
+                "layout-table",
+                "mermaid",
+            }:
+                title = (
+                    (node.caption or ("Code listing" if node.identifier else None))
+                    if config.references.captions
+                    else None
+                )
+                lines = node.code.splitlines() or [""]
+                numbers = (
+                    config.code.line_numbers if node.line_numbers is None else node.line_numbers
+                )
+                label = (
+                    config.code.show_language_label
+                    if node.show_language_label is None
+                    else node.show_language_label
+                )
+                units = []
+                if label:
+                    units.append(_Unit("paragraph", (clean_xml_text(node.language),), node))
+                for index, line in enumerate(lines, 1):
+                    prefix = f"{index:>{len(str(len(lines)))}}  " if numbers else ""
+                    units.append(
+                        _Unit("paragraph", _merge_text((prefix + clean_xml_text(line),)), node)
+                    )
+                captioned(units, "Listing", title, node)
             elif isinstance(node, block.PageBreak):
                 expected.append(_Unit("paragraph", (("page-break",),), node))
             else:
@@ -264,6 +301,7 @@ def compare_document(
         incomplete(
             "Generated front matter, templates, and extensions have limited verification coverage."
         )
+    body_math_count = len(expected_math)
     expected_notes = {
         str(number): expected_inlines(document.footnotes[label])
         for label, number in list(notes.items())
@@ -284,6 +322,21 @@ def compare_document(
                     "VERIFY303", f"Changed or missing {note_kind} {ident}.", note_part
                 )
             )
+    main = roots[BODY].find("w:body", NS)
+    rendered_math = main.findall(f".//{{{M}}}oMath") if main is not None else []
+    if len(rendered_math) == body_math_count:
+        for (latex, node), equation in zip(
+            expected_math[:body_math_count], rendered_math, strict=True
+        ):
+            normalized = normalize_equation(latex).text
+            if re.fullmatch(
+                r"[A-Za-z0-9{}_^+*/().= \t-]+", normalized
+            ) and not source_tokens_preserved(normalized, equation):
+                findings.append(
+                    _finding(
+                        "VERIFY303", "Native equation lost a source identifier or numeral.", node
+                    )
+                )
     actual = _read_body(roots)
     findings.extend(_chart_findings(roots))
     expected_keys = [unit.key for unit in expected]
@@ -368,9 +421,10 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
         target = chart_targets.get(rid, "")
         target = target.lstrip("/") if target.startswith("/") else "word/" + target
         chart_root = roots.get(target)
-        if chart_root is None or chart_root.find(f".//{{{C}}}plotArea") is None:
+        plot = chart_root.find(f".//{{{C}}}plotArea") if chart_root is not None else None
+        if plot is None or plot.find(f".//{{{C}}}ser") is None:
             findings.append(
-                VerificationFinding("VERIFY303", "Missing native ChartML plot area.", target)
+                VerificationFinding("VERIFY303", "Missing native ChartML plot or series.", target)
             )
             continue
         path = PurePosixPath(target)

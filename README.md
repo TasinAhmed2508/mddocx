@@ -222,7 +222,8 @@ Run mddocx --help for the complete command reference.
 
 Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
 heading levels and bookmarks, hard breaks, list nesting and task status, table cells, hyperlink
-targets, image alt text, native equation presence, footnotes and endnotes, simple captions and
+targets, image alt text, native equation presence and identifiers in simple equations,
+footnotes and endnotes, simple captions and
 reference fields, and native chart/workbook relationships. It returns **0** for a match, **3**
 for differences or incomplete coverage, and **2** for invalid input or package errors. Visual
 pagination, equation equivalence, drawing content, workbook cell values, and generated structures

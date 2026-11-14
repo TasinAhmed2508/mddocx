@@ -47,6 +47,7 @@ def test_clean_document_verifies_offline(reference, monkeypatch, capsys):
         (".//w:p[w:r/w:t='First paragraph.']", None, None),
         (".//w:t[text()='Cell']", "text", "Edited"),
         (".//m:oMath", None, None),
+        (".//m:oMath//m:t[text()='x']", "text", "z"),
         (".//wp:docPr", "descr", ""),
     ],
 )
@@ -71,7 +72,7 @@ def test_independent_edits_report_drift(reference, query, attribute, value):
 def test_verification_reports_unsupported_constructs_and_invalid_packages(tmp_path, capsys):
     source = tmp_path / "code.md"
     output = source.with_suffix(".docx")
-    source.write_text("~~~python\nprint(1)\n~~~", encoding="utf-8")
+    source.write_text("~~~mermaid\nflowchart TD\nA --> B\n~~~", encoding="utf-8")
     Compiler().compile_file(source, output)
     assert main(["verify", str(source), str(output)]) == 3
     assert "VERIFY304" in capsys.readouterr().out
@@ -139,3 +140,15 @@ def test_verify_reports_heading_bookmark_drift(tmp_path):
     )
     findings = compiler.verify(source, write_parts(parts)).findings
     assert findings[0].code == "VERIFY303" and findings[0].line == 1
+
+
+def test_verify_editable_numbered_listing(tmp_path):
+    source = tmp_path / "listing.md"
+    source.write_text(
+        '~~~python {#code caption="Example" linenos=true}\nprint(1)\n\nprint(2)\n~~~',
+        encoding="utf-8",
+    )
+    output = source.with_suffix(".docx")
+    compiler = Compiler()
+    compiler.compile_file(source, output)
+    assert compiler.verify(source, output).ok

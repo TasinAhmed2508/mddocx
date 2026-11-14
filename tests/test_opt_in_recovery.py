@@ -106,3 +106,10 @@ def test_recovery_does_not_publish_past_resource_policy_failure(tmp_path):
     with pytest.raises(MddocxError, match="RESOURCE203"):
         Compiler(RenderConfig(recover=True)).compile_file(source, output)
     assert output.read_bytes() == b"existing"
+
+
+def test_recovery_does_not_bypass_diagram_limits():
+    config = RenderConfig(recover=True)
+    config.mermaid.max_source_chars = 10
+    with pytest.raises(MddocxError, match="DIAGRAM201"):
+        Compiler(config).compile_string("~~~mermaid\nflowchart TD\nA --> B\n~~~")

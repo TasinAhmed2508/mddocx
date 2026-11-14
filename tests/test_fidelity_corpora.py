@@ -7,6 +7,7 @@ import pytest
 from mddocx import MarkdownWord, NotesConfig, RenderConfig, inspect_docx_bytes
 from mddocx.math.converter import DefaultMathConverter
 from mddocx.ooxml.comments import COMMENT_CT, COMMENT_REL
+from mddocx.ooxml.fields import field_instruction_issue
 
 
 NS = {
@@ -101,13 +102,18 @@ def test_section_scoped_counter_fields_use_word_switches():
     # A carriage return here means the reset switch is missing, so Word never
     # restarts section-scoped figure, table, or listing numbering.
     assert instructions
-    assert not any("\r" in instruction or "\n" in instruction for instruction in instructions)
+    assert all(field_instruction_issue(instruction) is None for instruction in instructions)
     for label in ("Figure", "Table", "Listing"):
         assert any(instruction.strip() == f"SEQ {label} \\r 0" for instruction in instructions)
     # Word field switches start with a backslash; chr(92) keeps this assertion
     # immune to test-file escaping rules.
     switch = chr(92)
     assert any(f"{switch}r 1 {switch}s 1" in instruction for instruction in instructions)
+
+
+@pytest.mark.parametrize("instruction", ["SEQ Figure \\q 0", "SEQ Figure \r 0", "UNKNOWN"])
+def test_generated_field_lint_rejects_invalid_instructions(instruction):
+    assert field_instruction_issue(instruction)
 
 
 def test_paragraph_properties_precede_bookmarks():

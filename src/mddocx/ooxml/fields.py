@@ -9,6 +9,36 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from mddocx.ooxml.sequence import insert_ordered
 
 
+_FIELD_SWITCHES = {
+    "TOC": {"o", "h", "z", "u"},
+    "SEQ": {"*", "c", "r", "s"},
+    "REF": {"h"},
+    "STYLEREF": {"n"},
+    "DATE": {"@"},
+    "CREATEDATE": {"@"},
+    "SAVEDATE": {"@"},
+    "FILENAME": {"p"},
+    **{
+        name: set()
+        for name in ("PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "AUTHOR", "DOCPROPERTY")
+    },
+}
+
+
+def field_instruction_issue(instruction: str) -> str | None:
+    """Return the first problem in a field instruction emitted by mddocx."""
+    if any(ord(char) < 32 or ord(char) == 127 for char in instruction):
+        return "control character in field instruction"
+    tokens = re.findall(r'"[^"]*"|\S+', instruction)
+    command = tokens[0].upper() if tokens else ""
+    if command not in _FIELD_SWITCHES:
+        return f"unsupported field command {command!r}"
+    for token in tokens[1:]:
+        if token.startswith("\\") and token[1:].lower() not in _FIELD_SWITCHES[command]:
+            return f"unsupported {command} switch {token!r}"
+    return None
+
+
 def add_hyperlink(
     paragraph,
     text: str,

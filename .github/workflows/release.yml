@@ -49,7 +49,8 @@ jobs:
           for artifact in dist/*.whl dist/*.tar.gz; do
             envdir="$(mktemp -d)"
             python -m venv "$envdir"
-            "$envdir/bin/python" -m pip install "$artifact"
+            "$envdir/bin/python" -m pip install --only-binary=nodejs-wheel-binaries,resvg-py "$artifact"
+            "$envdir/bin/python" scripts/smoke_install.py
             "$envdir/bin/python" -c 'import importlib.metadata as m, mddocx; assert mddocx.__version__ == m.version("mddocx-native")'
             "$envdir/bin/mddocx" --version
             "$envdir/bin/mddocx-native" --version

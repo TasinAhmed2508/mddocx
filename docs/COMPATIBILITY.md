@@ -8,7 +8,7 @@ regression suite. Structural checks do not claim pixel-level certification on ev
 | Surface | Status | Notes |
 |---|---|---|
 | Python 3.11+ | Supported | Declared package floor. |
-| Linux/macOS/Windows | Portable design | Core uses Python + OOXML. SVG conversion additionally depends on the optional CairoSVG stack. |
+| Linux/macOS/Windows | Portable design | Core uses Python + OOXML. The standard install includes the SVG rasterizer, local CSL support, and MathJax on supported binary platforms. |
 | No AI service at runtime | Supported | Parsing/rendering are deterministic. |
 
 ## Markdown / document semantics

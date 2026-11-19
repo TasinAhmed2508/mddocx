@@ -4,6 +4,7 @@ from dataclasses import dataclass, fields
 from math import sqrt
 import re
 from typing import Any, Literal
+from unicodedata import combining, east_asian_width
 
 from .ast.base import Document, Node
 from .ast.block import (
@@ -16,8 +17,9 @@ from .ast.block import (
     SectionBreak,
     Table,
 )
-from .ast.inline import Text
+from .ast.inline import HardBreak, Image, InlineCode, Link, SoftBreak, Text
 from .config import RenderConfig
+from .table_grid import table_grid
 
 LAYOUT_SCHEMA_VERSION = 1
 
@@ -94,8 +96,8 @@ class LayoutPlanner:
                 blocks.append(block)
             if not isinstance(node, Table) or not node.rows:
                 continue
-            columns = max(len(row.cells) for row in node.rows)
             portrait_allocation = allocate_table_widths_mm(node, self.config, available)
+            columns = len(portrait_allocation.intrinsic_widths_mm)
             intrinsic = portrait_allocation.intrinsic_total_mm
             orientation: Literal["portrait", "landscape"] = self.config.page.orientation
             reason = "document orientation"
@@ -213,8 +215,14 @@ def allocate_table_widths_mm(
     above the feasible minimum; spare width grows flexible columns up to the
     configured maximum.
     """
-    columns = max((len(row.cells) for row in table.rows), default=0)
-    intrinsic = tuple(_column_intrinsic_width_mm(table, config, i) for i in range(columns))
+    columns, rows = table_grid(table, config.limits.max_table_cells)
+    samples: list[list[tuple[str, int]]] = [[] for _ in range(columns)]
+    for row in rows:
+        for start, cell in row:
+            text = _plain_text(cell.children)
+            for column in range(start, start + cell.column_span):
+                samples[column].append((text, cell.column_span))
+    intrinsic = tuple(_column_intrinsic_width_mm(texts, config) for texts in samples)
     return _fit_table_widths(intrinsic, config, available_width_mm)
 
 
@@ -253,19 +261,29 @@ def _fit_table_widths(
     return TableWidthAllocation(
         available_width_mm,
         intrinsic,
-        tuple(max(3.0, width) for width in widths),
+        tuple(widths),
     )
 
 
-def _column_intrinsic_width_mm(table: Table, config: RenderConfig, index: int) -> float:
-    texts = [_plain_text(row.cells[index]) for row in table.rows if index < len(row.cells)]
+def _column_intrinsic_width_mm(texts: list[tuple[str, int]], config: RenderConfig) -> float:
     if not texts:
         return config.table.min_column_width_mm
+
+    def display_width(text: str) -> int:
+        return sum(2 if east_asian_width(c) in {"W", "F"} else 1 for c in text if not combining(c))
+
+    lines = [(line, span) for text, span in texts for line in text.split("\n")]
     max_word = max(
-        (len(word) for text in texts for word in re.split(r"\s+", text) if word), default=1
+        (
+            display_width(word) / span
+            for line, span in lines
+            for word in re.findall(r"[^\s/]+", line)
+        ),
+        default=1,
     )
-    peak = max(map(len, texts), default=1)
-    average = sum(map(len, texts)) / max(len(texts), 1)
+    lengths = [display_width(line) / span for line, span in lines]
+    peak = max(lengths, default=1)
+    average = sum(lengths) / len(lengths)
     estimated = 5.0 + max_word * 1.75 + sqrt(peak) * 1.1 + sqrt(average) * 0.7
     return max(
         config.table.min_column_width_mm,
@@ -278,6 +296,16 @@ def _plain_text(value: Any) -> str:
         return value.text
     if isinstance(getattr(value, "source_text", None), str):
         return value.source_text
+    if isinstance(value, InlineCode):
+        return value.code
+    if isinstance(value, Image):
+        return value.alt
+    if isinstance(value, Link):
+        return _plain_text(value.children)
+    if isinstance(value, HardBreak):
+        return "\n"
+    if isinstance(value, SoftBreak):
+        return " "
     if isinstance(value, (list, tuple)):
         return "".join(_plain_text(item) for item in value)
     if isinstance(value, Node):

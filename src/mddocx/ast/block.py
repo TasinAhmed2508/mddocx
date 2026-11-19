@@ -69,6 +69,8 @@ class TableCell(Node):
     children: list[Node] = field(default_factory=list)
     alignment: str | None = None
     header: bool = False
+    row_span: int = 1
+    column_span: int = 1
 
 
 @dataclass(slots=True)

@@ -267,4 +267,6 @@ class ResourceResolver:
         return prepare_image(path, temp_dir=self.temp_dir, policy=self.policy, images=self.images)
 
     def _convert_svg(self, path: Path) -> Path:
-        return convert_svg(path, self.temp_dir, self.images)
+        return convert_svg(
+            path, self.temp_dir, self.images, max_bytes=self.policy.max_resource_size
+        )

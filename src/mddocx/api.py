@@ -50,6 +50,8 @@ class MarkdownWord:
             self.config.extensions,
             self.config.metadata,
             recovery_reporter=self.reporter if self.config.recover else None,
+            reporter=self.reporter,
+            max_table_cells=self.config.limits.max_table_cells,
         )
         self.normalizer = Normalizer(self.reporter)
         self.last_stats = RenderStats()
@@ -192,7 +194,11 @@ class MarkdownWord:
                 normalize_start = perf_counter()
                 ast = self.normalizer.normalize(ast)
                 normalize_ms = (perf_counter() - normalize_start) * 1000
-                if cache is not None and cache_key is not None:
+                if (
+                    cache is not None
+                    and cache_key is not None
+                    and not any(item.code.startswith("TABLE") for item in self.diagnostics)
+                ):
                     try:
                         cache.save(cache_key, ast)
                     except (OSError, TypeError, ValueError) as exc:

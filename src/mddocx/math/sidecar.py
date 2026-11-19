@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,16 @@ def node_executable() -> str | None:
     if configured:
         return shutil.which(configured) or (configured if Path(configured).is_file() else None)
     suffix = ".exe" if os.name == "nt" else ""
+    try:
+        dist = metadata.distribution("nodejs-wheel-binaries")
+    except metadata.PackageNotFoundError:
+        pass
+    else:
+        for entry in dist.files or ():
+            if entry.name == f"node{suffix}":
+                executable = Path(dist.locate_file(entry))
+                if executable.is_file():
+                    return str(executable)
     local = Path(sys.executable).with_name(f"node{suffix}")
     if local.is_file():
         return str(local)
@@ -72,7 +83,7 @@ class MathJaxSidecar:
         if self.is_script and self.runtime is None:
             return (
                 "the MathJax sidecar needs a JavaScript runtime; install Node.js, "
-                f"install the mddocx[mathjax] extra, or set {NODE_ENV_VAR}"
+                f"reinstall mddocx-native on a supported platform, or set {NODE_ENV_VAR}"
             )
         return None
 

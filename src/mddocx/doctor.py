@@ -6,6 +6,7 @@ from importlib import metadata
 import json
 import os
 import platform
+from pathlib import Path
 import shutil
 import sys
 import tempfile
@@ -19,19 +20,42 @@ __all__ = ["DoctorReport", "conflicting_distributions", "install_conflict_messag
 
 
 def svg_support_status() -> str:
-    """Report whether SVG conversion can actually run.
+    """Exercise the same SVG backend used by conversions."""
+    from .config import ImageConfig
+    from .resources.preparation import convert_svg
 
-    CairoSVG installs as a pure-Python package but needs a native cairo library
-    at import time, which is the one optional feature that can be installed and
-    still fail, so it is probed rather than reported by version alone.
-    """
     try:
-        import cairosvg  # noqa: F401
-    except ImportError:
-        return "not installed; install the images extra for SVG sources"
-    except OSError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else "unknown error"
-        return f"unavailable: the native cairo library was not found ({first_line})"
+        with tempfile.TemporaryDirectory(prefix="mddocx-doctor-") as folder:
+            source = Path(folder) / "probe.svg"
+            source.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2">'
+                '<rect width="2" height="2" fill="blue"/></svg>',
+                encoding="utf-8",
+            )
+            convert_svg(source, source.parent, ImageConfig())
+    except Exception as exc:
+        return f"unavailable: {exc}"
+    return "ready"
+
+
+def csl_support_status() -> str:
+    from .bibliography import BibliographyEntry
+    from .csl import CslProcessor
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="mddocx-doctor-") as folder:
+            style = Path(folder) / "probe.csl"
+            style.write_text(
+                '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" class="in-text">'
+                "<info><title>Probe</title><id>urn:mddocx:doctor</id>"
+                "<updated>2000-01-01T00:00:00+00:00</updated></info>"
+                '<citation><layout><text variable="title"/></layout></citation>'
+                '<bibliography><layout><text variable="title"/></layout></bibliography></style>',
+                encoding="utf-8",
+            )
+            CslProcessor(style, [BibliographyEntry("probe", "Probe")])
+    except Exception as exc:
+        return f"unavailable: {exc}"
     return "ready"
 
 
@@ -66,6 +90,7 @@ class DoctorReport:
     math_engine_error: str | None = None
     install_conflict: tuple[str, ...] = ()
     svg_support: str = "unknown"
+    csl_support: str = "unknown"
 
     @property
     def mathjax_ready(self) -> bool:
@@ -142,6 +167,7 @@ class DoctorReport:
                 ),
                 f"MathJax protocol: {self.mathjax_protocol}",
                 f"SVG conversion: {self.svg_support}",
+                f"Custom CSL support: {self.csl_support}",
                 "Dependencies:",
             ]
         )
@@ -169,7 +195,8 @@ def run_doctor() -> DoctorReport:
         "lxml": "lxml",
         "Pillow": "Pillow",
         "Pygments": "Pygments",
-        "CairoSVG": "CairoSVG",
+        "resvg-py": "resvg-py",
+        "citeproc-py": "citeproc-py",
         "PyYAML": "PyYAML",
         "latex2mathml": "latex2mathml",
         "openpyxl": "openpyxl",
@@ -187,7 +214,8 @@ def run_doctor() -> DoctorReport:
                 "python-docx": "docx",
                 "Pillow": "PIL",
                 "Pygments": "pygments",
-                "CairoSVG": "cairosvg",
+                "resvg-py": "resvg_py",
+                "citeproc-py": "citeproc",
                 "PyYAML": "yaml",
                 "prompt-toolkit": "prompt_toolkit",
             }.get(label, label)
@@ -238,4 +266,5 @@ def run_doctor() -> DoctorReport:
         math_engine_error=math_engine_error,
         install_conflict=conflicting_distributions(),
         svg_support=svg_support_status(),
+        csl_support=csl_support_status(),
     )

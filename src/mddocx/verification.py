@@ -21,6 +21,7 @@ from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import clean_xml_text
 from .references import ReferenceRegistry
+from .table_grid import repeatable_header_rows, table_grid
 
 BODY = "word/document.xml"
 _RELS = "word/_rels/document.xml.rels"
@@ -205,16 +206,38 @@ def compare_document(
             elif isinstance(node, block.SectionBreak):
                 incomplete("Section break layout is outside current coverage.", node)
             elif isinstance(node, block.Table):
-                rows = tuple(
-                    tuple(expected_inlines(cell.children) for cell in row.cells)
-                    for row in node.rows
-                )
+                columns, placements = table_grid(node, config.limits.max_table_cells)
+                repeat = repeatable_header_rows(node) if config.table.repeat_header else 0
+                active: dict[int, tuple[int, int]] = {}
+                expected_rows = []
+                for index, entries in enumerate(placements):
+                    row = {column: cell for column, cell in entries}
+                    cells = []
+                    column = 0
+                    while column < columns:
+                        if column in active and active[column][0] > index:
+                            span = active[column][1]
+                            cells.append((span, "continue", ()))
+                        elif column in row:
+                            cell = row[column]
+                            span = cell.column_span
+                            merge = "restart" if cell.row_span > 1 else None
+                            if merge:
+                                active[column] = (index + cell.row_span, span)
+                            cells.append((span, merge, expected_inlines(cell.children)))
+                        else:
+                            span = 1
+                            cells.append((span, None, ()))
+                        column += span
+                    expected_rows.append((index < repeat, tuple(cells)))
                 title = (
                     (node.caption or ("Table" if node.identifier else None))
                     if config.references.captions
                     else None
                 )
-                captioned([_Unit("table", rows, node)], "Table", title, node)
+                captioned(
+                    [_Unit("table", (columns, tuple(expected_rows)), node)], "Table", title, node
+                )
             elif isinstance(node, block.ImageBlock):
                 title = (
                     (
@@ -505,13 +528,40 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
                     )
                 )
                 continue
-            rows = tuple(
-                tuple(_read_inlines(cell, links) for cell in row.findall(f"{{{W}}}tc"))
-                for row in child.findall(f"{{{W}}}tr")
-            )
-            result.append(_Unit("table", rows))
+            rows = []
+            for row in child.findall("w:tr", NS):
+                cells = []
+                for cell in row.findall("w:tc", NS):
+                    span = cell.find("w:tcPr/w:gridSpan", NS)
+                    merge = cell.find("w:tcPr/w:vMerge", NS)
+                    cells.append(
+                        (
+                            _word_span(span),
+                            merge.get(f"{{{W}}}val", "continue") if merge is not None else None,
+                            _read_inlines(cell, links),
+                        )
+                    )
+                header = row.find("w:trPr/w:tblHeader", NS)
+                repeated = header is not None and header.get(f"{{{W}}}val", "1") not in {
+                    "0",
+                    "false",
+                    "off",
+                }
+                rows.append((repeated, tuple(cells)))
+            columns = len(child.findall("w:tblGrid/w:gridCol", NS))
+            result.append(_Unit("table", (columns, tuple(rows))))
         elif child.tag == f"{{{W}}}p":
             tokens = _read_inlines(child, links)
+            before, after = child.getprevious(), child.getnext()
+            if (
+                not tokens
+                and before is not None
+                and after is not None
+                and before.tag == after.tag == f"{{{W}}}tbl"
+            ):
+                spacing = child.find("w:pPr/w:spacing", NS)
+                if spacing is not None and spacing.get(f"{{{W}}}line") == "20":
+                    continue
             style = child.find("w:pPr/w:pStyle", NS)
             name = style.get(f"{{{W}}}val", "") if style is not None else ""
             heading = _HEADING.fullmatch(name)
@@ -549,6 +599,15 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
             elif tokens or child.find("w:pPr/w:sectPr", NS) is None:
                 result.append(_Unit("paragraph", tokens))
     return result
+
+
+def _word_span(element) -> int:
+    if element is None:
+        return 1
+    try:
+        return int(element.get(f"{{{W}}}val", "1"))
+    except ValueError:
+        return 0
 
 
 def _read_inlines(parent: etree._Element, links: dict) -> tuple:

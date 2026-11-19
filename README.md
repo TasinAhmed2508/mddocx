@@ -101,24 +101,21 @@ cd mddocx
 python -m pip install -e ".[dev]"
 ```
 
-Optional features:
+The standard install includes SVG rasterization, local CSL citation styles, and the bundled
+MathJax sidecar with a Node runtime on supported platforms. The Node wheel download is roughly
+42–63 MB depending on platform. Binary builds cover Windows x64/ARM64, macOS 13 or newer
+on Intel/Apple Silicon, and Linux x64/ARM64 with glibc 2.28+ or musl 1.2+.
+The pure-Python equation engine remains available as a fallback.
 
-```bash
-# Everything except the Node.js runtime
-python -m pip install "mddocx-native[all]"
+For tools and unattended scripts:
 
-# Include a Node.js runtime so the bundled MathJax engine works without a manual install (~45 MB)
-python -m pip install "mddocx-native[mathjax]"
+    python -m pip install mddocx-native
+    python -m mddocx report.md -o report.docx --json
+    python -m mddocx verify report.md report.docx --json
 
-# Individually
-python -m pip install "mddocx-native[images]"
-python -m pip install "mddocx-native[academic]"   # arbitrary local CSL styles
-python -m pip install "mddocx-native[math]"        # included by default; kept for compatibility
-```
-
-Equation rendering needs no extra package: a pure-Python engine is always installed, and the
-bundled MathJax sidecar is used automatically when a JavaScript runtime is available. Run
-`mddocx doctor` to see which engine this machine uses.
+Conversion JSON is a single object with the overall exit code, diagnostics, and an ordered list
+of per-file results. Each result records the source, the published output if any, its status,
+and its diagnostics. Conversion reports recovered output with exit 3 and failures with exit 2.
 
 ### Install troubleshooting
 
@@ -141,11 +138,10 @@ bundled MathJax sidecar is used automatically when a JavaScript runtime is avail
   is published as a source distribution only, so `--only-binary=:all:` and wheel-only mirrors
   cannot install it. Allow source builds for that package.
 - **`mddocx doctor` reports no JavaScript runtime.** Equations still render through the
-  pure-Python engine. Install Node.js, or `mddocx-native[mathjax]`, for the MathJax engine.
-- **SVG images fail after installing the `images` or `all` extra.** CairoSVG needs a native cairo
-  library at run time (not just the Python package). Install it with the usual system package for
-  your platform, or convert the SVG to PNG first; every other document feature works without it,
-  and `mddocx doctor` reports the exact reason when it is missing.
+  pure-Python engine. On supported systems, reinstall mddocx-native to restore the packaged
+  runtime, or set MDDOCX_NODE to an existing local runtime.
+- **An SVG failed to convert.** Run mddocx doctor to exercise the installed SVG backend.
+  SVG support ships with the standard install.
 - **Bangla text looks wrong in Word.** The default automatically chooses SutonnyMJ when it is
   installed, or an installed Unicode Bangla font otherwise. Install the selected font on the
   machine opening the DOCX, or use `--bengali-font none` to keep Bangla text as Unicode.
@@ -209,6 +205,13 @@ Conversion warnings are shown in single-file, batch, and interactive mode. Diagn
 paths must differ from the input, generated DOCX, and each other.
 
 Run mddocx --help for the complete command reference.
+
+## Tables
+
+GFM pipe tables, consistently aligned fixed-width tables, and complete HTML tables convert to
+editable Word tables. HTML table captions, header groups, alignment, line breaks, and merged
+cells are supported. Extra pipe cells widen the table and produce a diagnostic. Missing cells
+are padded. Unsupported HTML tables remain visible as source text with a diagnostic.
 
 ## Verify, recover, and watch
 

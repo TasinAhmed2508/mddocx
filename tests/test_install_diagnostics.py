@@ -164,7 +164,7 @@ def test_doctor_missing_engine_names_the_optional_extra():
 def test_script_sidecar_without_a_runtime_is_not_available(tmp_path, monkeypatch):
     script = tmp_path / "fake.mjs"
     script.write_text("// stand-in", encoding="utf-8")
-    monkeypatch.delenv("MDDOCX_NODE", raising=False)
+    monkeypatch.setenv("MDDOCX_NODE", str(tmp_path / "missing-node"))
     monkeypatch.setattr("mddocx.math.sidecar.shutil.which", lambda name: None)
     node_executable.cache_clear()
 
@@ -450,14 +450,14 @@ def test_svg_support_reports_an_import_failure(monkeypatch):
     real_import = builtins.__import__
 
     def failing_import(name, *args, **kwargs):
-        if name == "cairosvg":
-            raise OSError('no library called "cairo-2" was found')
+        if name == "resvg_py":
+            raise OSError("no native SVG library was found")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", failing_import)
     status = doctor.svg_support_status()
     assert status.startswith("unavailable")
-    assert "cairo" in status
+    assert "SVG" in status
 
 
 def test_first_run_without_a_terminal_keeps_the_usage_error(monkeypatch, capsys):

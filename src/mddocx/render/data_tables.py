@@ -11,7 +11,7 @@ from mddocx.data import load_tabular_data
 from mddocx.diagnostics import Diagnostic, MddocxError
 from mddocx.recovery import recovery_block
 
-from . import citations, tables, text_blocks
+from . import tables, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -75,16 +75,7 @@ def render_data_table(renderer: DocxRenderer, node: DataTableBlock) -> None:
     table_node = Table(
         rows=rows, identifier=node.identifier, caption=node.caption, source=node.source
     )
-    caption = (
-        (node.caption or ("Table" if node.identifier else None))
-        if renderer.config.references.captions
-        else None
-    )
-    if caption and renderer.config.references.table_caption_position == "above":
-        citations.render_caption(renderer, "Table", caption, node.identifier)
     tables.render_table_with_layout(renderer, table_node)
-    if caption and renderer.config.references.table_caption_position == "below":
-        citations.render_caption(renderer, "Table", caption, node.identifier)
     renderer.reporter.info(
         "DATA100",
         f"Rendered {len(data.rows)} rows from {Path(node.source_path).name} as a native Word table.",

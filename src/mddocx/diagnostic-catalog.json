@@ -112,6 +112,34 @@
     "remediations": []
   },
   {
+    "code": "CLI401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CLI402",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CLI403",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "CLI404",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
     "code": "CONFIG301",
     "severities": [
       "error"
@@ -484,6 +512,13 @@
     "code": "IMAGE211",
     "severities": [
       "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "INTERNAL500",
+    "severities": [
+      "error"
     ],
     "remediations": []
   },
@@ -996,9 +1031,48 @@
     ]
   },
   {
+    "code": "TABLE201",
+    "severities": [
+      "warning"
+    ],
+    "remediations": [
+      "Add headers and delimiter cells for the extra columns."
+    ]
+  },
+  {
+    "code": "TABLE202",
+    "severities": [
+      "warning"
+    ],
+    "remediations": [
+      "Use a complete table with rectangular rows and supported cell elements."
+    ]
+  },
+  {
     "code": "TABLE301",
     "severities": [
       "info"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "TABLE401",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "TABLE402",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
+    "code": "TABLE403",
+    "severities": [
+      "error"
     ],
     "remediations": []
   },

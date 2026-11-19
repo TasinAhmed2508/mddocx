@@ -62,7 +62,11 @@ jobs:
       - run: pytest -m visual -rs
 
   package:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -71,37 +75,30 @@ jobs:
       - run: python -m pip install --upgrade build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - name: Smoke-test built wheel in a clean environment
+      - name: Smoke-test both archives on this platform
         shell: bash
         run: |
-          python -m venv /tmp/mddocx-wheel
-          /tmp/mddocx-wheel/bin/python -m pip install dist/*.whl
-          /tmp/mddocx-wheel/bin/mddocx --version
-          /tmp/mddocx-wheel/bin/mddocx-native --version
-          /tmp/mddocx-wheel/bin/python -m mddocx --version
-          /tmp/mddocx-wheel/bin/mddocx doctor
-          /tmp/mddocx-wheel/bin/mddocx tests/fixtures/ai_markdown/chatgpt_sphere_equations.md -o /tmp/ai-math.docx
-          /tmp/mddocx-wheel/bin/mddocx inspect /tmp/ai-math.docx --strict
-          /tmp/mddocx-wheel/bin/mddocx math-check tests/fixtures/ai_markdown/chatgpt_sphere_equations.md --strict
-          /tmp/mddocx-wheel/bin/mddocx api --json > /tmp/public-api.json
-          /tmp/mddocx-wheel/bin/mddocx capabilities --json > /tmp/capabilities.json
-          printf '# Package verification\n\nEditable equation $x^2$.\n' > /tmp/verify.md
-          /tmp/mddocx-wheel/bin/mddocx /tmp/verify.md -o /tmp/verify.docx
-          /tmp/mddocx-wheel/bin/mddocx verify /tmp/verify.md /tmp/verify.docx --json
-          /tmp/mddocx-wheel/bin/python -c "import json; p=json.load(open('/tmp/public-api.json')); assert p['api_version']=='1'"
-      - name: Smoke-test optional extras from the built wheel
-        shell: bash
+          for archive in dist/*.whl dist/*.tar.gz; do
+            python -m venv "$RUNNER_TEMP/venv-$(basename "$archive")"
+            bindir="$RUNNER_TEMP/venv-$(basename "$archive")/bin"
+            if [ "$RUNNER_OS" = Windows ]; then
+              bindir="$RUNNER_TEMP/venv-$(basename "$archive")/Scripts"
+            fi
+            "$bindir/python" -m pip install --only-binary=nodejs-wheel-binaries,resvg-py "$archive"
+            "$bindir/mddocx" --version
+            "$bindir/mddocx-native" --version
+            "$bindir/python" scripts/smoke_install.py
+            "$bindir/mddocx" capabilities --json > capabilities.json
+          done
+      - name: Smoke-test conversion with no network in Debian and Alpine
+        if: runner.os == 'Linux'
         run: |
-          sudo apt-get update && sudo apt-get install -y libcairo2
-          wheel=$(ls dist/*.whl | head -1)
-          python -m venv /tmp/mddocx-extras
-          /tmp/mddocx-extras/bin/python -m pip install "${wheel}[all]"
-          /tmp/mddocx-extras/bin/python -c "import cairosvg, citeproc, latex2mathml"
-          /tmp/mddocx-extras/bin/mddocx doctor
-          /tmp/mddocx-extras/bin/python -m mddocx tests/fixtures/ai_markdown/chatgpt_sphere_equations.md -o /tmp/extras-math.docx
-      - name: Smoke-test source distribution in a clean environment
-        shell: bash
-        run: |
-          python -m venv /tmp/mddocx-sdist
-          /tmp/mddocx-sdist/bin/python -m pip install dist/*.tar.gz
-          /tmp/mddocx-sdist/bin/python -c "import importlib.metadata as md, mddocx; assert mddocx.__version__ == md.version('mddocx-native')"
+          for variant in slim alpine; do
+            docker build -t "mddocx-smoke:$variant" -f - . <<EOF
+          FROM python:3.12-$variant
+          COPY dist/*.whl /tmp/
+          RUN python -m pip install --only-binary=nodejs-wheel-binaries,resvg-py /tmp/*.whl
+          COPY scripts/smoke_install.py /smoke_install.py
+          EOF
+            docker run --rm --network none "mddocx-smoke:$variant" python /smoke_install.py
+          done

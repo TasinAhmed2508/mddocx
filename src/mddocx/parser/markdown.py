@@ -53,7 +53,6 @@ from .compatibility import (
     normalize_bibliography_directives,
     normalize_definition_lists,
     normalize_callout_containers,
-    normalize_simple_tables,
     protect_escaped_footnote_references,
     split_footnote_references,
     split_text_math,
@@ -111,14 +110,21 @@ class MarkdownParser:
         metadata_config: MetadataConfig | None = None,
         *,
         recovery_reporter: DiagnosticReporter | None = None,
+        reporter: DiagnosticReporter | None = None,
+        max_table_cells: int = 100_000,
     ) -> None:
         self.recovery_reporter = recovery_reporter
+        self.reporter = reporter or DiagnosticReporter()
+        self.max_table_cells = max_table_cells
         self.extensions = extensions
         self.metadata_config = metadata_config or MetadataConfig()
         self.last_metadata_report = MetadataSanitizationReport(
             policy=self.metadata_config.ai_export
         )
         self.md = MarkdownIt("commonmark").enable("table").enable("strikethrough")
+        from .tables import table_block
+
+        self.md.block.ruler.at("table", table_block, {"alt": ["paragraph", "reference"]})
         call_configure_markdown(self.extensions, self.md)
         self.source_file: str | None = None
 
@@ -148,13 +154,12 @@ class MarkdownParser:
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
         normalized = normalize_math_syntax(
-            normalize_simple_tables(
-                normalize_bibliography_directives(
-                    normalize_definition_lists(normalize_callout_containers(body))
-                )
+            normalize_bibliography_directives(
+                normalize_definition_lists(normalize_callout_containers(body))
             )
         )
-        tokens = self.md.parse(normalized)
+        self._parse_env = {}
+        tokens = self.md.parse(normalized, self._parse_env)
         self._line_offset = line_offset + base_line_offset
         children, _ = self._parse_blocks(tokens, 0, None)
         children = self._postprocess_blocks(children)
@@ -341,6 +346,16 @@ class MarkdownParser:
             elif t.type == "table_open":
                 node, i = self._parse_table(tokens, i)
                 nodes.append(node)
+            elif t.type == "mddocx_table":
+                nodes.append(self._compatible_table(t))
+                i += 1
+            elif t.type == "mddocx_html_table" or (
+                t.type == "html_block" and re.match(r"\s*<table(?:\s|>)", t.content, re.I)
+            ):
+                from .html_table import parse_html_table
+
+                nodes.append(parse_html_table(self, t))
+                i += 1
             elif t.type == "hr":
                 nodes.append(HorizontalRule(source=self._pos(t)))
                 i += 1
@@ -724,6 +739,51 @@ class MarkdownParser:
         if pos < len(text):
             nodes.append(Text(text=text[pos:]))
         return nodes
+
+    def _compatible_table(self, token: Token) -> Table:
+        from mddocx.table_grid import WORD_COLUMNS
+
+        rows = token.meta["rows"]
+        alignments = token.meta["alignments"]
+        width = max(len(cells) for _, cells in rows)
+        source = self._pos(token)
+        if width > WORD_COLUMNS or len(rows) * width > self.max_table_cells:
+            code = "TABLE401" if width > WORD_COLUMNS else "LIMIT404"
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    code,
+                    "Table exceeds the Word column or configured cell limit. Split the table.",
+                    source.file,
+                    source.line,
+                )
+            )
+        result = []
+        for index, (line, cells) in enumerate(rows):
+            position = SourcePosition(self.source_file, line + 1 + self._line_offset, 1)
+            if len(cells) > len(alignments):
+                self.reporter.warn(
+                    "TABLE201",
+                    "Table widened to preserve extra cells.",
+                    position.file,
+                    position.line,
+                    "Add headers and delimiter cells for the extra columns.",
+                )
+            contents = []
+            for column in range(width):
+                parsed: list[Token] = []
+                if column < len(cells):
+                    self.md.inline.parse(cells[column], self.md, self._parse_env, parsed)
+                contents.append(
+                    TableCell(
+                        children=self._inline(parsed, position),
+                        alignment=alignments[column] if column < len(alignments) else None,
+                        header=index == 0,
+                        source=position,
+                    )
+                )
+            result.append(TableRow(cells=contents, header=index == 0, source=position))
+        return Table(rows=result, source=source)
 
     def _parse_table(self, tokens: list[Token], i: int):
         opener = tokens[i]

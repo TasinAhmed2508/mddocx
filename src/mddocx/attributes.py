@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import re
 import shlex
 
+
 @dataclass(slots=True)
 class Attributes:
     identifier: str | None = None

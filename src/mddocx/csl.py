@@ -27,9 +27,7 @@ class CslProcessor:
             from citeproc import CitationStylesBibliography, CitationStylesStyle, formatter
             from citeproc.source.json import CiteProcJSON
         except ImportError as exc:
-            raise CslUnavailable(
-                "Install mddocx-native[academic] for arbitrary CSL styles"
-            ) from exc
+            raise CslUnavailable("Reinstall mddocx-native to restore custom CSL support") from exc
         source = CiteProcJSON([self._json_entry(entry) for entry in entries])
         style = CitationStylesStyle(str(style_file), validate=False)
         self._processor = CitationStylesBibliography(style, source, formatter.plain)

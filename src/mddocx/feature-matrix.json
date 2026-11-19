@@ -52,10 +52,10 @@
     },
     {
       "id": "tables",
-      "syntax": "GFM pipe tables and documented simple-table compatibility form",
+      "syntax": "GFM pipe tables, aligned fixed-width tables, and HTML tables with row and column spans",
       "ast": "Table, TableRow and TableCell",
-      "ooxml": "native w:tbl with widths, alignment, repeated headers and non-splitting short rows",
-      "malformed_diagnostic": "NORM201 for irregular canonical rows",
+      "ooxml": "native w:tbl with fixed widths, alignment, repeated headers, gridSpan, and vMerge",
+      "malformed_diagnostic": "TABLE201 for preserved extra cells, TABLE202 for literal HTML fallback, TABLE401–403 for invalid Word grids",
       "word365": "implemented; automatic landscape planning tested",
       "optional_renderer": "automated visual smoke",
       "tests": [

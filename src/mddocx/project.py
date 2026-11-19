@@ -28,7 +28,7 @@ from .metadata import sanitize_markdown_metadata
 from .source import acquire_markdown_source
 
 _PROJECT_SCHEMA_VERSION = 1
-_PROJECT_ENGINE_VERSION = "mddocx-project-v4"
+_PROJECT_ENGINE_VERSION = "mddocx-project-v5"
 _INCLUDE_RE = re.compile(
     r"^[ \t]{0,3}@include[ \t]+(?:\"(?P<double>[^\"]+)\"|'(?P<single>[^']+)'|(?P<bare>[^\s#]+))[ \t]*$"
 )
@@ -120,6 +120,8 @@ class ProjectCompiler:
             self.config.extensions,
             self.config.metadata,
             recovery_reporter=self.reporter if self.config.recover else None,
+            reporter=self.reporter,
+            max_table_cells=self.config.limits.max_table_cells,
         )
         self.normalizer = Normalizer(self.reporter)
         self._dependencies: set[Path] = {manifest.path.resolve()}

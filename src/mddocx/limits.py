@@ -4,10 +4,11 @@ from dataclasses import fields, is_dataclass
 from typing import Any
 
 from .ast.base import Node
-from .ast.block import ImageBlock, MathBlock, TableCell
+from .ast.block import ImageBlock, MathBlock, Table
 from .ast.inline import Image, InlineMath
 from .config import CompilationLimits
 from .diagnostics import Diagnostic, MddocxError
+from .table_grid import table_grid
 
 
 def enforce_input_limit(markdown: str, limits: CompilationLimits) -> None:
@@ -39,16 +40,9 @@ def enforce_ast_limits(document: Node, limits: CompilationLimits) -> None:
                 raise MddocxError(
                     Diagnostic("error", "LIMIT402", f"AST exceeds {limits.max_ast_nodes} nodes.")
                 )
-            if isinstance(value, TableCell):
-                counts["table_cells"] += 1
-                if counts["table_cells"] > limits.max_table_cells:
-                    raise MddocxError(
-                        Diagnostic(
-                            "error",
-                            "LIMIT404",
-                            f"Document exceeds {limits.max_table_cells} table cells.",
-                        )
-                    )
+            if isinstance(value, Table):
+                columns, _ = table_grid(value, limits.max_table_cells - counts["table_cells"])
+                counts["table_cells"] += columns * len(value.rows)
             if isinstance(value, (ImageBlock, Image)):
                 counts["images"] += 1
                 if counts["images"] > limits.max_images:

@@ -399,155 +399,6 @@ def _split_dollars(text: str) -> list[tuple[str, str]]:
     return result
 
 
-_SIMPLE_TABLE_SEPARATOR_RE = re.compile(r"^-{3,}$")
-
-
-def _simple_table_spans(line: str) -> list[tuple[int, int]] | None:
-    """Return fixed-width column dash spans for Pandoc/simple Markdown tables."""
-    if not line.strip() or any(ch not in "- \t" for ch in line):
-        return None
-    spans = [(m.start(), m.end()) for m in re.finditer(r"-{3,}", line)]
-    return spans if len(spans) >= 2 else None
-
-
-def _simple_table_cells(line: str, starts: list[int]) -> list[str]:
-    cells: list[str] = []
-    for idx, start in enumerate(starts):
-        end = starts[idx + 1] if idx + 1 < len(starts) else len(line)
-        cells.append(line[start:end].strip())
-    return cells
-
-
-def _merge_simple_table_lines(lines: list[str], starts: list[int]) -> list[str]:
-    cols = ["" for _ in starts]
-    for line in lines:
-        if not line.strip():
-            continue
-        cells = _simple_table_cells(line, starts)
-        for i, cell in enumerate(cells):
-            if cell:
-                cols[i] = f"{cols[i]} {cell}".strip()
-    return cols
-
-
-def _pipe_row(cells: list[str]) -> str:
-    # Pipes are structural in GFM tables; escape literal bars from source cells.
-    safe = [cell.replace("|", r"\|") for cell in cells]
-    return "| " + " | ".join(safe) + " |"
-
-
-def normalize_simple_tables(markdown: str) -> str:
-    """Normalize common Pandoc/simple fixed-width tables into GFM pipe tables.
-
-    This is deliberately syntax-driven rather than document-specific. It supports
-    bordered Pandoc simple tables and the common header+dash-line compact form.
-    """
-    lines = markdown.split("\n")
-    out: list[str] = []
-    i = 0
-    while i < len(lines):
-        # Bordered Pandoc form. The outer border is commonly one long dash run,
-        # while the header separator contains one dash run per fixed-width column.
-        if re.fullmatch(r"\s*-{10,}\s*", lines[i] or ""):
-            header_sep = None
-            header_spans = None
-            for j in range(i + 2, min(len(lines), i + 8)):
-                if lines[j].lstrip().startswith("#"):
-                    break
-                candidate = _simple_table_spans(lines[j])
-                if candidate:
-                    header_sep = j
-                    header_spans = candidate
-                    break
-            if header_sep is not None and header_spans is not None:
-                closing = None
-                for j in range(header_sep + 1, len(lines)):
-                    if re.fullmatch(r"\s*-{10,}\s*", lines[j] or ""):
-                        closing = j
-                        break
-                    if lines[j].lstrip().startswith("#"):
-                        break
-                if closing is not None:
-                    starts = [s for s, _ in header_spans]
-                    header = _merge_simple_table_lines(lines[i + 1 : header_sep], starts)
-                    rows = [
-                        _simple_table_cells(line, starts)
-                        for line in lines[header_sep + 1 : closing]
-                        if line.strip()
-                    ]
-                    if out and out[-1].strip():
-                        out.append("")
-                    out.append(_pipe_row(header))
-                    out.append(_pipe_row(["---"] * len(starts)))
-                    out.extend(_pipe_row(row) for row in rows)
-                    out.append("")
-                    i = closing + 1
-                    continue
-
-        # Bordered variant whose top border itself has per-column dash groups.
-        spans = _simple_table_spans(lines[i])
-        if spans:
-            starts = [s for s, _ in spans]
-            header_sep = None
-            for j in range(i + 1, min(len(lines), i + 8)):
-                candidate = _simple_table_spans(lines[j])
-                if candidate and len(candidate) == len(spans):
-                    header_sep = j
-                    break
-            if header_sep is not None and header_sep > i + 1:
-                closing = None
-                for j in range(header_sep + 1, len(lines)):
-                    candidate = _simple_table_spans(lines[j])
-                    if (candidate and len(candidate) == len(spans)) or re.fullmatch(
-                        r"\s*-{10,}\s*", lines[j] or ""
-                    ):
-                        closing = j
-                        break
-                    if lines[j].lstrip().startswith("#"):
-                        break
-                if closing is not None:
-                    header = _merge_simple_table_lines(lines[i + 1 : header_sep], starts)
-                    rows = [
-                        _simple_table_cells(line, starts)
-                        for line in lines[header_sep + 1 : closing]
-                        if line.strip()
-                    ]
-                    if out and out[-1].strip():
-                        out.append("")
-                    out.append(_pipe_row(header))
-                    out.append(_pipe_row(["---"] * len(starts)))
-                    out.extend(_pipe_row(row) for row in rows)
-                    out.append("")
-                    i = closing + 1
-                    continue
-
-        # Compact simple table: header line followed by 2+ dash groups.
-        if i + 1 < len(lines):
-            next_spans = _simple_table_spans(lines[i + 1])
-            if next_spans and lines[i].strip():
-                starts = [s for s, _ in next_spans]
-                rows: list[list[str]] = []
-                j = i + 2
-                while j < len(lines) and lines[j].strip():
-                    if _simple_table_spans(lines[j]) or re.fullmatch(r"\s*[-*_]{3,}\s*", lines[j]):
-                        break
-                    rows.append(_simple_table_cells(lines[j], starts))
-                    j += 1
-                if rows:
-                    if out and out[-1].strip():
-                        out.append("")
-                    out.append(_pipe_row(_simple_table_cells(lines[i], starts)))
-                    out.append(_pipe_row(["---"] * len(starts)))
-                    out.extend(_pipe_row(row) for row in rows)
-                    out.append("")
-                    i = j
-                    continue
-
-        out.append(lines[i])
-        i += 1
-    return "\n".join(out)
-
-
 _FOOTNOTE_DEF_RE = re.compile(r"^ {0,3}\[\^([^\]]+)\]:[ \t]*(.*)$")
 
 
@@ -588,6 +439,7 @@ def extract_footnote_definitions(markdown: str) -> tuple[str, dict[str, str]]:
             i += 1
             continue
 
+        definition_start = i
         label = match.group(1).strip()
         body = [match.group(2)]
         i += 1
@@ -607,9 +459,7 @@ def extract_footnote_definitions(markdown: str) -> tuple[str, dict[str, str]]:
                 continue
             break
         notes[label] = "\n".join(body).strip()
-        # Preserve block separation after stripping a definition.
-        if out and out[-1].strip():
-            out.append("")
+        out.extend([""] * (i - definition_start))
     return "\n".join(out), notes
 
 

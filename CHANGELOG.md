@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0rc2
+
+- Limit automatic shell discovery and guided pickers to files directly in the current folder.
+- Include SVG conversion, CSL, and the packaged MathJax runtime in a single install on supported
+  platforms. Add probes for SVG and local CSL to doctor.
+- Add a JSON conversion result for standalone files, checks, recovery, and batch runs.
+- Preserve extra pipe-table cells and surrounding Markdown blocks. Add native HTML tables
+  with merged cells and verify table text, merges, and repeated-header markers.
+- Size native grids against the active section margins and reject Word-incompatible grids before
+  writing the output.
+
 ## Unreleased — content-model validation
 
 - Add offline source-to-DOCX verification with machine-readable drift and coverage reports.

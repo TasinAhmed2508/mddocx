@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json as jsonlib
 from pathlib import Path
 import sys
 import traceback
@@ -79,6 +80,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("input", nargs="+", type=Path)
     p.add_argument("-o", "--output", type=Path)
+    p.add_argument(
+        "--json", action="store_true", help="Emit one machine-readable conversion result"
+    )
     p.add_argument(
         "--output-dir", type=Path, help="Batch output directory; enables multi-input conversion"
     )
@@ -1234,11 +1238,50 @@ def main(argv: list[str] | None = None) -> int:
     config = _config_from_args(args)
     output = None
     published = False
+    source = None
+    records = []
+
+    def finish(code: int, error: Diagnostic | None = None) -> int:
+        if args.json:
+            print(
+                jsonlib.dumps(
+                    {
+                        "status": {0: "ok", 2: "failed", 3: "recovered"}[code],
+                        "exit_code": code,
+                        "results": records,
+                        "diagnostics": [error.to_dict()] if error else [],
+                    },
+                    ensure_ascii=True,
+                )
+            )
+        elif error is not None:
+            print(error, file=sys.stderr)
+        return code
+
+    def record(path, target, status, diagnostics):
+        if args.json:
+            records.append(
+                {
+                    "input": str(path),
+                    "output": str(target) if target else None,
+                    "status": status,
+                    "diagnostics": [item.to_dict() for item in diagnostics],
+                }
+            )
+
     try:
+        if args.json and (args.open or "-" in (args.diagnostics_json, args.diagnostics_sarif)):
+            return finish(
+                2,
+                Diagnostic(
+                    "error",
+                    "CLI401",
+                    "--json requires an unattended run with diagnostic reports directed to files.",
+                ),
+            )
         sources = collect_markdown_inputs(args.input, recursive=args.recursive)
         if not sources:
-            print("ERROR: no Markdown inputs found", file=sys.stderr)
-            return 2
+            return finish(2, Diagnostic("error", "CLI402", "No Markdown inputs found."))
 
         batch_mode = (
             len(sources) > 1 or any(p.is_dir() for p in args.input) or args.output_dir is not None
@@ -1249,22 +1292,29 @@ def main(argv: list[str] | None = None) -> int:
                 compiler = Compiler(config)
                 try:
                     checked = compiler.check_file(source)
-                    print(source)
-                    _report_diagnostics(checked.diagnostics)
+                    record(source, None, "ok", checked.diagnostics)
+                    if not args.json:
+                        print(source)
+                        _report_diagnostics(checked.diagnostics)
                 except MddocxError as exc:
-                    print(exc, file=sys.stderr)
+                    record(source, None, "failed", (exc.diagnostic,))
+                    if not args.json:
+                        print(exc, file=sys.stderr)
                     status = 2
                     if args.fail_fast:
                         break
-            return status
+            return finish(status)
 
         if batch_mode:
             if args.output is not None:
-                print(
-                    "ERROR: --output cannot be combined with batch conversion; use --output-dir",
-                    file=sys.stderr,
+                return finish(
+                    2,
+                    Diagnostic(
+                        "error",
+                        "CLI403",
+                        "--output cannot be combined with batch conversion; use --output-dir.",
+                    ),
                 )
-                return 2
             output_dir = args.output_dir or Path(".")
             results = render_many(
                 sources, output_dir, config, fail_fast=args.fail_fast, jobs=args.jobs
@@ -1272,14 +1322,29 @@ def main(argv: list[str] | None = None) -> int:
             status = 0
             for batch_result in results:
                 if batch_result.ok:
-                    print(batch_result.output_path)
-                    _report_diagnostics(batch_result.diagnostics)
+                    record(
+                        batch_result.input_path,
+                        batch_result.output_path,
+                        "recovered" if batch_result.recovered else "ok",
+                        batch_result.diagnostics,
+                    )
+                    if not args.json:
+                        print(batch_result.output_path)
+                        _report_diagnostics(batch_result.diagnostics)
                     if batch_result.recovered and status == 0:
                         status = 3
                 else:
-                    print(f"ERROR {batch_result.input_path}: {batch_result.error}", file=sys.stderr)
+                    diagnostics = batch_result.diagnostics or (
+                        Diagnostic("error", "CLI404", batch_result.error or "Conversion failed."),
+                    )
+                    record(batch_result.input_path, None, "failed", diagnostics)
+                    if not args.json:
+                        print(
+                            f"ERROR {batch_result.input_path}: {batch_result.error}",
+                            file=sys.stderr,
+                        )
                     status = 2
-            return status
+            return finish(status)
 
         source = sources[0]
         compiler = Compiler(config)
@@ -1304,33 +1369,53 @@ def main(argv: list[str] | None = None) -> int:
         else:
             result = compiler.compile_file(source, output)
         published = True
-        print(output)
-        _report_diagnostics(result.diagnostics)
-        add_recent(
-            source=source,
-            output=output,
-            action="render",
-            workspace=Path.cwd(),
-            settings={"theme": args.theme},
-        )
+        record(source, output, "recovered" if result.recovered else "ok", result.diagnostics)
+        if not args.json:
+            print(output)
+            _report_diagnostics(result.diagnostics)
+            add_recent(
+                source=source,
+                output=output,
+                action="render",
+                workspace=Path.cwd(),
+                settings={"theme": args.theme},
+            )
         if args.open:
             open_path(output)
         _write_text_target(args.diagnostics_json, result.diagnostics_json())
         _write_text_target(args.diagnostics_sarif, result.diagnostics_sarif())
         if args.profile or args.profile_memory:
-            print(result.stats.to_json())
-        return 3 if result.recovered else 0
+            if args.json:
+                records[-1]["stats"] = jsonlib.loads(result.stats.to_json())
+            else:
+                print(result.stats.to_json())
+        return finish(3 if result.recovered else 0)
     except MddocxError as exc:
+        if args.json:
+            if source and not published:
+                record(source, None, "failed", (exc.diagnostic,))
+                return finish(2)
+            return finish(2, exc.diagnostic)
         print(exc, file=sys.stderr)
         if not published:
             _report_previous_output(output)
         return 2
     except (OSError, ValueError) as exc:
+        if args.json:
+            diagnostic = Diagnostic("error", "CLI404", str(exc), str(source) if source else None)
+            if source and not published:
+                record(source, None, "failed", (diagnostic,))
+                return finish(2)
+            return finish(2, diagnostic)
         print(f"ERROR: {exc}", file=sys.stderr)
         if not published:
             _report_previous_output(output)
         return 2
     except Exception as exc:  # noqa: BLE001 - a user must never see a raw traceback
+        if args.json:
+            return finish(
+                2, Diagnostic("error", "INTERNAL500", f"Unexpected {type(exc).__name__}: {exc}")
+            )
         # Anything reaching here is an mddocx defect rather than a bad document,
         # so say so instead of dumping an internal stack trace.
         print(

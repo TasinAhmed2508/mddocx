@@ -49,3 +49,12 @@ to 0.2013 s** for distinct equations and **3.0194 s to 0.5481 s** for the mixed 
 Output was byte-identical with batching enabled and disabled. The shared ZIP finalization
 prototype measured **0.1429 s to 0.1348 s** for a document with a native note and four
 charts. It stayed below the 10% adoption threshold and was removed.
+
+## Release candidate table rendering
+
+In five alternating pairs on Windows, using Python 3.12.10 and Node 26.13.0,
+resolving the paragraph style once per table reduced the median conversion time for
+the 60 × 24 table from **1.5094 s to 0.7709 s** (49%). The mixed workload went from
+**0.5378 s to 0.4916 s**. Each workload produced identical DOCX bytes in all ten runs.
+The measurements compare the change against commit `52938bc` using a fresh Python
+process per run and exclude interpreter startup from the timed conversion.

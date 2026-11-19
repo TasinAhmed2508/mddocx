@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from docx.enum.section import WD_SECTION
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
@@ -125,6 +126,7 @@ def render_table(renderer: DocxRenderer, node: Table, *, caption_below: bool = F
     header_fill = renderer.config.table.header_shading
     if header_fill == "EDEDED" and renderer.config.theme != "default":
         header_fill = renderer._theme.table_header_fill
+    body_style_id = table.part.get_style_id(renderer._style("MD Normal"), WD_STYLE_TYPE.PARAGRAPH)
     grid = [list(row.cells) for row in table.rows]
     for cells in grid:
         for cell, width in zip(cells, widths):
@@ -146,7 +148,7 @@ def render_table(renderer: DocxRenderer, node: Table, *, caption_below: bool = F
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
             set_cell_margins(cell, *(renderer.config.table.cell_padding_twips for _ in range(4)))
             p = cell.paragraphs[0]
-            p.style = renderer._style("MD Normal")
+            p._p.style = body_style_id
             if r_idx < header_prefix and r_idx + 1 < len(node.rows):
                 p.paragraph_format.keep_with_next = True
             if caption_below and r_idx == len(node.rows) - 1 and short_row:

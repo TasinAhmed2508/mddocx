@@ -477,7 +477,6 @@ def _strip_boundary_runs(
             recognized_keys: set[str] = set()
             strong = False
             export_phrase = False
-            nonblank = 0
             j = i
             while j < region_end:
                 if j in fenced:
@@ -489,7 +488,6 @@ def _strip_boundary_runs(
                         j += 1
                         continue
                     break
-                nonblank += 1
                 key = _metadata_key(text)
                 if key in _BODY_METADATA_KEYS:
                     recognized += 1

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +25,3 @@ class MathConversion:
     semantic_valid: bool = True
     semantic_fingerprint: str = ""
     label: str | None = None
-
-
-EquationStatus = Literal["native", "repaired", "fallback", "error"]

@@ -232,21 +232,6 @@ def add_hidden_field(paragraph, instruction: str, placeholder: str = "") -> None
     paragraph._p.append(hidden_run(end))
 
 
-def add_section_equation_number(
-    paragraph, section_placeholder: str, equation_placeholder: str, bookmark: str, bookmark_id: int
-) -> None:
-    start = OxmlElement("w:bookmarkStart")
-    start.set(qn("w:id"), str(bookmark_id))
-    start.set(qn("w:name"), bookmark)
-    paragraph._p.append(start)
-    add_field(paragraph, " SEQ Section \\c ", section_placeholder)
-    paragraph.add_run(".")
-    add_field(paragraph, " SEQ Equation \\* ARABIC ", equation_placeholder)
-    end = OxmlElement("w:bookmarkEnd")
-    end.set(qn("w:id"), str(bookmark_id))
-    paragraph._p.append(end)
-
-
 def add_num_pages(paragraph) -> None:
     add_field(paragraph, " NUMPAGES ", "1")
 
@@ -327,23 +312,3 @@ def add_chapter_seq_field(
         end = OxmlElement("w:bookmarkEnd")
         end.set(qn("w:id"), str(bookmark_id))
         paragraph._p.append(end)
-
-
-def add_section_caption_number(
-    paragraph,
-    label: str,
-    section_placeholder: str,
-    item_placeholder: str,
-    bookmark: str,
-    bookmark_id: int,
-) -> None:
-    start = OxmlElement("w:bookmarkStart")
-    start.set(qn("w:id"), str(bookmark_id))
-    start.set(qn("w:name"), bookmark)
-    paragraph._p.append(start)
-    add_field(paragraph, " SEQ Section \\c ", section_placeholder)
-    paragraph.add_run(".")
-    add_field(paragraph, f" SEQ {label} \\* ARABIC ", item_placeholder)
-    end = OxmlElement("w:bookmarkEnd")
-    end.set(qn("w:id"), str(bookmark_id))
-    paragraph._p.append(end)

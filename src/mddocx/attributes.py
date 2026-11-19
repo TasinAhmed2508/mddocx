@@ -4,9 +4,6 @@ from dataclasses import dataclass, field
 import re
 import shlex
 
-_ATTR_RE = re.compile(r"\{(?P<body>[^{}]+)\}\s*$")
-
-
 @dataclass(slots=True)
 class Attributes:
     identifier: str | None = None
@@ -46,14 +43,6 @@ def parse_attribute_list(text: str) -> Attributes:
         elif token:
             values[token] = "true"
     return Attributes(identifier, tuple(classes), values)
-
-
-def extract_trailing_attribute_list(text: str) -> tuple[str, Attributes]:
-    match = _ATTR_RE.search(text)
-    if not match:
-        return text, Attributes()
-    attrs = parse_attribute_list("{" + match.group("body") + "}")
-    return text[: match.start()].rstrip(), attrs
 
 
 def parse_line_spec(value: str | None) -> tuple[int, ...]:

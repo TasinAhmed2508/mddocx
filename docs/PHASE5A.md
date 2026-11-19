@@ -52,10 +52,18 @@ mddocx doctor --json
 ```
 
 This checks Python, required/optional package availability, temporary-directory
-write access, and whether LibreOffice plus `pdftoppm` are available for page-level
-visual QA.
+write access, and whether an optional page-level rendering host (LibreOffice plus
+`pdftoppm`, or Microsoft Word on Windows) is available. That last group is reported
+under "Optional visual QA tools" and is never a requirement: conversion and
+structural validation need no office application.
 
-## Page-render visual regression
+## Page-render visual regression (optional)
+
+This section describes an optional maintainer cross-check. It is the one part of the
+project that needs software mddocx does not ship, and no feature, test gate, or
+normal conversion depends on it. The structural checks in `mddocx inspect`,
+`mddocx accessibility` and the render-time content-model validation are the primary
+verification and run anywhere Python runs.
 
 Visual QA uses a real DOCX rendering host rather than only XML assertions:
 
@@ -64,10 +72,12 @@ mddocx visual-qa output.docx --baseline-dir qa/baseline --update-baseline
 mddocx visual-qa output.docx --baseline-dir qa/baseline
 ```
 
-The command converts the DOCX to PDF with LibreOffice/soffice, rasterizes pages
-with `pdftoppm`, and compares each page to a stored baseline using a tolerant mean
-pixel-difference score. It catches layout regressions such as missing markers,
-shifted equations, table reflow, clipping, and page-count changes.
+The command converts the DOCX to PDF with LibreOffice/soffice (or Word on Windows),
+rasterizes pages with `pdftoppm`, and compares each page to a stored baseline using a
+tolerant mean pixel-difference score. It catches layout regressions such as missing
+markers, shifted equations, table reflow, clipping, and page-count changes. When those
+tools are absent the command reports that they are unavailable rather than failing
+obscurely, and the opt-in test reports *not run* rather than a pass.
 
 The source test suite includes an opt-in page-render regression:
 

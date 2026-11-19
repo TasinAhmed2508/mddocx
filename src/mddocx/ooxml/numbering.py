@@ -4,6 +4,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from mddocx.config import ListConfig
+from mddocx.ooxml.sequence import insert_ordered
 
 
 class NumberingEngine:
@@ -39,26 +40,26 @@ class NumberingEngine:
 
             start_el = OxmlElement("w:start")
             start_el.set(qn("w:val"), str(start if level == 0 else 1))
-            lvl.append(start_el)
+            insert_ordered(lvl, start_el)
 
             num_fmt = OxmlElement("w:numFmt")
             num_fmt.set(qn("w:val"), "bullet" if kind == "bullet" else "decimal")
-            lvl.append(num_fmt)
+            insert_ordered(lvl, num_fmt)
 
             lvl_text = OxmlElement("w:lvlText")
             if kind == "bullet":
                 lvl_text.set(qn("w:val"), glyphs[level % len(glyphs)])
             else:
                 lvl_text.set(qn("w:val"), f"%{level + 1}.")
-            lvl.append(lvl_text)
+            insert_ordered(lvl, lvl_text)
 
             lvl_jc = OxmlElement("w:lvlJc")
             lvl_jc.set(qn("w:val"), "left")
-            lvl.append(lvl_jc)
+            insert_ordered(lvl, lvl_jc)
 
             suff = OxmlElement("w:suff")
             suff.set(qn("w:val"), "space")
-            lvl.append(suff)
+            insert_ordered(lvl, suff)
 
             left = max(180, self.config.indent_twips_per_level * (level + 1))
             hanging = max(90, min(self.config.hanging_twips, left))
@@ -69,12 +70,12 @@ class NumberingEngine:
             tab.set(qn("w:val"), "num")
             tab.set(qn("w:pos"), str(tab_pos))
             tabs.append(tab)
-            ppr.append(tabs)
+            insert_ordered(ppr, tabs)
             ind = OxmlElement("w:ind")
             ind.set(qn("w:left"), str(left))
             ind.set(qn("w:hanging"), str(hanging))
-            ppr.append(ind)
-            lvl.append(ppr)
+            insert_ordered(ppr, ind)
+            insert_ordered(lvl, ppr)
 
             # Explicitly assign a Unicode-capable font to *all* list markers.
             # Word can otherwise inherit the preceding Symbol/Wingdings font and
@@ -88,8 +89,8 @@ class NumberingEngine:
             fonts = OxmlElement("w:rFonts")
             for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
                 fonts.set(qn(attr), marker_font)
-            rpr.append(fonts)
-            lvl.append(rpr)
+            insert_ordered(rpr, fonts)
+            insert_ordered(lvl, rpr)
             abstract.append(lvl)
 
         self.root.append(abstract)
@@ -120,26 +121,26 @@ class NumberingEngine:
             lvl.set(qn("w:ilvl"), str(level))
             start = OxmlElement("w:start")
             start.set(qn("w:val"), "1")
-            lvl.append(start)
+            insert_ordered(lvl, start)
             num_fmt = OxmlElement("w:numFmt")
             num_fmt.set(qn("w:val"), "decimal")
-            lvl.append(num_fmt)
+            insert_ordered(lvl, num_fmt)
             lvl_text = OxmlElement("w:lvlText")
             if level < max_level:
                 pieces = [f"%{i + 1}" for i in range(level + 1)]
                 lvl_text.set(qn("w:val"), separator.join(pieces) + suffix)
             else:
                 lvl_text.set(qn("w:val"), "")
-            lvl.append(lvl_text)
+            insert_ordered(lvl, lvl_text)
             suff = OxmlElement("w:suff")
             suff.set(qn("w:val"), "space")
-            lvl.append(suff)
+            insert_ordered(lvl, suff)
             ppr = OxmlElement("w:pPr")
             ind = OxmlElement("w:ind")
             ind.set(qn("w:left"), "0")
             ind.set(qn("w:hanging"), "0")
-            ppr.append(ind)
-            lvl.append(ppr)
+            insert_ordered(ppr, ind)
+            insert_ordered(lvl, ppr)
             abstract.append(lvl)
         self.root.append(abstract)
         num_id = self._next_num
@@ -155,14 +156,10 @@ class NumberingEngine:
     @staticmethod
     def apply(paragraph, num_id: int, level: int) -> None:
         ppr = paragraph._p.get_or_add_pPr()
-        numpr = ppr.find(qn("w:numPr"))
-        if numpr is None:
-            numpr = OxmlElement("w:numPr")
-            ppr.append(numpr)
-        else:
-            for child in list(numpr):
-                if child.tag in {qn("w:ilvl"), qn("w:numId")}:
-                    numpr.remove(child)
+        numpr = ppr.get_or_add_numPr()
+        for child in list(numpr):
+            if child.tag in {qn("w:ilvl"), qn("w:numId")}:
+                numpr.remove(child)
         ilvl = OxmlElement("w:ilvl")
         ilvl.set(qn("w:val"), str(min(level, 8)))
         numid = OxmlElement("w:numId")

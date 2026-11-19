@@ -22,6 +22,15 @@ The initial audit also identified several release-critical weaknesses:
 
 Delivery will use a staged v2 approach: establish conformance and regression coverage around v1 first, modularize internals behind the existing façade, then introduce intentional v2 interface changes with a migration path.
 
+**Governing constraint: mddocx is a library any user installs and runs, so it may not acquire an
+outside dependency.** A conversion must need nothing but Python and the declared dependencies —
+no office suite, no Microsoft Word, no Java, no browser, no network. Verification follows the
+same rule: the primary fidelity gate is the in-process structural and round-trip inspection
+described below, which runs anywhere Python runs. Page-render comparison with LibreOffice or
+Word is a secondary, optional maintainer cross-check with no place in the fidelity contract, no
+place in a user's workflow, and no place in a required CI gate; where this document names such a
+tool it is describing that optional signal, not a requirement.
+
 ## Implementation Changes
 
 ### 1. Establish the executable fidelity contract
@@ -33,7 +42,7 @@ Delivery will use a staged v2 approach: establish conformance and regression cov
   - required native Word/OOXML representation;
   - expected diagnostics for malformed or unsupported input;
   - Word 365 acceptance behavior;
-  - LibreOffice compatibility status where relevant.
+  - optional secondary renderer compatibility, where a signal exists at all.
 - Convert representative technical/research documents into permanent fixtures covering prose, nested lists, task lists, code, equations, wide and multi-page tables, figures, citations, bibliography, cross-references, heading numbering, headers/footers, TOC fields, charts, RTL text, and mixed constructs.
 - Define fidelity as three independently tested dimensions:
   - semantic fidelity: input meaning and hierarchy survive;
@@ -47,7 +56,7 @@ Delivery will use a staged v2 approach: establish conformance and regression cov
 - Add golden structural tests that inspect normalized OOXML rather than comparing raw ZIP bytes. Assert element semantics, relationships, content types, embedded workbooks, numbering definitions, fields, bookmarks, notes, hyperlinks, and section properties.
 - Add round-trip inspection helpers that render Markdown, reopen the DOCX with `python-docx` and direct XML parsing, and compare extracted semantic structure with the expected fixture.
 - Add deterministic-output tests under reproducibility mode and deliberately non-deterministic tests where timestamps or template metadata are explicitly requested.
-- Restore visual tests on Linux using LibreOffice and Poppler as a secondary rendering signal. Maintain a separate manual Word 365 qualification checklist and reference corpus for release candidates.
+- Make the round-trip inspection helpers above the primary fidelity gate, and keep them dependency-free so they run on every platform in the matrix. Add a page-render comparison as an optional secondary signal for maintainers who have a rendering host installed; it must report *not run* rather than a pass when none is present, and it must never gate a release. Maintain a separate manual Word 365 qualification checklist and reference corpus for release candidates.
 - Test Python 3.11, 3.12, and 3.13 on Windows, Linux, and macOS for non-visual suites. Run visual regression on Linux and package verification on a single supported Python version.
 - Add CI gates for:
   - test collection and execution;
@@ -169,7 +178,8 @@ Delivery will use a staged v2 approach: establish conformance and regression cov
 - **Failure safety:** malformed Markdown extensions, data sources, templates, cached AST, plugins, images, math, or package parts cannot result in silent corruption.
 - **CLI/project behavior:** commands have stable exit codes, machine-readable diagnostics, paths with spaces and Windows drive letters work, project builds use the documented configuration precedence, and watch mode reports recoverable failures.
 - **Cross-platform:** all non-visual tests pass on Python 3.11–3.13 across Windows, Linux, and macOS.
-- **Visual QA:** LibreOffice rendering remains within approved image-diff tolerances; Word 365 reference documents pass manual semantic, editability, field-update, and presentation checks.
+- **Fidelity self-check:** the in-process round-trip comparison of AST against emitted package reports no drift, on every supported platform with no external tool installed.
+- **Visual QA (optional):** where a rendering host is available, page rendering remains within approved image-diff tolerances; Word 365 reference documents pass manual semantic, editability, field-update, and presentation checks. A machine without one reports the check as not run, never as passed.
 - **Performance:** benchmark representative small, medium, and large documents; establish budgets only from measured v1 baselines, then prevent statistically meaningful regression in runtime, peak memory, and output size.
 - **Packaging:** clean-environment installations from both wheel and source distribution can import the public API, run `doctor`, render a fixture, inspect the generated package, and report the correct version.
 
@@ -180,18 +190,18 @@ Delivery will use a staged v2 approach: establish conformance and regression cov
 3. **Milestone C — Compiler boundaries:** implement semantic normalization, layout planning, shared services, and modular renderers behind the current public API.
 4. **Milestone D — Fidelity waves:** complete the prioritized Word 365 work for core text, lists, tables, math, figures, charts, citations, notes, templates, and pagination.
 5. **Milestone E — v2 interfaces:** introduce validated configuration, typed compiler results, versioned AST serialization, extension protocols, compatibility wrappers, and migration documentation.
-6. **Milestone F — Qualification and release:** run the complete platform matrix, security suite, performance gates, package installation tests, LibreOffice visual suite, and Word 365 reference-corpus review before publishing v2.
+6. **Milestone F — Qualification and release:** run the complete platform matrix, security suite, performance gates, package installation tests, the dependency-free fidelity self-check, and Word 365 reference-corpus review before publishing v2. The optional renderer visual suite is run where a host is available and its absence is recorded as not run rather than blocking the release.
 
 Each milestone must remain releasable and must not proceed by replacing working behavior without first capturing that behavior in fixtures or explicitly classifying it as a defect.
 
 ## Assumptions and Defaults
 
-- Microsoft Word 365 desktop is the primary output authority; LibreOffice is a secondary compatibility and automated visual-regression target.
+- Microsoft Word 365 desktop is the primary output authority. No office application, including Word and LibreOffice, is a dependency of the library: the primary fidelity authority is the dependency-free structural and round-trip checks, and a renderer is at most an optional secondary signal.
 - Technical and research documents are the primary usage profile.
 - GFM is the base Markdown dialect, with mddocx-specific extensions documented separately and never inferred ambiguously.
 - Native editability and semantic Word structure take priority over pixel-identical rendering across office applications.
 - A major redesign is allowed, but delivery is staged and the current v1 API remains usable until documented v2 replacements exist.
 - Current successful basic rendering, security defaults, native OMML equations, editable charts, diagnostic codes, and deterministic-output capability are retained unless a conformance test proves they need correction.
 - Historical ZIPs, wheels, and sample outputs at the workspace root are treated as release artifacts/reference inputs, not as the active source tree.
-- Existing unsupported optional tools such as LibreOffice and `latex2mathml` are not required for basic conversion; CI and documented optional-feature environments will install them where their tests require them.
+- Optional external tools such as LibreOffice and `latex2mathml` are not required for conversion, and none of them may become required for it. Where a test needs one it is confined to an opt-in job that reports not run when the tool is absent.
 

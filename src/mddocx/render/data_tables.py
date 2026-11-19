@@ -9,8 +9,9 @@ from mddocx.ast.block import DataTableBlock, Table, TableCell, TableRow
 from mddocx.ast.inline import Text
 from mddocx.data import load_tabular_data
 from mddocx.diagnostics import Diagnostic, MddocxError
+from mddocx.recovery import recovery_block
 
-from . import citations, tables
+from . import tables, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -44,15 +45,18 @@ def render_data_table(renderer: DocxRenderer, node: DataTableBlock) -> None:
     columns = list(node.columns) or list(data.columns)
     for name in columns:
         if name not in data.columns:
-            raise MddocxError(
-                Diagnostic(
-                    "error",
-                    "DATA208",
-                    f"Unknown data-table column: {name}",
-                    getattr(node.source, "file", None),
-                    getattr(node.source, "line", None),
-                )
+            diagnostic = Diagnostic(
+                "error",
+                "DATA208",
+                f"Unknown data-table column: {name}",
+                getattr(node.source, "file", None),
+                getattr(node.source, "line", None),
             )
+            if not renderer.config.recover:
+                raise MddocxError(diagnostic)
+            placeholder = recovery_block(renderer.reporter, diagnostic, name, node.source)
+            text_blocks.render_block_quote(renderer, placeholder)
+            return
     rows = [
         TableRow(
             cells=[TableCell(children=[Text(text=name)], header=True) for name in columns],
@@ -71,16 +75,7 @@ def render_data_table(renderer: DocxRenderer, node: DataTableBlock) -> None:
     table_node = Table(
         rows=rows, identifier=node.identifier, caption=node.caption, source=node.source
     )
-    caption = (
-        (node.caption or ("Table" if node.identifier else None))
-        if renderer.config.references.captions
-        else None
-    )
-    if caption and renderer.config.references.table_caption_position == "above":
-        citations.render_caption(renderer, "Table", caption, node.identifier)
     tables.render_table_with_layout(renderer, table_node)
-    if caption and renderer.config.references.table_caption_position == "below":
-        citations.render_caption(renderer, "Table", caption, node.identifier)
     renderer.reporter.info(
         "DATA100",
         f"Rendered {len(data.rows)} rows from {Path(node.source_path).name} as a native Word table.",

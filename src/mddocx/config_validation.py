@@ -18,6 +18,7 @@ def validate_render_config(config: RenderConfig) -> RenderConfig:
                 )
             )
 
+    require(isinstance(config.recover, bool), "Recovery must be a boolean.")
     require(config.page.size in ("A4", "Letter"), "Page size must be A4 or Letter.")
     require(
         config.page.orientation in ("portrait", "landscape"),

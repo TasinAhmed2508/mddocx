@@ -57,6 +57,7 @@ from mddocx.diagnostics import DiagnosticReporter
 from mddocx.extensions.base import render_custom_block, render_custom_inline
 from mddocx.layout import LayoutPlan, LayoutPlanner
 from mddocx.math import DefaultMathConverter
+from mddocx.math.preflight import iter_equations
 from mddocx.ooxml.charts import ChartEntry, inject_charts
 from mddocx.ooxml.comments import append_comment_reference, inject_comments
 from mddocx.ooxml.fields import add_hyperlink, add_internal_hyperlink
@@ -146,6 +147,7 @@ class DocxRenderer:
             Path(self.config.base_dir or "."), self.config.resources, self.config.images
         )
         self.math = DefaultMathConverter(cache=self.config.performance.cache_math)
+        equations = iter_equations(document) if not self.config.extensions else []
         self._footnote_definitions = dict(getattr(document, "footnotes", {}) or {})
         self._footnote_ids = {}
         self._footnote_entries = {}
@@ -193,6 +195,7 @@ class DocxRenderer:
             else None
         )
         try:
+            self.math.prepare_batch(equations)
             if self.config.title_page.enabled:
                 front_matter.render_title_page(self)
             if self.config.abstract.text or self.config.abstract.keywords:

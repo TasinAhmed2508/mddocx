@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
+from mddocx.ast.base import Document
 from mddocx.ast.block import MathBlock
 from mddocx.ast.inline import InlineMath
 from mddocx.config import MetadataConfig
@@ -153,6 +154,14 @@ def inspect_math(
 def inspect_math_file(path: str | Path) -> MathPreflightReport:
     source = Path(path)
     return inspect_math(source.read_text(encoding="utf-8-sig"), source_file=str(source))
+
+
+def iter_equations(document: Document) -> list[tuple[str, bool]]:
+    return [
+        (node.source_text, isinstance(node, MathBlock))
+        for node in _walk([document.children, *document.footnotes.values()])
+        if isinstance(node, (InlineMath, MathBlock))
+    ]
 
 
 def _walk(value):

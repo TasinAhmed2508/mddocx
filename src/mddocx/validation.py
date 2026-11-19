@@ -7,12 +7,17 @@ from lxml import etree
 
 from .config import ValidationConfig
 from .diagnostics import Diagnostic, MddocxError
-from .inspection import _REQUIRED_PARTS, _inspect_parts
+from .inspection import NS, _REQUIRED_PARTS, _inspect_parts
 
 
 def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
     if not config.validate_output:
         return
+    validated_docx_parts(blob, config)
+
+
+def validated_docx_parts(blob: bytes, config: ValidationConfig) -> dict[str, etree._Element]:
+    """Validate a package and return its already parsed XML parts."""
     try:
         with ZipFile(BytesIO(blob), "r") as archive:
             names = archive.namelist()
@@ -55,6 +60,9 @@ def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
                     ) from exc
 
         inspection = _inspect_parts(names, roots)
+        body = roots["word/document.xml"].find("w:body", namespaces=NS)
+        if body is None:
+            _fail("DOCX423", "The main Word document is missing its body.")
         if inspection.duplicate_parts:
             _fail(
                 "DOCX409",
@@ -116,9 +124,16 @@ def validate_docx_package(blob: bytes, config: ValidationConfig) -> None:
                 "DOCX421",
                 f"DOCX contains {inspection.chart_relationship_issues} invalid chart/workbook relationship sets.",
             )
+        if config.validate_schema_order and inspection.schema_order_violations:
+            _fail(
+                "DOCX422",
+                "Generated output departs from the WordprocessingML content model: "
+                + "; ".join(inspection.schema_order_violations[:3]),
+            )
+        return roots
     except MddocxError:
         raise
-    except (BadZipFile, OSError, ValueError) as exc:
+    except (BadZipFile, OSError, RuntimeError, ValueError) as exc:
         raise MddocxError(
             Diagnostic("error", "DOCX401", "Generated output is not a valid DOCX ZIP package.")
         ) from exc

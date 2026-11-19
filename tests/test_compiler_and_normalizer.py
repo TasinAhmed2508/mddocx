@@ -152,6 +152,6 @@ def test_ast_serialization_is_versioned_and_rejects_incompatible_cache():
 
     assert document_from_json(encoded) == document
     with pytest.raises(ValueError, match="schema version"):
-        document_from_json(encoded.replace('"version":2', '"version":999'))
+        document_from_json(encoded.replace('"version":3', '"version":999'))
     with pytest.raises(ValueError, match="schema identifier"):
         document_from_json('{"__node__":"Document","children":[]}')

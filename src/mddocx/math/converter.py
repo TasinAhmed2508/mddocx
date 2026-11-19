@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
+import re
 from typing import Protocol
 
 from .latex import BasicLatexToMathML, UnsupportedLatexError
 from .mathml import MathMLToOMML
 from .models import MathConversion
 from .normalize import normalize_equation
-from .sidecar import MathJaxSidecar
+from .sidecar import MathJaxSidecar, MathJaxSidecarError
 from .validation import (
     semantic_fingerprint,
     semantic_tokens_preserved,
@@ -15,6 +17,8 @@ from .validation import (
     validate_mathml,
     validate_omml,
 )
+
+_BATCH_COMMANDS = {"frac", "sum", "sqrt", "left", "right", "cdot", "times", "le", "ge"}
 
 
 class MathConverter(Protocol):
@@ -31,6 +35,7 @@ class DefaultMathConverter:
         self._mathml_cache: dict[str, str] = {}
         self._conversions: dict[tuple[str, bool], MathConversion] = {}
         self._omml_cache: dict[tuple[str, bool], object] = {}
+        self._prefetched: dict[tuple[str, bool], str | MathJaxSidecarError] = {}
         try:
             from latex2mathml.converter import convert  # type: ignore
         except ImportError:
@@ -67,6 +72,41 @@ class DefaultMathConverter:
     def latex_to_omml(self, latex: str, display: bool = False):
         return self.convert(latex, display).omml
 
+    def prepare_batch(self, expressions: list[tuple[str, bool]]) -> None:
+        """Prefetch simple math through the bundled sidecar, with normal fallback."""
+        bundled = Path(__file__).with_name("bin") / "mddocx-mathjax.mjs"
+        if (
+            not self._cache_enabled
+            or not self._sidecar.available
+            or self._sidecar.executable != bundled
+        ):
+            return
+        # shortcut: batch only small expressions using known commands, until the sidecar isolates user macros.
+        eligible = {}
+        for latex, display in dict.fromkeys(expressions):
+            if len(latex) > 4096:
+                continue
+            normalized = normalize_equation(latex).text
+            if set(re.findall(r"\\([A-Za-z]+|.)", normalized)) <= _BATCH_COMMANDS:
+                eligible[latex, display] = normalized
+        if len(eligible) < 2 or len(eligible) > 128:
+            return
+        try:
+            replies = self._sidecar.convert_many(
+                [(normalized, display) for (_, display), normalized in eligible.items()]
+            )
+        except MathJaxSidecarError:
+            return
+        self._prefetched.update(zip(eligible, replies, strict=True))
+
+    def _convert_sidecar(self, key: tuple[str, bool], normalized: str) -> str:
+        if key not in self._prefetched:
+            return self._sidecar.convert(normalized, key[1])
+        result = self._prefetched[key]
+        if isinstance(result, MathJaxSidecarError):
+            raise result
+        return result
+
     def convert(self, latex: str, display: bool = False) -> MathConversion:
         key = (latex, display)
         if key in self._conversions:
@@ -75,9 +115,7 @@ class DefaultMathConverter:
         failures: list[str] = []
         engines = []
         if self._sidecar.available:
-            engines.append(
-                ("mathjax-sidecar", lambda: self._sidecar.convert(normalized.text, display))
-            )
+            engines.append(("mathjax-sidecar", lambda: self._convert_sidecar(key, normalized.text)))
         if self._external is not None:
             engines.append(("latex2mathml", lambda: self._external(normalized.text)))
         engines.append(("mddocx-basic", lambda: self._fallback.convert(normalized.text)))

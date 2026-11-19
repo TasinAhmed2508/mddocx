@@ -90,7 +90,7 @@ _NODE_TYPES = {
 }
 
 AST_SCHEMA_NAME = "mddocx-ast"
-AST_SCHEMA_VERSION = 2
+AST_SCHEMA_VERSION = 3
 
 
 def document_to_json(document: Document) -> str:
@@ -106,7 +106,7 @@ def document_from_json(text: str) -> Document:
     payload = json.loads(text)
     if not isinstance(payload, dict) or payload.get("schema") != AST_SCHEMA_NAME:
         raise ValueError("Cached AST has no recognized schema identifier.")
-    if payload.get("version") != AST_SCHEMA_VERSION:
+    if payload.get("version") not in (2, AST_SCHEMA_VERSION):
         raise ValueError(
             f"Cached AST schema version {payload.get('version')!r} is not supported; "
             f"expected {AST_SCHEMA_VERSION}."

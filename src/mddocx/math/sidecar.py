@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,16 @@ def node_executable() -> str | None:
     if configured:
         return shutil.which(configured) or (configured if Path(configured).is_file() else None)
     suffix = ".exe" if os.name == "nt" else ""
+    try:
+        dist = metadata.distribution("nodejs-wheel-binaries")
+    except metadata.PackageNotFoundError:
+        pass
+    else:
+        for entry in dist.files or ():
+            if entry.name == f"node{suffix}":
+                executable = Path(dist.locate_file(entry))
+                if executable.is_file():
+                    return str(executable)
     local = Path(sys.executable).with_name(f"node{suffix}")
     if local.is_file():
         return str(local)
@@ -72,23 +83,35 @@ class MathJaxSidecar:
         if self.is_script and self.runtime is None:
             return (
                 "the MathJax sidecar needs a JavaScript runtime; install Node.js, "
-                f"install the mddocx[mathjax] extra, or set {NODE_ENV_VAR}"
+                f"reinstall mddocx-native on a supported platform, or set {NODE_ENV_VAR}"
             )
         return None
 
     def convert(self, latex: str, display: bool) -> str:
+        result = self.convert_many([(latex, display)])[0]
+        if isinstance(result, MathJaxSidecarError):
+            raise result
+        return result
+
+    def convert_many(self, expressions: list[tuple[str, bool]]) -> list[str | MathJaxSidecarError]:
+        """Run a bounded group through the bundled JSONL sidecar."""
+        if not expressions:
+            return []
         if not self.available or self.executable is None:
             raise MathJaxSidecarError(
                 f"MathJax sidecar is not usable: {self.unavailable_reason() or 'unknown reason'}"
             )
-        request = {
-            "protocol": self.protocol_version,
-            "tex": latex,
-            "display": display,
-            "packages": "mddocx-safe",
-            "timeout_ms": int(self.timeout * 1000),
-            "max_expression_chars": 100_000,
-        }
+
+        def request(latex: str, display: bool) -> dict:
+            return {
+                "protocol": self.protocol_version,
+                "tex": latex,
+                "display": display,
+                "packages": "mddocx-safe",
+                "timeout_ms": int(self.timeout * 1000),
+                "max_expression_chars": 100_000,
+            }
+
         try:
             command = (
                 [self.runtime or "node", str(self.executable)]
@@ -97,7 +120,9 @@ class MathJaxSidecar:
             )
             completed = subprocess.run(
                 command,
-                input=json.dumps(request) + "\n",
+                input="".join(
+                    json.dumps(request(latex, display)) + "\n" for latex, display in expressions
+                ),
                 text=True,
                 capture_output=True,
                 timeout=self.timeout,
@@ -106,14 +131,25 @@ class MathJaxSidecar:
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise MathJaxSidecarError(f"MathJax sidecar failed: {exc}") from exc
-        line = completed.stdout.splitlines()[0] if completed.stdout.strip() else ""
-        if completed.returncode or not line:
+        lines = completed.stdout.splitlines()
+        if completed.returncode or len(lines) != len(expressions):
             detail = completed.stderr.strip() or f"exit status {completed.returncode}"
             raise MathJaxSidecarError(f"MathJax sidecar failed: {detail}")
+        result: list[str | MathJaxSidecarError] = []
+        for line in lines:
+            try:
+                result.append(self._parse_response(line))
+            except MathJaxSidecarError as exc:
+                result.append(exc)
+        return result
+
+    def _parse_response(self, line: str) -> str:
         try:
             response = json.loads(line)
         except json.JSONDecodeError as exc:
             raise MathJaxSidecarError("MathJax sidecar returned invalid JSON") from exc
+        if not isinstance(response, dict):
+            raise MathJaxSidecarError("MathJax sidecar returned an invalid response")
         if response.get("protocol", self.protocol_version) != self.protocol_version:
             raise MathJaxSidecarError("MathJax sidecar protocol is incompatible")
         if response.get("error"):

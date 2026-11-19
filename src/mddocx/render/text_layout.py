@@ -6,10 +6,10 @@ import re
 import yaml
 from mddocx.diagnostics import Diagnostic, MddocxError
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.utils import set_table_fixed_layout, set_table_grid_widths
 
 
@@ -56,8 +56,7 @@ def render_text_layout(renderer, node) -> bool:
         for col, width in zip(result.columns, widths):
             col.width = Mm(width)
         for row_index, (row, values) in enumerate(zip(result.rows, rows)):
-            pr = row._tr.get_or_add_trPr()
-            pr.append(OxmlElement("w:cantSplit"))
+            get_or_add(row._tr.get_or_add_trPr(), "w:cantSplit")
             for cell, value, width in zip(row.cells, values, widths):
                 cell.width = Mm(width)
                 p = cell.paragraphs[0]

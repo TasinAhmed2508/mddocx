@@ -11,6 +11,8 @@ from zipfile import BadZipFile, ZipFile
 
 from lxml import etree
 
+from .schema_order import find_schema_order_violations
+
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -35,6 +37,7 @@ class DocxInspection:
     duplicate_drawing_ids: int = 0
     duplicate_note_ids: int = 0
     chart_relationship_issues: int = 0
+    schema_order_violations: list[str] = field(default_factory=list)
     paragraphs: int = 0
     headings: int = 0
     tables: int = 0
@@ -88,6 +91,7 @@ class DocxInspection:
             + self.dangling_ref_fields
             + self.duplicate_bookmark_names
             + abs(self.comment_references - self.comment_definitions)
+            + len(self.schema_order_violations)
         )
 
     @property
@@ -133,6 +137,7 @@ class DocxInspection:
             f"Broken relationships: {len(self.broken_relationships)}  Duplicate relationship IDs: {self.duplicate_relationship_ids}",
             f"Duplicate drawing IDs: {self.duplicate_drawing_ids}  Duplicate note IDs: {self.duplicate_note_ids}",
             f"Chart/workbook relationship issues: {self.chart_relationship_issues}",
+            f"Content-model order violations: {len(self.schema_order_violations)}",
             f"Suspicious placeholder characters: {sum(self.suspicious_placeholder_chars.values())}",
         ]
         if self.missing_required_parts:
@@ -144,6 +149,9 @@ class DocxInspection:
         if self.broken_relationships:
             lines.append("Broken relationship targets:")
             lines.extend(f"  - {value}" for value in self.broken_relationships[:20])
+        if self.schema_order_violations:
+            lines.append("Content-model order details:")
+            lines.extend(f"  - {value}" for value in self.schema_order_violations[:20])
         if self.suspicious_placeholder_chars:
             details = ", ".join(
                 f"{repr(k)}×{v}" for k, v in self.suspicious_placeholder_chars.items()
@@ -203,6 +211,7 @@ def _inspect_parts(
     report.broken_relationships = _broken_relationships(roots, seen)
     report.duplicate_relationship_ids = _count_duplicate_relationship_ids(roots)
     report.chart_relationship_issues = _count_chart_relationship_issues(roots, seen)
+    report.schema_order_violations = find_schema_order_violations(roots)
 
     document = roots.get("word/document.xml")
     if document is None:

@@ -5,7 +5,16 @@ import pytest
 from mddocx.math.converter import DefaultMathConverter
 from mddocx.math.normalize import normalize_equation
 from mddocx.math.preflight import inspect_math
+from mddocx.math.sidecar import MathJaxSidecar
 from mddocx.math.validation import validate_mathml
+
+
+def test_batched_mathjax_matches_individual_conversion():
+    sidecar = MathJaxSidecar()
+    if not sidecar.available:
+        pytest.skip("optional MathJax sidecar is unavailable")
+    equations = [("x^2+1", False), (r"\frac{x+1}{y}", True), ("x_i", False)]
+    assert sidecar.convert_many(equations) == [sidecar.convert(*equation) for equation in equations]
 
 
 def test_normalization_is_conservative_and_records_repairs():

@@ -14,6 +14,7 @@ the current release.
 | direct `MarkdownParser.parse(...)` use | `Compiler(config).parse_string(...)` |
 | direct normalizer use | `Compiler(config).normalize(document)` |
 | no v1 equivalent | `Compiler(config).plan(document)` |
+| no v1 equivalent | `Compiler(config).verify(markdown_path, docx_path)` |
 | `MarkdownWord.render_ast(document)` | `Compiler(config).render(document)` |
 
 `CompilationResult` carries DOCX bytes, diagnostics, stage statistics, an optional output path,

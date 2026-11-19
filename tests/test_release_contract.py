@@ -38,7 +38,9 @@ def _document_xml(blob: bytes):
 
 
 def test_machine_readable_feature_matrix_has_live_evidence():
-    matrix = json.loads((ROOT / "docs" / "feature-matrix.json").read_text(encoding="utf-8"))
+    matrix = json.loads(
+        (ROOT / "src" / "mddocx" / "feature-matrix.json").read_text(encoding="utf-8")
+    )
 
     assert matrix["schema"] == "mddocx-feature-matrix"
     assert matrix["version"] == 1
@@ -49,7 +51,14 @@ def test_machine_readable_feature_matrix_has_live_evidence():
     ]
     ids = [feature["id"] for feature in matrix["features"]]
     assert len(ids) == len(set(ids)) >= 12
-    required = {"syntax", "ast", "ooxml", "malformed_diagnostic", "word365", "libreoffice"}
+    required = {
+        "syntax",
+        "ast",
+        "ooxml",
+        "malformed_diagnostic",
+        "word365",
+        "optional_renderer",
+    }
     for feature in matrix["features"]:
         assert required.issubset(feature)
         assert feature["tests"]

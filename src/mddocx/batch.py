@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from pathlib import Path
 from typing import Iterable
@@ -18,6 +19,10 @@ class BatchResult:
     ok: bool
     error: str | None = None
     diagnostics: tuple[Diagnostic, ...] = ()
+
+    @property
+    def recovered(self) -> bool:
+        return any(item.code == "RECOVER201" for item in self.diagnostics)
 
 
 def collect_markdown_inputs(paths: Iterable[str | Path], recursive: bool = False) -> list[Path]:
@@ -41,30 +46,53 @@ def render_many(
     *,
     recursive: bool = False,
     fail_fast: bool = False,
+    jobs: int = 1,
 ) -> list[BatchResult]:
+    if not isinstance(jobs, int) or isinstance(jobs, bool) or jobs < 1:
+        raise ValueError("jobs must be a positive integer")
     source_paths = collect_markdown_inputs(inputs, recursive=recursive)
     target_root = Path(output_dir)
     target_root.mkdir(parents=True, exist_ok=True)
     names: dict[str, Path] = {}
-    results: list[BatchResult] = []
+    plans: list[tuple[Path, Path]] = []
     for source in source_paths:
         base = source.stem + ".docx"
         if base.casefold() in names:
             suffix = hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:8]
             base = f"{source.stem}-{suffix}.docx"
-        names[base.casefold()] = source
-        target = target_root / base
-        compiler = Compiler(config)
+        candidate = base
+        index = 2
+        while candidate.casefold() in names:
+            candidate = f"{Path(base).stem}-{index}.docx"
+            index += 1
+        names[candidate.casefold()] = source
+        plans.append((source, target_root / candidate))
+
+    def convert(plan: tuple[Path, Path]) -> BatchResult:
+        source, target = plan
+        previous = target.is_file()
         try:
             validate_output_path(target, source_paths)
-            result = compiler.compile_file(source, target)
-            results.append(BatchResult(source, target, True, diagnostics=result.diagnostics))
+            result = Compiler(config).compile_file(source, target)
+            return BatchResult(source, target, True, diagnostics=result.diagnostics)
         except MddocxError as exc:
-            results.append(BatchResult(source, None, False, str(exc), (exc.diagnostic,)))
-            if fail_fast:
-                break
+            message = str(exc)
+            if previous:
+                message += f" Previous output left in place: {target}"
+            return BatchResult(source, None, False, message, (exc.diagnostic,))
         except Exception as exc:
-            results.append(BatchResult(source, None, False, str(exc)))
-            if fail_fast:
-                break
+            message = str(exc)
+            if previous:
+                message += f" Previous output left in place: {target}"
+            return BatchResult(source, None, False, message)
+
+    if jobs > 1 and not fail_fast and not (config and config.performance.track_memory):
+        with ThreadPoolExecutor(max_workers=min(jobs, len(plans) or 1)) as pool:
+            return list(pool.map(convert, plans))
+    results = []
+    for plan in plans:
+        result = convert(plan)
+        results.append(result)
+        if fail_fast and not result.ok:
+            break
     return results

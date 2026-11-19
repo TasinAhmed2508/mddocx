@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mddocx-native"
-version = "1.4.3"
+version = "1.5.0rc2"
 description = "Deterministic Markdown to native, editable Microsoft Word DOCX compiler"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -40,6 +40,9 @@ dependencies = [
   "latex2mathml>=3.81.0",
   "openpyxl>=3.1",
   "prompt-toolkit>=3.0",
+  "citeproc-py>=0.10.3,<0.11",
+  "resvg-py>=0.5,<0.6",
+  "nodejs-wheel-binaries>=24.19,<25; (sys_platform == 'win32' and (platform_machine == 'AMD64' or platform_machine == 'ARM64')) or ((sys_platform == 'linux' or sys_platform == 'darwin') and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64'))",
 ]
 
 [project.urls]
@@ -52,18 +55,10 @@ Changelog = "https://github.com/TasinAhmed2508/mddocx/blob/main/CHANGELOG.md"
 # Kept for compatibility; latex2mathml is now a core dependency of the package.
 math = ["latex2mathml>=3.81.0"]
 frontmatter = ["PyYAML>=6.0"]
-images = ["Pillow>=10.0", "CairoSVG>=2.7", "defusedxml>=0.7"]
-academic = ["citeproc-py>=0.10.3,<0.11"]
-# Opt-in Node.js runtime for the bundled MathJax engine (about 45 MB).
-mathjax = ["nodejs-wheel>=24.19.0"]
-# Everything except the Node.js runtime, in one command.
-all = [
-  "latex2mathml>=3.81.0",
-  "Pillow>=10.0",
-  "CairoSVG>=2.7",
-  "defusedxml>=0.7",
-  "citeproc-py>=0.10.3,<0.11",
-]
+images = []
+academic = []
+mathjax = []
+all = []
 dev = ["pytest>=8", "ruff==0.15.10", "mypy>=1.10", "build>=1.2", "twine>=5.0"]
 
 [project.scripts]
@@ -80,7 +75,7 @@ py-modules = ["mddocx_launcher"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-mddocx = ["math/bin/*.mjs", "math/README.md", "resources/README.md"]
+mddocx = ["feature-matrix.json", "diagnostic-catalog.json", "math/bin/*.mjs", "math/README.md", "resources/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

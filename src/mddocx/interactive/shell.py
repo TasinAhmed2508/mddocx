@@ -43,7 +43,7 @@ from .history import (
 from .fonts import discover_fonts, font_display_name
 from .opening import open_path
 from .tokenize import split_command
-from .workspace import display_path, inspect_workspace
+from .workspace import display_path, inspect_workspace, list_workspace_files
 
 _MD_REMOTE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?(https://[^)\s>]+)>?", re.IGNORECASE)
 _HTML_REMOTE_IMAGE_RE = re.compile(
@@ -204,23 +204,7 @@ class InteractiveConsole:
                 self.println(f"ERROR: {exc}")
 
     def _matching_files(self, suffixes: set[str]) -> list[Path]:
-        result: list[Path] = []
-        try:
-            for path in self.workspace.rglob("*"):
-                try:
-                    rel_parts = path.relative_to(self.workspace).parts
-                except ValueError:
-                    continue
-                if any(
-                    part in {".git", ".mddocx", ".venv", "venv", "node_modules", "__pycache__"}
-                    for part in rel_parts[:-1]
-                ):
-                    continue
-                if path.is_file() and path.suffix.lower() in suffixes:
-                    result.append(path.resolve())
-        except OSError:
-            pass
-        return sorted(result, key=lambda p: str(p.relative_to(self.workspace)).casefold())
+        return [p for p in list_workspace_files(self.workspace) if p.suffix.lower() in suffixes]
 
     def _resolve_path(self, raw: str, *, require_exists: bool = True) -> Path:
         value = os.path.expandvars(raw.strip().strip('"').strip("'"))
@@ -889,7 +873,7 @@ class InteractiveConsole:
             "RESOURCE203": "A local resource path escaped the Markdown/project root. Move the asset inside the allowed root and use a relative path.",
             "RESOURCE209": "The remote host is not in the explicit allow-list for this render.",
             "RESOURCE211": "Private, loopback, link-local and other non-global network targets are blocked even when remote resources are enabled.",
-            "IMAGE208": "SVG support needs the image extra/CairoSVG runtime. Install mddocx with its image dependencies.",
+            "IMAGE208": "SVG support is included. Reinstall mddocx-native if the renderer is missing.",
             "DATA201": "A referenced CSV/JSON data source was not found.",
             "PROJECT805": "A recursive @include cycle was detected. Remove or restructure the include loop.",
             "META101": "AI/chat export metadata was detected and removed before Markdown parsing. Use `metadata FILE.md` to inspect it or render with `--ai-metadata keep` when the provenance is intentional.",
@@ -1167,6 +1151,16 @@ def _make_prompt_reader(workspace_getter: Callable[[], Path]):
                 for child in children:
                     if not child.name.casefold().startswith(prefix.casefold()):
                         continue
+                    if (
+                        not candidate.is_absolute()
+                        and candidate.parent == Path(".")
+                        and not child.is_dir()
+                    ):
+                        try:
+                            if child.resolve().parent != parent:
+                                continue
+                        except (OSError, RuntimeError):
+                            continue
                     replacement = child.name + (os.sep if child.is_dir() else "")
                     yield Completion(replacement, start_position=-len(prefix), display=replacement)
 

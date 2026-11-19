@@ -32,6 +32,10 @@ You can also start it in another workspace:
 mddocx shell D:\Documents\report-project
 ```
 
+The workspace summary and file pickers show files directly in the current folder. Use
+`cd subfolder` to switch folders, or type a file path to select it explicitly. Project
+builds still follow the sources listed in the project manifest.
+
 ## Main menu
 
 The console detects the current workspace and shows Markdown, DOCX, image/data assets, and `mddocx.yml` status. The menu exposes:

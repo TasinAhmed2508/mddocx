@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from .api import MarkdownWord
+from .api import MarkdownWord, _apply_front_matter
 from .ast.base import Document
 from .config import RenderConfig
 from .config_validation import validate_render_config
@@ -14,10 +14,11 @@ from .layout import LayoutPlan
 from .limits import enforce_ast_limits, enforce_input_limit
 from .metadata import sanitize_markdown_metadata
 from .normalize import Normalizer, SemanticIndex, build_semantic_index
-from .parser import MarkdownParser
 from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
 from .source import SourceDocument, acquire_markdown_source
+from .validation import validated_docx_parts
+from .verification import VerificationResult, compare_document
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class CompilationResult:
     stats: RenderStats
     output_path: Path | None = None
     layout_plan: LayoutPlan = LayoutPlan()
+    dependencies: tuple[Path, ...] = ()
 
     @property
     def success(self) -> bool:
@@ -36,7 +38,11 @@ class CompilationResult:
 
     @property
     def completed_with_fallbacks(self) -> bool:
-        return any(item.code == "MATH201" for item in self.diagnostics)
+        return self.recovered or any(item.code == "MATH201" for item in self.diagnostics)
+
+    @property
+    def recovered(self) -> bool:
+        return any(item.code == "RECOVER201" for item in self.diagnostics)
 
     def diagnostics_json(self, indent: int | None = 2) -> str:
         reporter = DiagnosticReporter(list(self.diagnostics))
@@ -74,7 +80,7 @@ class LayoutStageResult:
 
 
 class Compiler:
-    """Staged-v2 compiler service backed by the stable v1 pipeline."""
+    """Parse, normalize, plan, render, verify, and compile Markdown documents."""
 
     def __init__(self, config: RenderConfig | None = None) -> None:
         self.config = validate_render_config(
@@ -88,15 +94,20 @@ class Compiler:
         source_file: str | None = None,
     ) -> DocumentStageResult:
         """Acquire, sanitize, and parse Markdown into the canonical AST."""
-        enforce_input_limit(markdown, self.config.limits)
-        sanitized = sanitize_markdown_metadata(markdown, self.config.metadata)
-        parser = MarkdownParser(self.config.extensions, self.config.metadata)
+        return self._parse(markdown, MarkdownWord(self.config), source_file)
+
+    def _parse(
+        self, markdown: str, service: MarkdownWord, source_file: str | None
+    ) -> DocumentStageResult:
+        enforce_input_limit(markdown, service.config.limits)
+        sanitized = sanitize_markdown_metadata(markdown, service.config.metadata)
+        parser = service.parser
         document = parser.parse(
             sanitized.markdown,
             source_file=source_file,
             sanitize_metadata=False,
         )
-        diagnostics: list[Diagnostic] = []
+        diagnostics = list(service.reporter.diagnostics)
         if sanitized.report.changed:
             diagnostics.append(
                 Diagnostic(
@@ -132,10 +143,11 @@ class Compiler:
     def normalize(self, document: Document) -> DocumentStageResult:
         """Normalize and validate a parsed AST without rendering it."""
         service = MarkdownWord(self.config)
+        config = service._config_for_document(Path("."), document.metadata)
         normalizer = Normalizer(service.reporter)
         normalized = normalizer.normalize(deepcopy(document))
-        normalized = call_transform_document(service.config.extensions, normalized)
-        enforce_ast_limits(normalized, self.config.limits)
+        normalized = call_transform_document(config.extensions, normalized)
+        enforce_ast_limits(normalized, config.limits)
         return DocumentStageResult(
             normalized,
             service.diagnostics,
@@ -164,10 +176,23 @@ class Compiler:
         document: Document,
         *,
         base_dir: str | Path | None = None,
+        diagnostics: tuple[Diagnostic, ...] = (),
     ) -> CompilationResult:
         """Render a canonical AST and finalize a validated DOCX package."""
+        return self._render(document, base_dir, diagnostics)
+
+    def _render(
+        self,
+        document: Document,
+        base_dir: str | Path | None,
+        diagnostics: tuple[Diagnostic, ...],
+        *,
+        effective_config: bool = False,
+    ) -> CompilationResult:
         service = MarkdownWord(self.config)
-        output = service.render_ast(deepcopy(document), base_dir=base_dir)
+        output = service._render_ast(
+            deepcopy(document), base_dir, diagnostics, effective_config=effective_config
+        )
         return CompilationResult(
             output,
             service.diagnostics,
@@ -209,17 +234,20 @@ class Compiler:
         self,
         input_path: str | Path,
         output_path: str | Path,
+        *,
+        report_paths: tuple[Path, ...] = (),
     ) -> CompilationResult:
         source = Path(input_path)
         target = Path(output_path)
         compiler = MarkdownWord(self.config)
-        output = compiler._render_file(source, target)
+        output = compiler._render_file(source, target, report_paths=report_paths)
         return CompilationResult(
             output,
             compiler.diagnostics,
             compiler.last_stats,
             target,
             compiler.last_layout_plan,
+            tuple(sorted(compiler._dependencies)),
         )
 
     def check_file(self, input_path: str | Path) -> DocumentStageResult:
@@ -229,4 +257,27 @@ class Compiler:
             normalized.document,
             parsed.diagnostics + normalized.diagnostics,
             normalized.semantic_index,
+        )
+
+    def verify(self, source_path: str | Path, output: str | Path | bytes) -> VerificationResult:
+        """Compare normalized source constructs with a DOCX, entirely in-process."""
+        source = Path(source_path)
+        parser_config = deepcopy(self.config)
+        parser_config.extensions = ()
+        parser_config.plugins.names = ()
+        parser_config.recover = False
+        source_text = self.acquire_file(source)
+        parsed = self._parse(source_text.text, MarkdownWord(parser_config), source_text.source_file)
+        # Extension hooks are not called by the offline verifier.
+        reporter = DiagnosticReporter()
+        normalized = Normalizer(reporter).normalize(parsed.document)
+        config = validate_render_config(
+            _apply_front_matter(deepcopy(self.config), normalized.metadata, True)
+        )
+        enforce_ast_limits(normalized, config.limits)
+        blob = output if isinstance(output, bytes) else Path(output).read_bytes()
+        roots = validated_docx_parts(blob, config.validation)
+        result = compare_document(normalized, roots, config)
+        return VerificationResult(
+            result.checked_units, result.findings, parsed.diagnostics + tuple(reporter.diagnostics)
         )

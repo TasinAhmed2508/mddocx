@@ -268,6 +268,7 @@ class ValidationConfig:
     max_total_uncompressed_size: int = 100_000_000
     validate_relationships: bool = True
     validate_math_structure: bool = True
+    validate_schema_order: bool = True
     detect_placeholder_chars: bool = False
     allow_macros: bool = False
 
@@ -385,3 +386,4 @@ class RenderConfig:
     heading_bookmarks: bool = True
     image_captions_from_title: bool = True
     extensions: tuple[Any, ...] = ()
+    recover: bool = False

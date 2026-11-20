@@ -274,6 +274,8 @@ class Compiler:
         config = validate_render_config(
             _apply_front_matter(deepcopy(self.config), normalized.metadata, True)
         )
+        if config.base_dir is None:
+            config.base_dir = source_text.base_dir
         enforce_ast_limits(normalized, config.limits)
         blob = output if isinstance(output, bytes) else Path(output).read_bytes()
         roots = validated_docx_parts(blob, config.validation)

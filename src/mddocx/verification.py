@@ -14,6 +14,7 @@ from lxml import etree
 from .ast import block, inline
 from .ast.base import Document, Node
 from .config import RenderConfig
+from .data import load_data_table
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
 from .math.latex import UnsupportedLatexError
@@ -223,6 +224,8 @@ def compare_document(
                 expected.append(_Unit("paragraph", (), node))
             elif isinstance(node, block.SectionBreak):
                 incomplete("Section break layout is outside current coverage.", node)
+            elif isinstance(node, block.DataTableBlock):
+                blocks([load_data_table(node, config)], level)
             elif isinstance(node, block.Table):
                 columns, placements = table_grid(node, config.limits.max_table_cells)
                 repeat = repeatable_header_rows(node) if config.table.repeat_header else 0
@@ -254,7 +257,10 @@ def compare_document(
                     else None
                 )
                 captioned(
-                    [_Unit("table", (columns, tuple(expected_rows)), node)], "Table", title, node
+                    [_Unit("table", (columns, tuple(expected_rows)), node)] if columns else [],
+                    "Table",
+                    title,
+                    node,
                 )
             elif isinstance(node, block.ImageBlock):
                 title = (

@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+from typing import NoReturn
+
+from .ast.base import SourcePosition
 from .ast.block import Table, TableCell
 from .diagnostics import Diagnostic, MddocxError
 
 WORD_COLUMNS = 63
+
+
+def check_grid_size(columns: int, rows: int, budget: int, source: SourcePosition | None) -> None:
+    if columns > WORD_COLUMNS:
+        _fail("TABLE401", "Table exceeds 63 Word columns. Split it into narrower tables.", source)
+    if columns * rows > budget:
+        _fail("LIMIT404", "Expanded table grid exceeds the configured cell limit.", source)
+
+
+def _fail(code: str, message: str, source: SourcePosition | None) -> NoReturn:
+    raise MddocxError(
+        Diagnostic(
+            "error", code, message, source.file if source else None, source.line if source else None
+        )
+    )
 
 
 def table_grid(
@@ -13,18 +31,6 @@ def table_grid(
     width = 0
     rows: list[list[tuple[int, TableCell]]] = []
     occupied_until = [0] * WORD_COLUMNS
-
-    def _fail(code: str, message: str) -> None:
-        source = table.source
-        raise MddocxError(
-            Diagnostic(
-                "error",
-                code,
-                message,
-                source.file if source else None,
-                source.line if source else None,
-            )
-        )
 
     for index, row in enumerate(table.rows):
         column = 0
@@ -40,15 +46,13 @@ def table_grid(
                 or height < 1
                 or index + height > len(table.rows)
             ):
-                _fail("TABLE402", "Invalid table cell span.")
+                _fail("TABLE402", "Invalid table cell span.", table.source)
             right = column + span
-            if right > WORD_COLUMNS:
-                _fail("TABLE401", "Table exceeds 63 Word columns. Split it into narrower tables.")
-            if any(occupied_until[i] > index for i in range(column, right)):
-                _fail("TABLE402", "Overlapping table cell spans.")
-            width = max(width, right)
-            if width * len(table.rows) > budget:
-                _fail("LIMIT404", "Expanded table grid exceeds the configured cell limit.")
+            if right > width:
+                check_grid_size(right, len(table.rows), budget, table.source)
+                width = right
+            if span > 1 and any(end > index for end in occupied_until[column:right]):
+                _fail("TABLE402", "Overlapping table cell spans.", table.source)
             occupied_until[column:right] = [index + height] * span
             placements.append((column, cell))
             column = right

@@ -201,6 +201,11 @@ def test_report_theme_styles_native_heading_and_table():
     assert heading.paragraph_format.keep_with_next
     shading = next(word.tables[0].cell(0, 0)._tc.iter(qn("w:shd")))
     assert shading.get(qn("w:fill")) == "E3ECF8"
+    cell_style = word.tables[0].cell(1, 0).paragraphs[0].style
+    assert cell_style.name == "MD Table Text"
+    assert cell_style.base_style.name == "MD Normal"
+    assert cell_style.paragraph_format.space_after.pt == 0
+    assert cell_style.base_style.paragraph_format.space_after.pt == 7
 
 
 def test_small_table_after_explicit_portrait_section_respects_current_orientation():

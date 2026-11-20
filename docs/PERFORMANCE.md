@@ -83,3 +83,15 @@ time from **3.560 s to 0.316 s**. Both modes produced byte-identical DOCX files.
 The 20-section mixed report measured **0.586 s to 0.573 s** across five alternating
 pairs, comparing commit `e32a386` with the chemistry changes. All outputs matched byte
 for byte.
+
+## Imported tables
+
+Five alternating pairs on Windows with Python 3.12 parsed the same CSV of 8,000 rows
+and 32 columns. Each run averaged 12 parses. Compared with commit `82e93e8`, median
+parser CPU time per parse fell from **0.0573 s to 0.0404 s**. Peak traced Python
+memory per parse fell from **20.73 MiB to 15.79 MiB**. The parsed datasets matched.
+
+Microsoft Word laid out an 84-row, eight-column survey in **seven pages with compact
+Report-theme cells**, down from nine pages with body paragraph spacing. Both exports
+contain all 84 record IDs exactly once, with repeated table headers and portrait
+pages before and after the landscape section.

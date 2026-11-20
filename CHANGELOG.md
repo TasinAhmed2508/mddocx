@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve every CSV column in native tables, including values under repeated headers and fields
+  beyond the header row. Keep a single Word line break for each source line break.
+- Verify imported CSV and JSON tables offline against their local data.
+- Give Report-theme tables compact cell paragraph spacing for multipage reports.
 - Convert common mhchem reactions and physical units into editable Word equations.
 - Preserve the left and right scripts and limits of `\sideset` with the Python math engine.
 - Avoid empty portrait pages next to automatically rotated wide tables.

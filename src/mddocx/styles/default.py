@@ -54,6 +54,17 @@ def ensure_styles(document, config: RenderConfig) -> None:
         s.paragraph_format.space_after = Pt(theme.paragraph_after_pt)
         s.paragraph_format.widow_control = True
 
+    if theme.table_paragraph_after_pt is not None:
+        name = "MD Table Text"
+        created = name not in styles
+        if created:
+            s = styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+            s.base_style = styles[resolve_style_name(document, config, "MD Normal")]
+        else:
+            s = styles[name]
+        if created or not preserve:
+            s.paragraph_format.space_after = Pt(theme.table_paragraph_after_pt)
+
     for level in range(1, 7):
         name = f"MD Heading {level}"
         created = name not in styles

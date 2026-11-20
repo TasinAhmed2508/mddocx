@@ -18,6 +18,7 @@ class ThemeSpec:
     heading_color: str = "000000"
     heading_space_before_pt: float | None = None
     heading_space_after_pt: float | None = None
+    table_paragraph_after_pt: float | None = None
 
 
 THEMES: dict[str, ThemeSpec] = {
@@ -95,6 +96,7 @@ THEMES: dict[str, ThemeSpec] = {
         heading_color="16375D",
         heading_space_before_pt=15,
         heading_space_after_pt=6,
+        table_paragraph_after_pt=0,
     ),
 }
 

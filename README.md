@@ -224,8 +224,9 @@ are padded. Unsupported HTML tables remain visible as source text with a diagnos
     mddocx completions powershell
 
 Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
-heading levels and bookmarks, hard breaks, list nesting and task status, table cells, hyperlink
-targets, image alt text, native equation structure and source identifiers and numerals,
+heading levels and bookmarks, hard breaks, list nesting and task status, Markdown and imported
+CSV/JSON table cells, hyperlink targets, image alt text, native equation structure and source
+identifiers and numerals,
 footnotes and endnotes (including their equations), simple captions and reference fields,
 and native chart/workbook relationships. It returns **0** for a match, **3**
 for differences or incomplete coverage, and **2** for invalid input or package errors. Visual
@@ -335,7 +336,8 @@ Document settings can be defined at the top of a Markdown file:
 
 ## Report layout
 
-Use `--theme report` for navy headings, more defined heading spacing, and blue table headers.
+Use `--theme report` for navy headings, more defined heading spacing, and compact tables
+with blue headers.
 Use `--auto-landscape-tables` to fit wide grids in a landscape section and resume the prior
 orientation afterward. For a deliberate section boundary, put
 `<!-- sectionbreak orientation=landscape -->` or `<!-- sectionbreak orientation=portrait -->`

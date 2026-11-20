@@ -32,10 +32,6 @@ if TYPE_CHECKING:
 
 
 def render_table_block(renderer: DocxRenderer, node: Table) -> None:
-    render_table_with_layout(renderer, node)
-
-
-def render_table_with_layout(renderer: DocxRenderer, node: Table) -> None:
     caption = (
         (node.caption or ("Table" if node.identifier else None))
         if renderer.config.references.captions
@@ -150,7 +146,10 @@ def render_table(renderer: DocxRenderer, node: Table, *, caption_below: bool = F
     header_fill = renderer.config.table.header_shading
     if header_fill == "EDEDED" and renderer.config.theme != "default":
         header_fill = renderer._theme.table_header_fill
-    body_style_id = table.part.get_style_id(renderer._style("MD Normal"), WD_STYLE_TYPE.PARAGRAPH)
+    text_style = (
+        "MD Table Text" if renderer._theme.table_paragraph_after_pt is not None else "MD Normal"
+    )
+    body_style_id = table.part.get_style_id(renderer._style(text_style), WD_STYLE_TYPE.PARAGRAPH)
     grid = [list(row.cells) for row in table.rows]
     for cells in grid:
         for cell, width in zip(cells, widths):

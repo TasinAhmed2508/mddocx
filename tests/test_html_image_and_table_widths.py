@@ -4,6 +4,8 @@ from zipfile import ZipFile
 
 from PIL import Image
 from docx import Document
+from docx.shared import Twips
+import pytest
 
 from mddocx import MarkdownWord, RenderConfig, TableConfig
 
@@ -56,3 +58,22 @@ def test_html_breaks_become_native_line_breaks_in_table_cells():
 
     assert document.tables[0].cell(1, 0).text == "One\nTwo\nThree"
     assert document.paragraphs[-1].text == "<br> and <mark>literal</mark>"
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "| Image | Description | Context |\n|---|---|---|\n| ![Plate](plate.png) | Notes | Source |",
+        "<table><tr><th>Image</th><th>Description</th><th>Context</th></tr>"
+        '<tr><td colspan="2"><img src="plate.png" alt="Plate"></td><td>Source</td></tr></table>',
+    ],
+)
+def test_table_images_fit_native_cell_and_keep_aspect_ratio(tmp_path, table):
+    Image.new("RGB", (1280, 480), "#4472C4").save(tmp_path / "plate.png")
+    config = RenderConfig(table=TableConfig(auto_landscape=False, cell_padding_twips=120))
+    doc = Document(BytesIO(MarkdownWord(config).render_string(table, base_dir=tmp_path)))
+    (picture,) = doc.inline_shapes
+    cell = doc.tables[0].cell(1, 0)
+
+    assert picture.width == cell.width - Twips(240)
+    assert picture.height == pytest.approx(picture.width * 480 / 1280, abs=1)

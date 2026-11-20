@@ -7,7 +7,16 @@ from lxml import etree, html
 
 from mddocx.ast.base import SourcePosition
 from mddocx.ast.block import Paragraph, Table, TableCell, TableRow
-from mddocx.ast.inline import Emphasis, HardBreak, InlineCode, Link, Strikethrough, Strong, Text
+from mddocx.ast.inline import (
+    Emphasis,
+    HardBreak,
+    Image,
+    InlineCode,
+    Link,
+    Strikethrough,
+    Strong,
+    Text,
+)
 from mddocx.diagnostics import MddocxError
 from mddocx.table_grid import table_grid
 
@@ -40,12 +49,23 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
                 nodes.append(_FORMATTING[child.tag](children=inlines(child), source=pos))
             elif child.tag == "br":
                 nodes.append(HardBreak(source=pos))
+            elif child.tag == "img" and (src := child.get("src", "").strip()):
+                nodes.append(
+                    Image(
+                        src=src,
+                        alt=child.get("alt", ""),
+                        title=child.get("title"),
+                        source=position(child),
+                    )
+                )
             elif child.tag == "code" and not len(child):
                 nodes.append(InlineCode(code=child.text or "", source=pos))
             elif child.tag == "a":
                 href = child.get("href", "")
                 if not href or not parser.md.validateLink(href):
                     raise ValueError("Unsupported hyperlink destination.")
+                if child.find(".//img") is not None:
+                    raise ValueError("Unsupported linked image inside a table cell.")
                 nodes.append(
                     Link(href=parser.md.normalizeLink(href), children=inlines(child), source=pos)
                 )
@@ -75,6 +95,8 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
         caption = None
         for group in root:
             if group.tag == "caption" and caption is None:
+                if group.find(".//img") is not None:
+                    raise ValueError("Unsupported image inside a table caption.")
                 inlines(group)
                 caption = " ".join(group.text_content().split())
                 continue

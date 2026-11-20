@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Apply captions and sizing to standalone image links, fit pictures within table cells,
+  and detect missing or external-only picture bindings during offline verification.
 - Render aligned equation pairs and nested matrices as native Word math through the Python
   fallback, with editable text labels and explicit top or bottom alignment.
 - Preserve matrix column alignment when Word lays out the equation.

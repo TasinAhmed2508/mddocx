@@ -425,7 +425,9 @@ class DocxRenderer:
             elif isinstance(node, HardBreak):
                 paragraph.add_run().add_break()
             elif isinstance(node, Image):
-                figures.add_image(self, paragraph, node.src, node.alt, source=node.source)
+                figures.add_image(
+                    self, paragraph, node.src, node.alt, title=node.title, source=node.source
+                )
 
     def _plain_inline_text(self, nodes) -> str:
         out = []

@@ -8,6 +8,7 @@ from threading import Thread
 from zipfile import ZipFile
 
 import pytest
+from docx import Document
 from PIL import Image
 
 from mddocx import Compiler, MarkdownWord, RenderConfig
@@ -135,11 +136,16 @@ def test_animated_gif_is_preserved_in_docx_package(tmp_path):
 def test_direct_image_links_embed_and_other_links_do_not_fetch(tmp_path):
     image = BytesIO()
     Image.new("RGB", (64, 34), "#315c91").save(image, format="JPEG")
-    cfg = RenderConfig(resources=ResourcePolicy(allow_private_hosts=True))
+    cfg = RenderConfig(
+        resources=ResourcePolicy(allow_private_hosts=True),
+        images=ImageConfig(allow_upscale=True),
+    )
     with _server({"/plate.JPG?raw=1": (200, "image/jpeg", image.getvalue())}) as (origin, counts):
         url = f"{origin}/plate.JPG?raw=1"
         source = (
-            f"[Inspection plate]({url})\n\n{url}\n\n"
+            f'[Inspection plate]({url}) {{#fig:plate width=35% caption="Inspection results"}}\n\n'
+            f"{url} {{width=55%}}\n\n"
+            f"[Prose link]({origin}/do-not-fetch.png) with notes {{width=35%}}\n\n"
             f"Ordinary link: [Documentation]({origin}/guide).\n\n"
             f"![First]({url}) ![Second]({url})"
         )
@@ -149,10 +155,18 @@ def test_direct_image_links_embed_and_other_links_do_not_fetch(tmp_path):
         output = compiler.compile_file(md, tmp_path / "report.docx").output_bytes
         assert compiler.verify(md, output).ok
     assert counts == {"/plate.JPG?raw=1": 1}
+    document = Document(BytesIO(output))
+    section = document.sections[0]
+    text_width = section.page_width - section.left_margin - section.right_margin
+    assert [picture.width for picture in document.inline_shapes][:2] == [
+        int(text_width * percent) for percent in (0.35, 0.55)
+    ]
     with ZipFile(BytesIO(output)) as package:
         xml = package.read("word/document.xml")
         assert xml.count(b"<w:drawing>") == 4
         assert b'descr="Inspection plate"' in xml
+        assert b"Inspection results" in xml
+        assert b"with notes {width=35%}" in xml
         assert any(
             package.read(name) == image.getvalue()
             for name in package.namelist()

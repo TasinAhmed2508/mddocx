@@ -353,9 +353,11 @@ on its own line.
 Use `![Description](https://example.org/chart.jpg)` to embed a remote figure. A direct
 HTTP(S) image URL on its own line or a standalone link such as
 `[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.
+Append figure attributes to a standalone link to set its size or caption, for example
+`[Chart description](https://example.org/chart.jpg) {width=70% caption="Quarterly output"}`.
 For files served from extensionless URLs, use the explicit image syntax. The resource
 resolver checks the downloaded content before embedding and uses the configured fallback
-if the image is unavailable.
+if the image is unavailable. Images inside table cells fit within the cell padding.
 
 ## Privacy and security defaults
 

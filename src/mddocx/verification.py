@@ -11,6 +11,8 @@ from pathlib import PurePosixPath
 import re
 from typing import Literal
 
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.oxml.ns import qn
 from lxml import etree
 
 from .ast import block, inline
@@ -417,6 +419,7 @@ def compare_document(
         findings.extend(_equation_findings(body_math, main, BODY))
     actual, section_ends = _read_body(roots)
     findings.extend(_chart_findings(roots))
+    findings.extend(_image_findings(roots))
     expected_keys = [unit.key for unit in expected]
     actual_keys = [unit.key for unit in actual]
     if expected_keys == actual_keys:
@@ -572,6 +575,28 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
                 VerificationFinding("VERIFY303", "Missing chart workbook binding.", target)
             )
     return findings
+
+
+def _image_findings(roots: dict[str, etree._Element]) -> Iterator[VerificationFinding]:
+    relationships = roots.get(_RELS)
+    embedded_ids = (
+        {
+            relation.get("Id")
+            for relation in relationships
+            if (
+                relation.get("Id")
+                and relation.get("Type") == RELATIONSHIP_TYPE.IMAGE
+                and relation.get("Target")
+                and (relation.get("TargetMode") or "").lower() != "external"
+            )
+        }
+        if relationships is not None
+        else set()
+    )
+    for picture in roots[BODY].iter(qn("pic:pic")):
+        blip = picture.find(f"./{qn('pic:blipFill')}/{qn('a:blip')}")
+        if blip is None or blip.get(qn("r:embed")) not in embedded_ids:
+            yield VerificationFinding("VERIFY303", "Picture is missing an embedded image binding.")
 
 
 def _merge_text(tokens) -> tuple:

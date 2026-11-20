@@ -204,45 +204,12 @@ class MarkdownParser:
                 i += 3
             elif t.type == "paragraph_open":
                 inline = tokens[i + 1]
-                content = self._inline(inline.children or [], self._pos(t))
-                if len(content) == 1 and (linked_image := self._linked_image(content[0])):
-                    content = [linked_image]
-                # Promote a standalone image (optionally followed by an attribute list) to a block node.
-                if (
-                    content
-                    and isinstance(content[0], Image)
-                    and all(isinstance(x, Text) for x in content[1:])
-                ):
-                    im = content[0]
-                    identifier, attrs = self._extract_trailing_attrs(content[1:])
-                    leftover = "".join(x.text for x in content[1:] if isinstance(x, Text)).strip()
-                    if not leftover:
-                        width = attrs.get("width")
-                        width_percent = (
-                            float(width[:-1])
-                            if width
-                            and width.endswith("%")
-                            and width[:-1].replace(".", "", 1).isdigit()
-                            else None
-                        )
-                        nodes.append(
-                            ImageBlock(
-                                src=im.src,
-                                alt=im.alt,
-                                title=im.title,
-                                identifier=identifier,
-                                caption=attrs.get("caption"),
-                                width_percent=width_percent,
-                                align=attrs.get("align"),
-                                decorative=attrs.get("decorative", "false").lower()
-                                in {"1", "true", "yes"},
-                                source=self._pos(t),
-                            )
-                        )
-                    else:
-                        nodes.append(Paragraph(children=content, source=self._pos(t)))
-                else:
-                    nodes.append(Paragraph(children=content, source=self._pos(t)))
+                source = self._pos(t)
+                content = self._inline(inline.children or [], source)
+                image = self._standalone_image(content, source)
+                nodes.append(
+                    image if image is not None else Paragraph(children=content, source=source)
+                )
                 i += 3
             elif t.type in {"fence", "code_block"}:
                 info = (t.info or "").strip()
@@ -686,6 +653,46 @@ class MarkdownParser:
             elif hasattr(node, "children"):
                 parts.append(MarkdownParser._plain_text(node.children))
         return "".join(parts)
+
+    def _standalone_image(self, content: list, source: SourcePosition) -> ImageBlock | None:
+        if not content:
+            return None
+        first = content[0]
+        tail = content[1:]
+        if not all(isinstance(node, Text) for node in tail):
+            return None
+        if isinstance(first, Text):
+            if tail or not first.text.lstrip().startswith(("http://", "https://")):
+                return None
+            url, *attribute_text = first.text.split(maxsplit=1)
+            image = self._linked_image(Text(text=url))
+            tail = [Text(text=text) for text in attribute_text]
+        else:
+            image = first if isinstance(first, Image) else self._linked_image(first)
+            # Prose links keep their original text when they are not promoted to figures.
+            if tail and isinstance(first, Link):
+                tail[-1] = Text(text=tail[-1].text)
+        if image is None:
+            return None
+        identifier, attrs = self._extract_trailing_attrs(tail)
+        if any(node.text.strip() for node in tail):
+            return None
+        width = attrs.get("width", "")
+        return ImageBlock(
+            src=image.src,
+            alt=image.alt,
+            title=image.title,
+            identifier=identifier,
+            caption=attrs.get("caption"),
+            width_percent=(
+                float(width[:-1])
+                if width.endswith("%") and width[:-1].replace(".", "", 1).isdigit()
+                else None
+            ),
+            align=attrs.get("align"),
+            decorative=attrs.get("decorative", "false").lower() in {"1", "true", "yes"},
+            source=source,
+        )
 
     @staticmethod
     def _linked_image(node) -> Image | None:

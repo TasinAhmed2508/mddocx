@@ -1,6 +1,7 @@
 import json
 
 from docx import Document
+from docx.oxml.ns import qn
 from lxml import etree
 from PIL import Image
 import pytest
@@ -11,6 +12,35 @@ from mddocx.inspection import NS
 from mddocx.ooxml import bangla
 from mddocx.ooxml.package import read_parts, write_parts
 from mddocx.ooxml.sequence import get_or_add
+
+
+@pytest.mark.parametrize("change", ["linked", "missing-id"])
+def test_verify_detects_picture_without_embedded_binding(tmp_path, change):
+    Image.new("RGB", (8, 8), "white").save(tmp_path / "tile.png")
+    source = tmp_path / "image.md"
+    source.write_text("![Tile alt](tile.png)\n", encoding="utf-8")
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    parts = read_parts(blob)
+    main = etree.fromstring(parts["word/document.xml"])
+    blip = next(main.iter(qn("a:blip")))
+    if change == "linked":
+        rid = blip.attrib.pop(qn("r:embed"))
+        blip.set(qn("r:link"), rid)
+        name = "word/_rels/document.xml.rels"
+        rels = etree.fromstring(parts[name])
+        rel = next(relation for relation in rels if relation.get("Id") == rid)
+        rel.set("TargetMode", "External")
+        rel.set("Target", "https://example.com/tile.png")
+        parts[name] = etree.tostring(rels)
+    else:
+        blip.set(qn("r:embed"), "rIdMissing")
+    parts["word/document.xml"] = etree.tostring(main)
+
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part) == ("VERIFY303", "word/document.xml")
+    assert "embedded image binding" in finding.message
 
 
 @pytest.mark.parametrize("change", ["rotate", "remove", "move", "continuous"])

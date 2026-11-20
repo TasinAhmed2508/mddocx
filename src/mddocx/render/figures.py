@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Twips
+from docx.table import _Cell
 from lxml import etree
 
 from mddocx.ast.block import ImageBlock
@@ -131,13 +133,17 @@ def add_image_path(
     shape = run.add_picture(str(path))
     sec = renderer.document.sections[-1]
     usable = sec.page_width - sec.left_margin - sec.right_margin
+    cell = paragraph._parent
+    if isinstance(cell, _Cell) and cell.width is not None:
+        padding = Twips(2 * renderer.config.table.cell_padding_twips)
+        usable = min(usable, max(1, cell.width - padding))
     requested_percent = (
         width_percent
         if width_percent is not None
         else renderer.config.figures.default_width_percent
     )
     requested_percent = min(requested_percent, renderer.config.images.max_width_percent)
-    max_width = int(usable * max(0.05, min(1.0, requested_percent / 100.0)))
+    max_width = max(1, int(usable * max(0.05, min(1.0, requested_percent / 100.0))))
     if shape.width > max_width or (
         renderer.config.images.allow_upscale and shape.width < max_width
     ):

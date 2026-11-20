@@ -28,7 +28,7 @@ from .metadata import sanitize_markdown_metadata
 from .source import acquire_markdown_source
 
 _PROJECT_SCHEMA_VERSION = 1
-_PROJECT_ENGINE_VERSION = "mddocx-project-v7"
+_PROJECT_ENGINE_VERSION = "mddocx-project-v8"
 _INCLUDE_RE = re.compile(
     r"^[ \t]{0,3}@include[ \t]+(?:\"(?P<double>[^\"]+)\"|'(?P<single>[^']+)'|(?P<bare>[^\s#]+))[ \t]*$"
 )

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Honor heading typefaces and emphasis from themes and Word templates while retaining inline
+  code and script-specific fonts.
 - Resolve each paragraph style once per document to speed up long reports while preserving
   live style changes made by extensions. Remove the redundant per-cell width write.
 - Apply captions and sizing to standalone image links, fit pictures within table cells,

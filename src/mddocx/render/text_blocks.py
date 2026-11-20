@@ -38,10 +38,11 @@ def render_heading(renderer: DocxRenderer, node: Heading) -> None:
         and node.level <= renderer.config.heading_numbering.max_level
     ):
         renderer.numbering.apply(p, renderer._heading_num_id, node.level - 1)
-    renderer._render_inlines(p, node.children)
-    renderer._apply_text_direction(p._p, renderer._plain_inline_text(node.children))
+    renderer._render_inlines(p, node.children, inherit_style=True)
+    plain = renderer._plain_inline_text(node.children)
+    renderer._apply_text_direction(p._p, plain)
     if renderer.config.heading_bookmarks:
-        plain = renderer._plain_inline_text(node.children) or f"Heading {renderer._bookmark_id}"
+        plain = plain or f"Heading {renderer._bookmark_id}"
         target = (
             renderer.references.get(node.identifier)
             if node.identifier and renderer.references

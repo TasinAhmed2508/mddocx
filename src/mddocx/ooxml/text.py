@@ -33,7 +33,7 @@ def clean_xml_text(value: str) -> str:
 def configure_xml_run(
     run,
     text: str,
-    body: str,
+    body: str | None,
     east_asia: str | None,
     complex_script: str | None,
     rtl: bool = False,
@@ -43,14 +43,22 @@ def configure_xml_run(
     Accepts any run element, whether it belongs to a python-docx document, a
     header, or a note part, so every text surface is configured the same way.
     """
+    east_asia = east_asia if east_asia and has_cjk(text) else None
+    complex_script = (
+        complex_script if complex_script and (rtl or has_complex_script(text)) else None
+    )
+    if body is None and not east_asia and not complex_script and not rtl:
+        return
     rpr = get_or_add(run, "w:rPr")
-    rfonts = get_or_add(rpr, "w:rFonts")
-    rfonts.set(qn("w:ascii"), body)
-    rfonts.set(qn("w:hAnsi"), body)
-    if east_asia and has_cjk(text):
-        rfonts.set(qn("w:eastAsia"), east_asia)
-    if complex_script and (rtl or has_complex_script(text)):
-        rfonts.set(qn("w:cs"), complex_script)
+    if body is not None or east_asia or complex_script:
+        rfonts = get_or_add(rpr, "w:rFonts")
+        if body is not None:
+            rfonts.set(qn("w:ascii"), body)
+            rfonts.set(qn("w:hAnsi"), body)
+        if east_asia:
+            rfonts.set(qn("w:eastAsia"), east_asia)
+        if complex_script:
+            rfonts.set(qn("w:cs"), complex_script)
     if rtl:
         get_or_add(rpr, "w:rtl").set(qn("w:val"), "1")
 

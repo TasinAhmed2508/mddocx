@@ -10,6 +10,7 @@ from mddocx.math.converter import DefaultMathConverter
 from mddocx.math.latex import UnsupportedLatexError
 from mddocx.math.mathml import MathMLToOMML
 from mddocx.math.sidecar import MathJaxSidecar
+from mddocx.ooxml import bangla
 
 
 @pytest.mark.parametrize(
@@ -276,6 +277,37 @@ def test_report_theme_styles_native_heading_and_table():
     assert cell_style.base_style.name == "MD Normal"
     assert cell_style.paragraph_format.space_after.pt == 0
     assert cell_style.base_style.paragraph_format.space_after.pt == 7
+
+
+@pytest.mark.parametrize("bengali_font", ["Nirmala UI", "SutonnyMJ"])
+def test_heading_honors_its_typography_and_script_fonts(tmp_path, monkeypatch, bengali_font):
+    monkeypatch.setattr(bangla, "installed_font_stems", lambda: frozenset({"nirmala", "sutonnymj"}))
+    config = RenderConfig(theme="report")
+    config.fonts.headings = "Georgia"
+    config.fonts.body = "Calibri"
+    config.fonts.bengali = bengali_font
+    config.fonts.east_asia = "Microsoft YaHei"
+    source = tmp_path / "report.md"
+    source.write_text(
+        "# Results *review* `index` [中文](https://example.com) বাংলা\n\nBody text.\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler(config)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    heading, body = Document(BytesIO(result.output_bytes)).paragraphs
+    normal, emphasis = heading.runs[:2]
+    code = next(run for run in heading.runs if run.text == "index")
+
+    assert heading.style.font.name == "Georgia"
+    assert (normal.font.name, normal.bold, normal.italic) == (None, None, None)
+    assert emphasis.italic is True
+    assert code.font.name == "Consolas"
+    linked_font = heading.hyperlinks[0].runs[0]._r.rPr.rFonts
+    assert linked_font.get(qn("w:ascii")) is None
+    assert linked_font.get(qn("w:eastAsia")) == "Microsoft YaHei"
+    assert any(run.font.name == bengali_font for run in heading.runs)
+    assert body.runs[0].font.name == "Calibri"
+    assert compiler.verify(source, result.output_bytes).ok
 
 
 def test_small_table_after_explicit_portrait_section_respects_current_orientation():

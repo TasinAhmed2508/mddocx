@@ -331,40 +331,46 @@ class DocxRenderer:
                 getattr(source, "line", None),
             )
 
-    def _render_inlines(self, paragraph, nodes, bold=False, italic=False, strike=False):
+    def _render_inlines(
+        self, paragraph, nodes, bold=False, italic=False, strike=False, *, inherit_style=False
+    ):
         for node in nodes:
             state = {"bold": bold, "italic": italic, "strike": strike}
             if render_custom_inline(self.config.extensions, self, paragraph, node, state):
                 continue
-            if isinstance(node, Text):
-                text = clean_xml_text(node.text)
+            if isinstance(node, (Text, InlineCode)):
+                code = isinstance(node, InlineCode)
+                text = clean_xml_text(node.code if code else node.text)
                 r = paragraph.add_run(text)
-                r.bold = bold
-                r.italic = italic
-                r.font.strike = strike
-                self._configure_run(r, text)
+                if bold or not inherit_style:
+                    r.bold = bold
+                if italic or not inherit_style:
+                    r.italic = italic
+                if strike or not inherit_style:
+                    r.font.strike = strike
+                self._configure_run(r, text, code=code, inherit_style=inherit_style)
             elif isinstance(node, Strong):
-                self._render_inlines(paragraph, node.children, True, italic, strike)
+                self._render_inlines(
+                    paragraph, node.children, True, italic, strike, inherit_style=inherit_style
+                )
             elif isinstance(node, Emphasis):
-                self._render_inlines(paragraph, node.children, bold, True, strike)
+                self._render_inlines(
+                    paragraph, node.children, bold, True, strike, inherit_style=inherit_style
+                )
             elif isinstance(node, Strikethrough):
-                self._render_inlines(paragraph, node.children, bold, italic, True)
-            elif isinstance(node, InlineCode):
-                text = clean_xml_text(node.code)
-                r = paragraph.add_run(text)
-                r.bold = bold
-                r.italic = italic
-                r.font.strike = strike
-                self._configure_run(r, text, code=True)
+                self._render_inlines(
+                    paragraph, node.children, bold, italic, True, inherit_style=inherit_style
+                )
             elif isinstance(node, Link):
                 text = clean_xml_text(self._plain_inline_text(node.children))
+                link = None
                 if node.href.startswith("#") and self.references:
                     target = self.references.get(node.href[1:])
                     if target:
-                        add_internal_hyperlink(paragraph, text, target.bookmark)
+                        link = add_internal_hyperlink(paragraph, text, target.bookmark)
                     else:
                         r = paragraph.add_run(text)
-                        self._configure_run(r, text)
+                        self._configure_run(r, text, inherit_style=inherit_style)
                         self.reporter.warn(
                             "REF201",
                             f"Unresolved internal link: {node.href}",
@@ -372,16 +378,19 @@ class DocxRenderer:
                             getattr(node.source, "line", None),
                         )
                 else:
-                    add_hyperlink(
+                    rtl = self._rtl_for_text(text)
+                    link = add_hyperlink(
                         paragraph,
                         text,
                         node.href,
                         bold,
                         italic,
                         strike,
-                        font_name=self.fonts.for_text(rtl=self._rtl_for_text(text)),
-                        rtl=self._rtl_for_text(text),
+                        font_name=None if inherit_style else self.fonts.for_text(rtl=rtl),
+                        rtl=rtl,
                     )
+                if inherit_style and link is not None:
+                    self._configure_xml_run(link[0], text, inherit_style=True)
             elif isinstance(node, CrossReference):
                 citations.render_cross_reference(self, paragraph, node)
             elif isinstance(node, Citation):
@@ -408,7 +417,7 @@ class DocxRenderer:
                     )
                 else:
                     r = paragraph.add_run(clean_xml_text(text))
-                    self._configure_run(r, text)
+                    self._configure_run(r, text, inherit_style=inherit_style)
             elif isinstance(node, InlineMath):
                 self._append_math(paragraph, node.source_text, False, node.source)
             elif isinstance(node, FootnoteReference):
@@ -421,7 +430,7 @@ class DocxRenderer:
                         getattr(node.source, "line", None),
                     )
                     r = paragraph.add_run(f"[^{node.label}]")
-                    self._configure_run(r, r.text)
+                    self._configure_run(r, r.text, inherit_style=inherit_style)
                 else:
                     footnote_id = self._footnote_ids.get(node.label)
                     if footnote_id is None:
@@ -478,11 +487,15 @@ class DocxRenderer:
             return False
         return is_rtl_text(text)
 
-    def _configure_run(self, run, text: str, code: bool = False) -> None:
+    def _configure_run(
+        self, run, text: str, code: bool = False, *, inherit_style: bool = False
+    ) -> None:
         """Configure a python-docx run with the document's script font slots."""
-        self._configure_xml_run(run._r, text, code=code)
+        self._configure_xml_run(run._r, text, code=code, inherit_style=inherit_style)
 
-    def _configure_xml_run(self, run, text: str, code: bool = False) -> None:
+    def _configure_xml_run(
+        self, run, text: str, code: bool = False, *, inherit_style: bool = False
+    ) -> None:
         """Configure any raw ``w:r`` element, including note and header runs.
 
         Bound as the note-part callback, so it accepts ``(run, text)``.
@@ -493,7 +506,7 @@ class DocxRenderer:
         configure_xml_run(
             run,
             text,
-            self.fonts.for_text(rtl=rtl, code=code),
+            None if inherit_style and not code else self.fonts.for_text(rtl=rtl, code=code),
             self.fonts.east_asia,
             self.fonts.complex_script,
             rtl,

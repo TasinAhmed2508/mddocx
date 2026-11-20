@@ -89,6 +89,9 @@ rest are structural debts.
 
 ## How to use this document
 
+- Include the local checkout rename in every version bump. Match the folder name to
+  the exact version in `pyproject.toml`, including prerelease suffixes, and verify Git
+  at the new path. See [workspace conventions](../AGENTS.md).
 - Each PR addresses one row and states its acceptance criterion in the description.
 - New rows go in the table rather than into issue text, so the plan stays readable and
   reviewable in the repository.

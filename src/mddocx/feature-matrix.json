@@ -76,9 +76,10 @@
         "tests/test_ai_math_compatibility.py",
         "tests/test_smart_math_pipeline.py",
         "tests/test_equation_conformance_corpus.py",
+        "tests/test_verification.py",
         "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"
       ],
-      "verify": "Presence of native OMML"
+      "verify": "Native OMML presence and structure, source identifiers and numerals, fractions and radicals"
     },
     {
       "id": "images-and-figures",
@@ -135,9 +136,10 @@
       "tests": [
         "tests/test_technical_report.py",
         "tests/test_diagnostic_locations.py",
-        "tests/test_fidelity_corpora.py"
+        "tests/test_fidelity_corpora.py",
+        "tests/test_verification.py"
       ],
-      "verify": "Native note links and supported note body text"
+      "verify": "Native note links, supported note body text, and native equations"
     },
     {
       "id": "charts-and-data",

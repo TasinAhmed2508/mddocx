@@ -1,5 +1,6 @@
 import json
 
+from docx import Document
 from lxml import etree
 from PIL import Image
 import pytest
@@ -140,6 +141,75 @@ def test_verify_reports_heading_bookmark_drift(tmp_path):
     )
     findings = compiler.verify(source, write_parts(parts)).findings
     assert findings[0].code == "VERIFY303" and findings[0].line == 1
+
+
+def test_quoted_heading_keeps_native_style_and_link_target(tmp_path):
+    source = tmp_path / "quoted.md"
+    source.write_text(
+        "# Report\n\n> ## Quoted finding {#finding}\n>\n> Supporting notes.\n>\n"
+        "> - Detail\n>   ### Nested finding {#nested}\n\n"
+        "[See the finding](#finding) and [the detail](#nested).\n",
+        encoding="utf-8",
+    )
+    output = source.with_suffix(".docx")
+    compiler = Compiler()
+    compiler.compile_file(source, output)
+    result = compiler.verify(source, output)
+    assert result.ok, result
+    paragraphs = {p.text: p for p in Document(output).paragraphs}
+    assert paragraphs["Quoted finding"].style.name == "MD Heading 2"
+    assert paragraphs["Nested finding"].style.name == "MD Heading 3"
+    assert paragraphs["Supporting notes."].style.name == "MD Quote"
+    assert paragraphs["Detail"]._p.pPr.numPr is not None
+
+
+@pytest.mark.parametrize("note_style", ["footnote", "endnote"])
+def test_complex_equations_verify_offline_in_body_and_notes(tmp_path, monkeypatch, note_style):
+    source = tmp_path / "equations.md"
+    source.write_text(
+        "# Equations\n\n$$\n\\frac{f(x)}{1+x^2}+\\sqrt{y}\n$$\n\n"
+        "A note.[^n]\n\n[^n]: Math $\\frac{2}{z}$.\n",
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.notes.style = note_style
+    compiler = Compiler(config)
+    output = source.with_suffix(".docx")
+    compiler.compile_file(source, output)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("verification attempted to render or launch a process")
+
+    monkeypatch.setattr("subprocess.run", forbidden)
+    monkeypatch.setattr("mddocx.MarkdownWord._render_document", forbidden)
+    result = compiler.verify(source, output)
+    assert result.ok, result
+    for part in ("word/document.xml", f"word/{note_style}s.xml"):
+        parts = read_parts(output.read_bytes())
+        root = etree.fromstring(parts[part])
+        math = root.find(".//m:oMath", NS)
+        assert math is not None
+        math.insert(0, etree.Comment(r"Word XML comment: \frac{99}{42}"))
+        parts[part] = etree.tostring(root)
+        assert compiler.verify(source, write_parts(parts)).ok
+
+        for flatten_fraction in (False, True):
+            parts = read_parts(output.read_bytes())
+            root = etree.fromstring(parts[part])
+            fraction = root.find(".//m:f", NS)
+            assert fraction is not None
+            if flatten_fraction:
+                parent = fraction.getparent()
+                for run in fraction.findall(".//m:r", NS):
+                    fraction.addprevious(run)
+                parent.remove(fraction)
+            else:
+                fraction.find("m:num//m:t", NS).text = "EDITED"
+            parts[part] = etree.tostring(root)
+            (finding,) = compiler.verify(source, write_parts(parts)).findings
+            assert finding.code == "VERIFY303" and finding.part == part
+            if part == "word/document.xml":
+                assert finding.line == 3
 
 
 def test_verify_editable_numbered_listing(tmp_path):

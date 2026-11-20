@@ -78,18 +78,15 @@ def render_heading(renderer: DocxRenderer, node: Heading) -> None:
                 add_hidden_field(counter_p, rf" SEQ {label} \r 0 ", "0")
 
 
-def render_paragraph(renderer: DocxRenderer, node: Paragraph) -> None:
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+def render_paragraph(renderer: DocxRenderer, node: Paragraph, *, style: str = "MD Normal") -> None:
+    p = renderer.document.add_paragraph(style=renderer._style(style))
     renderer._render_inlines(p, node.children)
     renderer._apply_text_direction(p._p, renderer._plain_inline_text(node.children))
 
 
 def render_block_quote(renderer: DocxRenderer, node: BlockQuote) -> None:
     for child in node.children:
-        before = len(renderer.document.paragraphs)
-        renderer._render_block(child)
-        for p in renderer.document.paragraphs[before:]:
-            p.style = renderer._style("MD Quote")
+        renderer._render_block(child, paragraph_style="MD Quote")
 
 
 def render_callout(renderer: DocxRenderer, node: Callout) -> None:

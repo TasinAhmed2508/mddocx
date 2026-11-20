@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
 import json
@@ -15,8 +16,9 @@ from .ast.base import Document, Node
 from .config import RenderConfig
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
+from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
-from .math.validation import source_tokens_preserved
+from .math.validation import source_tokens_preserved, validate_omml
 from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import clean_xml_text
@@ -26,6 +28,16 @@ from .table_grid import repeatable_header_rows, table_grid
 BODY = "word/document.xml"
 _RELS = "word/_rels/document.xml.rels"
 _HEADING = re.compile(r"(?:MD)?Heading[ ]?([1-6])", re.I)
+_TEX_COMMAND = re.compile(r"\\([A-Za-z]+|.)")
+_NATIVE_MATH = {
+    "frac": "f",
+    "dfrac": "f",
+    "tfrac": "f",
+    "binom": "f",
+    "dbinom": "f",
+    "tbinom": "f",
+    "sqrt": "rad",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,11 +342,14 @@ def compare_document(
         incomplete(
             "Generated front matter, templates, and extensions have limited verification coverage."
         )
-    body_math_count = len(expected_math)
-    expected_notes = {
-        str(number): expected_inlines(document.footnotes[label])
-        for label, number in list(notes.items())
-    }
+    body_math = expected_math
+    expected_notes: dict[str, tuple] = {}
+    note_math: dict[str, list[tuple[str, Node]]] = {}
+    for label, number in list(notes.items()):
+        ident = str(number)
+        expected_math = []
+        expected_notes[ident] = expected_inlines(document.footnotes[label])
+        note_math[ident] = expected_math
     actual_notes = {}
     if note_part in roots:
         for item in roots[note_part]:
@@ -344,6 +359,8 @@ def compare_document(
                 if tokens and isinstance(tokens[0], str):
                     tokens = _merge_text((tokens[0].removeprefix(" "), *tokens[1:]))
                 actual_notes[ident] = tokens
+                if ident in note_math:
+                    findings.extend(_equation_findings(note_math[ident], item, note_part))
     for ident in sorted(set(expected_notes) | set(actual_notes)):
         if expected_notes.get(ident) != actual_notes.get(ident):
             findings.append(
@@ -352,20 +369,8 @@ def compare_document(
                 )
             )
     main = roots[BODY].find("w:body", NS)
-    rendered_math = main.findall(f".//{{{M}}}oMath") if main is not None else []
-    if len(rendered_math) == body_math_count:
-        for (latex, node), equation in zip(
-            expected_math[:body_math_count], rendered_math, strict=True
-        ):
-            normalized = normalize_equation(latex).text
-            if re.fullmatch(
-                r"[A-Za-z0-9{}_^+*/().= \t-]+", normalized
-            ) and not source_tokens_preserved(normalized, equation):
-                findings.append(
-                    _finding(
-                        "VERIFY303", "Native equation lost a source identifier or numeral.", node
-                    )
-                )
+    if main is not None:
+        findings.extend(_equation_findings(body_math, main, BODY))
     actual = _read_body(roots)
     findings.extend(_chart_findings(roots))
     expected_keys = [unit.key for unit in expected]
@@ -414,11 +419,51 @@ def compare_document(
     return VerificationResult(len(expected), tuple(findings))
 
 
-def _finding(code: str, message: str, node: Node | None = None) -> VerificationFinding:
+def _equation_findings(
+    expected: list[tuple[str, Node]], container: etree._Element, part: str
+) -> Iterator[VerificationFinding]:
+    if not expected:
+        return
+    rendered = container.findall(f".//{{{M}}}oMath")
+    if len(rendered) != len(expected):
+        # The ordered content check reports missing or added math objects.
+        return
+    for (latex, node), equation in zip(expected, rendered, strict=True):
+        normalized = normalize_equation(latex).text
+        required = {
+            _NATIVE_MATH[command]
+            for command in _TEX_COMMAND.findall(normalized)
+            if command in _NATIVE_MATH
+        }
+        try:
+            validate_omml(equation)
+        except UnsupportedLatexError as exc:
+            yield _finding("VERIFY303", str(exc), node, part=part)
+        else:
+            if not source_tokens_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation lost a source identifier or numeral.",
+                    node,
+                    part=part,
+                )
+            elif any(next(equation.iter(f"{{{M}}}{tag}"), None) is None for tag in required):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation lost a fraction or radical structure.",
+                    node,
+                    part=part,
+                )
+
+
+def _finding(
+    code: str, message: str, node: Node | None = None, *, part: str = BODY
+) -> VerificationFinding:
     source = node.source if node else None
     return VerificationFinding(
         code,
         message,
+        part,
         source_file=source.file if source else None,
         line=source.line if source else None,
     )

@@ -156,7 +156,11 @@ def _tokens(text: str) -> list[str]:
 def _node_tokens(root: object) -> list[str]:
     tokens: list[str] = []
     for node in root.iter():
-        if node.text and etree.QName(node).localname not in {"annotation", "annotation-xml"}:
+        if (
+            isinstance(node.tag, str)
+            and node.text
+            and etree.QName(node).localname not in {"annotation", "annotation-xml"}
+        ):
             tokens.extend(_tokens(node.text))
     return tokens
 

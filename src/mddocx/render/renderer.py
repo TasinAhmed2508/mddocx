@@ -268,14 +268,14 @@ class DocxRenderer:
         paragraph.paragraph_format.keep_together = decision.keep_together
         paragraph.paragraph_format.page_break_before = decision.page_break_before
 
-    def _render_block(self, node, list_level=0):
+    def _render_block(self, node, list_level=0, *, paragraph_style="MD Normal"):
         """Dispatch one block node to the surface module that owns it."""
         if render_custom_block(self.config.extensions, self, node):
             return
         if isinstance(node, Heading):
             text_blocks.render_heading(self, node)
         elif isinstance(node, Paragraph):
-            text_blocks.render_paragraph(self, node)
+            text_blocks.render_paragraph(self, node, style=paragraph_style)
         elif isinstance(node, Callout):
             text_blocks.render_callout(self, node)
         elif isinstance(node, BlockQuote):

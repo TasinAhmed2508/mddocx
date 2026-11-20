@@ -225,11 +225,11 @@ are padded. Unsupported HTML tables remain visible as source text with a diagnos
 
 Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
 heading levels and bookmarks, hard breaks, list nesting and task status, table cells, hyperlink
-targets, image alt text, native equation presence and identifiers in simple equations,
-footnotes and endnotes, simple captions and
-reference fields, and native chart/workbook relationships. It returns **0** for a match, **3**
+targets, image alt text, native equation structure and source identifiers and numerals,
+footnotes and endnotes (including their equations), simple captions and reference fields,
+and native chart/workbook relationships. It returns **0** for a match, **3**
 for differences or incomplete coverage, and **2** for invalid input or package errors. Visual
-pagination, equation equivalence, drawing content, workbook cell values, and generated structures
+pagination, algebraic equivalence, drawing content, workbook cell values, and generated structures
 such as Mermaid panels, template content, and bibliographies require their own checks. The
 machine-readable report identifies constructs the verifier cannot compare.
 

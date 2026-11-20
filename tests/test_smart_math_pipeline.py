@@ -17,6 +17,26 @@ def test_batched_mathjax_matches_individual_conversion():
     assert sidecar.convert_many(equations) == [sidecar.convert(*equation) for equation in equations]
 
 
+def test_large_equation_batches_run_lazily_and_with_bounded_chunks(monkeypatch):
+    sidecar = MathJaxSidecar()
+    if not sidecar.available:
+        pytest.skip("optional MathJax sidecar is unavailable")
+    call = sidecar.convert_many
+    sizes = []
+
+    def capture(batch):
+        sizes.append(len(batch))
+        return call(batch)
+
+    monkeypatch.setattr(sidecar, "convert_many", capture)
+    converter = DefaultMathConverter(sidecar=sidecar)
+    expressions = [(f"x^{{{i}}}+1", False) for i in range(140)]
+    converter.prepare_batch(expressions)
+    assert sizes == []
+    assert all(converter.convert(*item).engine == "mathjax-sidecar" for item in expressions)
+    assert sizes == [128, 12]
+
+
 def test_normalization_is_conservative_and_records_repairs():
     result = normalize_equation(" $$\\dfrac{1}{2−x\u200b}$$ ")
 

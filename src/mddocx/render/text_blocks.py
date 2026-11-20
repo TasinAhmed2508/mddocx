@@ -146,11 +146,12 @@ def render_page_break(renderer: DocxRenderer) -> None:
     renderer.document.add_page_break()
 
 
-def render_section_break(renderer: DocxRenderer) -> None:
+def render_section_break(renderer: DocxRenderer, node) -> None:
     sec = renderer.document.add_section(WD_SECTION.NEW_PAGE)
     sections.configure_section(
         renderer,
         sec,
+        orientation=node.orientation,
         preserve_page=bool(
             renderer.config.template and renderer.config.preserve_template_page_setup
         ),

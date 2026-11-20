@@ -8,6 +8,7 @@ from mddocx.ast.base import Document, Node
 from mddocx.ast.block import Heading, MathBlock, Table
 from mddocx.ast.inline import InlineMath, Text
 from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
+from mddocx.table_grid import has_ragged_rows
 from .semantic import SemanticIndex, build_semantic_index
 
 
@@ -87,15 +88,13 @@ class Normalizer:
             value.identifier = self._stable_heading_identifier(value)
         if isinstance(value, (MathBlock, InlineMath)):
             value.source_text = value.source_text.replace("\r\n", "\n").replace("\r", "\n").strip()
-        if isinstance(value, Table):
-            widths = {len(row.cells) for row in value.rows}
-            if len(widths) > 1:
-                self.reporter.warn(
-                    "NORM201",
-                    "Table rows contain different numbers of cells; missing cells will be padded.",
-                    getattr(value.source, "file", None),
-                    getattr(value.source, "line", None),
-                )
+        if isinstance(value, Table) and has_ragged_rows(value):
+            self.reporter.warn(
+                "NORM201",
+                "Table rows contain different numbers of cells; missing cells will be padded.",
+                getattr(value.source, "file", None),
+                getattr(value.source, "line", None),
+            )
         identifier = getattr(value, "identifier", None)
         if identifier:
             if identifier in self._identifiers:

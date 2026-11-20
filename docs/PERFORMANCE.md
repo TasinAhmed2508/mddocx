@@ -58,3 +58,12 @@ the 60 × 24 table from **1.5094 s to 0.7709 s** (49%). The mixed workload went 
 **0.5378 s to 0.4916 s**. Each workload produced identical DOCX bytes in all ten runs.
 The measurements compare the change against commit `52938bc` using a fresh Python
 process per run and exclude interpreter startup from the timed conversion.
+
+## Large equation batches
+
+Five paired runs on Windows with Python 3.12 and the same Node.js runtime
+compared the current candidate with released commit `5198533`. The workload
+contains 160 distinct inline equations from `x^{0}+1` through `x^{159}+1`.
+Chunking the requests reduced median compilation time from **11.6446 s to
+0.5427 s**. The 20-section mixed report measured **0.5164 s and 0.5143 s**,
+respectively. Each workload produced byte-identical DOCX files across all runs.

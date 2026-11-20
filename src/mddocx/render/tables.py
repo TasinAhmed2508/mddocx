@@ -59,7 +59,7 @@ def render_table_with_layout(renderer: DocxRenderer, node: Table) -> None:
         citations.render_caption(renderer, "Table", caption, node.identifier)
     render_table(renderer, node, caption_below=below)
     if caption and below:
-        citations.render_caption(renderer, "Table", caption, node.identifier)
+        citations.render_caption(renderer, "Table", caption, node.identifier, keep_with_next=False)
     if (
         use_landscape
         and restore_orientation != "landscape"
@@ -82,17 +82,17 @@ def current_orientation(renderer: DocxRenderer) -> str:
 
 
 def table_should_landscape(renderer: DocxRenderer, node: Table) -> bool:
-    decision = renderer._layout_plan.for_table(node)
-    if decision is not None and not (
-        renderer.config.template and renderer.config.preserve_template_page_setup
-    ):
-        return decision.orientation == "landscape" and current_orientation(renderer) != "landscape"
     if (
         not renderer.config.table.auto_landscape
         or current_orientation(renderer) == "landscape"
         or not node.rows
     ):
         return False
+    decision = renderer._layout_plan.for_table(node)
+    if decision is not None and not (
+        renderer.config.template and renderer.config.preserve_template_page_setup
+    ):
+        return decision.orientation == "landscape"
     cols, _ = table_grid(node, renderer.config.limits.max_table_cells)
     if cols >= renderer.config.table.landscape_min_columns:
         return True

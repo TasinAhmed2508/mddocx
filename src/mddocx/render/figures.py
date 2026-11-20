@@ -32,7 +32,13 @@ def render_image_block(renderer: DocxRenderer, node: ImageBlock) -> None:
         else None
     )
     if caption and renderer.config.references.figure_caption_position == "above":
-        citations.render_caption(renderer, "Figure", caption, node.identifier)
+        citations.render_caption(
+            renderer,
+            "Figure",
+            caption,
+            node.identifier,
+            keep_with_next=renderer.config.figures.caption_keep_with_figure,
+        )
     p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
     renderer._apply_planned_paragraph_layout(p, node)
     p.alignment = {"left": WD_ALIGN_PARAGRAPH.LEFT, "right": WD_ALIGN_PARAGRAPH.RIGHT}.get(
@@ -49,7 +55,7 @@ def render_image_block(renderer: DocxRenderer, node: ImageBlock) -> None:
         source=node.source,
     )
     if caption and renderer.config.references.figure_caption_position == "below":
-        citations.render_caption(renderer, "Figure", caption, node.identifier)
+        citations.render_caption(renderer, "Figure", caption, node.identifier, keep_with_next=False)
 
 
 def add_image(
@@ -85,9 +91,11 @@ def add_image(
             raise MddocxError(result.diagnostic)
         renderer.reporter.emit(result.diagnostic)
         label = alt or title or src
-        if getattr(renderer.config.resources, "image_failure", "clickable_fallback") == "literal":
-            paragraph.add_run(clean_xml_text(label))
-        elif urlparse(src).scheme.lower() in {"http", "https"}:
+        try:
+            public_url = urlparse(src).scheme.lower() in {"http", "https"}
+        except ValueError:
+            public_url = False
+        if public_url and renderer.config.resources.image_failure == "clickable_fallback":
             add_hyperlink(paragraph, clean_xml_text(label), src)
         else:
             paragraph.add_run(clean_xml_text(label))

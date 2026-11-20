@@ -19,6 +19,7 @@ from .validation import (
 )
 
 _BATCH_COMMANDS = {"frac", "sum", "sqrt", "left", "right", "cdot", "times", "le", "ge"}
+_BATCH_SIZE = 128
 
 
 class MathConverter(Protocol):
@@ -35,6 +36,7 @@ class DefaultMathConverter:
         self._mathml_cache: dict[str, str] = {}
         self._conversions: dict[tuple[str, bool], MathConversion] = {}
         self._omml_cache: dict[tuple[str, bool], object] = {}
+        self._batches: dict[tuple[str, bool], list[tuple[tuple[str, bool], str]]] = {}
         self._prefetched: dict[tuple[str, bool], str | MathJaxSidecarError] = {}
         try:
             from latex2mathml.converter import convert  # type: ignore
@@ -60,11 +62,11 @@ class DefaultMathConverter:
             self._mathml_cache[latex] = value
         return value
 
-    def mathml_to_omml(self, mathml: str, display: bool):
+    def mathml_to_omml(self, mathml: str, display: bool, *, root=None):
         key = (mathml, display)
         if self._cache_enabled and key in self._omml_cache:
             return deepcopy(self._omml_cache[key])
-        value = self._omml.convert(mathml)
+        value = self._omml.convert_root(root if root is not None else validate_mathml(mathml))
         if self._cache_enabled:
             self._omml_cache[key] = deepcopy(value)
         return value
@@ -73,7 +75,7 @@ class DefaultMathConverter:
         return self.convert(latex, display).omml
 
     def prepare_batch(self, expressions: list[tuple[str, bool]]) -> None:
-        """Prefetch simple math through the bundled sidecar, with normal fallback."""
+        """Group simple equations for lazy, bounded conversion by the bundled sidecar."""
         bundled = Path(__file__).with_name("bin") / "mddocx-mathjax.mjs"
         if (
             not self._cache_enabled
@@ -81,6 +83,8 @@ class DefaultMathConverter:
             or self._sidecar.executable != bundled
         ):
             return
+        self._batches.clear()
+        self._prefetched.clear()
         # shortcut: batch only small expressions using known commands, until the sidecar isolates user macros.
         eligible = {}
         for latex, display in dict.fromkeys(expressions):
@@ -89,20 +93,30 @@ class DefaultMathConverter:
             normalized = normalize_equation(latex).text
             if set(re.findall(r"\\([A-Za-z]+|.)", normalized)) <= _BATCH_COMMANDS:
                 eligible[latex, display] = normalized
-        if len(eligible) < 2 or len(eligible) > 128:
-            return
-        try:
-            replies = self._sidecar.convert_many(
-                [(normalized, display) for (_, display), normalized in eligible.items()]
-            )
-        except MathJaxSidecarError:
-            return
-        self._prefetched.update(zip(eligible, replies, strict=True))
+        items = list(eligible.items())
+        for start in range(0, len(items), _BATCH_SIZE):
+            batch = items[start : start + _BATCH_SIZE]
+            if len(batch) > 1:
+                self._batches.update((key, batch) for key, _ in batch)
 
     def _convert_sidecar(self, key: tuple[str, bool], normalized: str) -> str:
+        batch = self._batches.get(key)
+        if batch is not None:
+            # Keep at most one batch of expanded MathML in memory.
+            self._prefetched.clear()
+            for batch_key, _ in batch:
+                self._batches.pop(batch_key)
+            try:
+                replies = self._sidecar.convert_many(
+                    [(tex, display) for (_, display), tex in batch]
+                )
+            except MathJaxSidecarError:
+                pass  # Fall back to the usual single-expression request.
+            else:
+                self._prefetched.update(zip((item[0] for item in batch), replies, strict=True))
         if key not in self._prefetched:
             return self._sidecar.convert(normalized, key[1])
-        result = self._prefetched[key]
+        result = self._prefetched.pop(key)
         if isinstance(result, MathJaxSidecarError):
             raise result
         return result
@@ -127,9 +141,9 @@ class DefaultMathConverter:
                     raise UnsupportedLatexError(
                         f"{engine} output lost one or more source identifier or numeral tokens"
                     )
-                omml = self.mathml_to_omml(mathml, display)
+                omml = self.mathml_to_omml(mathml, display, root=root)
                 validate_omml(omml)
-                fingerprint = semantic_fingerprint(root, omml)
+                fingerprint = semantic_fingerprint(root)
                 semantic_valid = semantic_tokens_preserved(root, omml)
                 if not semantic_valid and engine != "mddocx-basic":
                     raise UnsupportedLatexError(

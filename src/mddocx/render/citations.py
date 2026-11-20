@@ -35,12 +35,24 @@ def display_label(renderer: DocxRenderer, kind: str) -> str:
 
 
 def render_caption(
-    renderer: DocxRenderer, label: str, caption: str, identifier: str | None
+    renderer: DocxRenderer,
+    label: str,
+    caption: str,
+    identifier: str | None,
+    *,
+    keep_with_next: bool = True,
 ) -> None:
     p = renderer.document.add_paragraph(style=renderer._style("MD Caption"))
     p.paragraph_format.keep_together = True
-    p.paragraph_format.keep_with_next = True
+    p.paragraph_format.keep_with_next = keep_with_next
     target = renderer.references.get(identifier) if identifier and renderer.references else None
+    if label == "Listing" and not renderer.config.references.listing_numbering:
+        p.add_run(clean_xml_text(caption))
+        renderer._apply_text_policy(p, caption)
+        if target:
+            add_bookmark(p, target.bookmark, renderer._bookmark_id)
+            renderer._bookmark_id += 1
+        return
     p.add_run(display_label(renderer, label) + " ")
     if target and target.number is not None:
         if (
@@ -85,7 +97,7 @@ def render_cross_reference(renderer: DocxRenderer, paragraph, node: CrossReferen
             and target.kind != "Section"
         ):
             prefix = display_label(renderer, target.kind)
-        if target.kind == "Section":
+        if target.number is None:
             value = target.title or node.target
             if prefix and value.lower().startswith(prefix.lower()):
                 prefix = None
@@ -110,10 +122,8 @@ def render_cross_reference(renderer: DocxRenderer, paragraph, node: CrossReferen
     if prefix:
         r = paragraph.add_run(prefix + " ")
         renderer._configure_run(r, r.text)
-    if target.kind == "Section":
-        add_ref_field(paragraph, target.bookmark, target.title or node.target)
-    else:
-        add_ref_field(paragraph, target.bookmark, str(target.number or "?"))
+    value = target.title or node.target if target.number is None else str(target.number)
+    add_ref_field(paragraph, target.bookmark, value)
 
 
 def render_bibliography(renderer: DocxRenderer) -> None:

@@ -76,8 +76,11 @@ class ReferenceRegistry:
         plain_text,
         equation_number_format: str = "document",
         caption_number_format: str = "document",
+        listing_numbering: bool = True,
     ) -> "ReferenceRegistry":
         reg = cls()
+        if not listing_numbering:
+            reg._counts.pop("Listing")
         section = 0
         equation_in_section = 0
         caption_in_section = {"Figure": 0, "Table": 0, "Listing": 0}
@@ -136,7 +139,9 @@ class ReferenceRegistry:
                     reg.register(node.identifier, "Equation", node.caption or "")
             elif isinstance(node, CodeBlock):
                 kind = "Figure" if (node.language or "").lower() == "mermaid" else "Listing"
-                if node.identifier and caption_number_format == "section":
+                if kind == "Listing" and not listing_numbering:
+                    reg.register(node.identifier, kind, node.caption or "Code listing")
+                elif node.identifier and caption_number_format == "section":
                     caption_in_section[kind] += 1
                     reg.register(
                         node.identifier,

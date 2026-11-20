@@ -22,14 +22,20 @@ def available() -> bool:
 class CslProcessor:
     """Small adapter isolating citeproc-py's optional API from the compiler."""
 
-    def __init__(self, style_file: str | Path, entries: Iterable["BibliographyEntry"]):
+    def __init__(
+        self,
+        style_file: str | Path,
+        entries: Iterable["BibliographyEntry"],
+        *,
+        locale: str | None = None,
+    ):
         try:
             from citeproc import CitationStylesBibliography, CitationStylesStyle, formatter
             from citeproc.source.json import CiteProcJSON
         except ImportError as exc:
             raise CslUnavailable("Reinstall mddocx-native to restore custom CSL support") from exc
         source = CiteProcJSON([self._json_entry(entry) for entry in entries])
-        style = CitationStylesStyle(str(style_file), validate=False)
+        style = CitationStylesStyle(str(style_file), locale=locale, validate=False)
         self._processor = CitationStylesBibliography(style, source, formatter.plain)
         self._citations: dict[tuple[str, ...], object] = {}
         self._registered: set[str] = set()

@@ -9,7 +9,13 @@ from mddocx.diagnostics import Diagnostic, MddocxError
 
 
 def validate_remote_url(url: str, policy: ResourcePolicy) -> None:
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise MddocxError(
+            Diagnostic("error", "RESOURCE208", "Malformed remote image URL.")
+        ) from exc
     scheme = parsed.scheme.lower()
     if scheme not in {value.lower() for value in policy.allowed_schemes}:
         raise MddocxError(
@@ -31,7 +37,9 @@ def validate_remote_url(url: str, policy: ResourcePolicy) -> None:
     if policy.allow_private_hosts:
         return
     try:
-        addresses = socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+        addresses = socket.getaddrinfo(
+            host, port or (80 if scheme == "http" else 443), type=socket.SOCK_STREAM
+        )
     except socket.gaierror as exc:
         raise MddocxError(
             Diagnostic("error", "RESOURCE207", f"Unable to resolve remote host: {host}")

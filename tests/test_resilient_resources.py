@@ -10,7 +10,7 @@ from zipfile import ZipFile
 import pytest
 from PIL import Image
 
-from mddocx import MarkdownWord, RenderConfig
+from mddocx import Compiler, MarkdownWord, RenderConfig
 from mddocx.config import ImageConfig, ResourcePolicy
 from mddocx.diagnostics import MddocxError
 from mddocx.resources import ResourceFallback, ResourceRequest, ResourceResolver, ResolvedImage
@@ -130,6 +130,72 @@ def test_animated_gif_is_preserved_in_docx_package(tmp_path):
         assert 'Extension="gif" ContentType="image/gif"' in package.read(
             "[Content_Types].xml"
         ).decode("utf-8")
+
+
+def test_direct_image_links_embed_and_other_links_do_not_fetch(tmp_path):
+    image = BytesIO()
+    Image.new("RGB", (64, 34), "#315c91").save(image, format="JPEG")
+    cfg = RenderConfig(resources=ResourcePolicy(allow_private_hosts=True))
+    with _server({"/plate.JPG?raw=1": (200, "image/jpeg", image.getvalue())}) as (origin, counts):
+        url = f"{origin}/plate.JPG?raw=1"
+        source = (
+            f"[Inspection plate]({url})\n\n{url}\n\n"
+            f"Ordinary link: [Documentation]({origin}/guide).\n\n"
+            f"![First]({url}) ![Second]({url})"
+        )
+        compiler = Compiler(cfg)
+        md = tmp_path / "report.md"
+        md.write_text(source, encoding="utf-8")
+        output = compiler.compile_file(md, tmp_path / "report.docx").output_bytes
+        assert compiler.verify(md, output).ok
+    assert counts == {"/plate.JPG?raw=1": 1}
+    with ZipFile(BytesIO(output)) as package:
+        xml = package.read("word/document.xml")
+        assert xml.count(b"<w:drawing>") == 4
+        assert b'descr="Inspection plate"' in xml
+        assert any(
+            package.read(name) == image.getvalue()
+            for name in package.namelist()
+            if "/media/" in name
+        )
+        assert f"{origin}/guide".encode() in package.read("word/_rels/document.xml.rels")
+
+
+def test_direct_image_links_obey_block_remote_flag(tmp_path):
+    cfg = RenderConfig(resources=ResourcePolicy(allow_remote_resources=False))
+    compiler = Compiler(cfg)
+    with _server({}) as (origin, counts):
+        result = compiler.compile_string(f"[Plate]({origin}/plate.jpg)", base_dir=tmp_path)
+    assert counts == {}
+    assert [diagnostic.code for diagnostic in result.diagnostics] == ["RESOURCE201"]
+    with ZipFile(BytesIO(result.output_bytes)) as package:
+        assert b"/plate.jpg" in package.read("word/_rels/document.xml.rels")
+
+
+def test_invalid_remote_image_port_is_reported_without_a_request(tmp_path):
+    compiler = Compiler()
+    result = compiler.compile_string(
+        "![Plate](https://example.com:invalid/plate.jpg)", base_dir=tmp_path
+    )
+    assert [diagnostic.code for diagnostic in result.diagnostics] == ["RESOURCE208"]
+
+
+@pytest.mark.parametrize("keep", [True, False])
+def test_caption_stays_with_figure_only_when_requested(tmp_path, keep):
+    from docx import Document
+
+    (tmp_path / "plot.gif").write_bytes(_gif_bytes(1))
+    config = RenderConfig()
+    config.figures.caption_keep_with_figure = keep
+    config.references.figure_caption_position = "below"
+    result = Compiler(config).compile_string(
+        '![Plot](plot.gif) {caption="Plot results"}\n\nFollowing paragraph.',
+        base_dir=tmp_path,
+    )
+    figure, caption, following = Document(BytesIO(result.output_bytes)).paragraphs
+    assert figure.paragraph_format.keep_with_next is keep
+    assert caption.paragraph_format.keep_with_next is False
+    assert following.text == "Following paragraph."
 
 
 def test_block_figure_fallback_keeps_caption_and_numbering(tmp_path):

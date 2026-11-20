@@ -332,10 +332,27 @@ Document settings can be defined at the top of a Markdown file:
     footer: Confidential
     ---
 
+## Report layout
+
+Use `--theme report` for navy headings, more defined heading spacing, and blue table headers.
+Use `--auto-landscape-tables` to fit wide grids in a landscape section and resume the prior
+orientation afterward. For a deliberate section boundary, put
+`<!-- sectionbreak orientation=landscape -->` or `<!-- sectionbreak orientation=portrait -->`
+on its own line.
+
+### Linked images
+
+Use `![Description](https://example.org/chart.jpg)` to embed a remote figure. A direct
+HTTP(S) image URL on its own line or a standalone link such as
+`[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.
+For files served from extensionless URLs, use the explicit image syntax. The resource
+resolver checks the downloaded content before embedding and uses the configured fallback
+if the image is unavailable.
+
 ## Privacy and security defaults
 
-- Bounded public HTTP(S) image resources are allowed by default. Failed image syntax becomes a
-  clickable fallback; ordinary Markdown links are never downloaded.
+- Bounded public HTTP(S) image resources are allowed by default. Failed figures become
+  clickable fallbacks. Other hyperlinks remain links.
 - Base64 image data URIs are decoded locally, never sent over the network, and remain subject to
   the configured per-resource size limit and image validation.
 - HTTPS image downloads can be explicitly enabled and restricted by domain.

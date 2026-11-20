@@ -3,6 +3,7 @@ from __future__ import annotations
 from lxml import etree
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from .validation import validate_mathml
 
 NARY_CHARS = {"∑", "∏", "∫", "∬", "∭", "∮"}
 ACCENT_CHARS = {
@@ -51,10 +52,9 @@ class MathMLToOMML:
     """
 
     def convert(self, mathml: str):
-        parser = etree.XMLParser(
-            resolve_entities=False, no_network=True, load_dtd=False, recover=False
-        )
-        root = etree.fromstring(mathml.encode("utf-8"), parser=parser)
+        return self.convert_root(validate_mathml(mathml))
+
+    def convert_root(self, root):
         omath = OxmlElement("m:oMath")
         self._append_children(omath, root)
         return omath
@@ -72,7 +72,9 @@ class MathMLToOMML:
         variant = node.get("mathvariant") or inherited_variant
 
         if tag in {"math", "mrow"}:
-            self._append_row(parent, list(node), variant)
+            children = list(node)
+            if not self._append_fenced_row(parent, children, variant):
+                self._append_row(parent, children, variant)
             return
         if tag == "semantics":
             for child in node:
@@ -87,8 +89,13 @@ class MathMLToOMML:
                 self._append_children(parent, child, variant)
             return
         if tag == "mphantom":
-            # Phantom content is layout-only in TeX; exposing it as visible Word text is worse.
-            self._run(parent, "\u200b", variant="normal")
+            phantom = OxmlElement("m:phant")
+            props = OxmlElement("m:phantPr")
+            show = OxmlElement("m:show")
+            show.set(qn("m:val"), "0")
+            props.append(show)
+            phantom.extend([props, self._argument("m:e", node, variant, contents=True)])
+            parent.append(phantom)
             return
         if tag in {"mi", "mn", "mo", "mtext", "ms"}:
             value = node.text or ""
@@ -163,13 +170,23 @@ class MathMLToOMML:
                 "msubsup": ["m:e", "m:sub", "m:sup"],
             }[tag]
             wrap = OxmlElement(mapped)
-            for child, name in zip(node, names):
-                arg = OxmlElement(name)
-                self._append_children(arg, child, variant)
-                if len(arg) == 0:
-                    self._run(arg, "\u200b", variant="normal")
-                wrap.append(arg)
+            for index, name in enumerate(names):
+                wrap.append(
+                    self._argument(name, node[index] if index < len(node) else None, variant)
+                )
             parent.append(wrap)
+            return
+        if tag == "mmultiscripts" and len(node):
+            self._append_multiscripts(parent, node, variant)
+            return
+        if tag in {"munder", "mover"} and len(node) == 2 and self._text(node[1]) == "―":
+            bar = OxmlElement("m:bar")
+            props = OxmlElement("m:barPr")
+            position = OxmlElement("m:pos")
+            position.set(qn("m:val"), "bot" if tag == "munder" else "top")
+            props.append(position)
+            bar.extend([props, self._argument("m:e", node[0], variant)])
+            parent.append(bar)
             return
         if tag == "mover" and self._is_accent_mover(node):
             self._append_accent(parent, node, variant)
@@ -178,25 +195,14 @@ class MathMLToOMML:
             self._append_generic_limits(parent, node, tag, variant)
             return
         if tag == "mfenced":
-            d = OxmlElement("m:d")
-            pr = OxmlElement("m:dPr")
-            beg = OxmlElement("m:begChr")
-            beg.set(qn("m:val"), node.get("open", "("))
-            pr.append(beg)
-            end = OxmlElement("m:endChr")
-            end.set(qn("m:val"), node.get("close", ")"))
-            pr.append(end)
-            grow = OxmlElement("m:grow")
-            grow.set(qn("m:val"), "1")
-            pr.append(grow)
-            d.append(pr)
-            e = OxmlElement("m:e")
-            for child in node:
-                self._append_children(e, child, variant)
-            if len(e) == 0:
-                self._run(e, "\u200b", variant="normal")
-            d.append(e)
-            parent.append(d)
+            self._append_delimiter(
+                parent,
+                list(node),
+                variant,
+                node.get("open", "("),
+                node.get("close", ")"),
+                separators="".join(node.get("separators", ",").split()),
+            )
             return
         if tag == "menclose":
             notation = (node.get("notation") or "").split()
@@ -214,23 +220,7 @@ class MathMLToOMML:
                     self._append_children(parent, child, variant)
             return
         if tag == "mtable":
-            matrix = OxmlElement("m:m")
-            for row in node:
-                if self._local(row) not in {"mtr", "mlabeledtr"}:
-                    continue
-                mr = OxmlElement("m:mr")
-                cells = list(row)[1:] if self._local(row) == "mlabeledtr" else list(row)
-                for cell in cells:
-                    if self._local(cell) != "mtd":
-                        continue
-                    e = OxmlElement("m:e")
-                    for child in cell:
-                        self._append_children(e, child, variant)
-                    if len(e) == 0:
-                        self._run(e, "\u200b", variant="normal")
-                    mr.append(e)
-                matrix.append(mr)
-            parent.append(matrix)
+            self._append_matrix(parent, node, variant)
             return
 
         if len(node):
@@ -239,10 +229,155 @@ class MathMLToOMML:
         elif node.text:
             self._run(parent, node.text, variant=variant)
 
+    def _append_fenced_row(self, parent, children, variant):
+        if len(children) < 2:
+            return False
+        first, last = children[0], children[-1]
+
+        def fence(node, mathjax_class, form, plain, matrix):
+            return (
+                self._local(node) == "mo"
+                and node.get("stretchy") != "false"
+                and (
+                    node.get("data-mjx-texclass") == mathjax_class
+                    or (node.get("fence") == "true" and node.get("form") == form)
+                    or (matrix and bool(node.text) and node.text in plain)
+                )
+            )
+
+        left = fence(first, "OPEN", "prefix", "([{⟨|‖", self._local(children[1]) == "mtable")
+        right = fence(last, "CLOSE", "postfix", ")]}⟩|‖", self._local(children[-2]) == "mtable")
+        interior = children[int(left) : len(children) - int(right)]
+        if not interior or not (
+            (left and right)
+            or ((left or right) and len(interior) == 1 and self._local(interior[0]) == "mtable")
+        ):
+            return False
+        self._append_delimiter(
+            parent,
+            interior,
+            variant,
+            (first.text or "") if left else "",
+            (last.text or "") if right else "",
+        )
+        return True
+
+    def _append_delimiter(self, parent, children, variant, opening, closing, *, separators=""):
+        delimiter = OxmlElement("m:d")
+        props = OxmlElement("m:dPr")
+        for name, value in (("begChr", opening), ("endChr", closing), ("grow", "1")):
+            prop = OxmlElement("m:" + name)
+            prop.set(qn("m:val"), value)
+            props.append(prop)
+        argument = OxmlElement("m:e")
+        if separators:
+            for index, child in enumerate(children):
+                if index:
+                    self._run(argument, separators[min(index - 1, len(separators) - 1)])
+                self._append_children(argument, child, variant)
+        else:
+            self._append_row(argument, children, variant)
+        if not len(argument):
+            self._run(argument, "\u200b", variant="normal")
+        delimiter.extend([props, argument])
+        parent.append(delimiter)
+
+    def _argument(self, tag, node, variant, *, contents=False):
+        argument = OxmlElement(tag)
+        if contents:
+            self._append_row(argument, list(node), variant)
+        elif node is not None and self._local(node) not in {"none", "mprescripts"}:
+            self._append_children(argument, node, variant)
+        if not len(argument):
+            self._run(argument, "\u200b", variant="normal")
+        return argument
+
+    def _append_multiscripts(self, parent, node, variant):
+        base = self._argument("m:e", node[0], variant)
+        scripts = list(node)[1:]
+        boundary = next(
+            (i for i, child in enumerate(scripts) if self._local(child) == "mprescripts"),
+            len(scripts),
+        )
+        for sequence, left in ((scripts[:boundary], False), (scripts[boundary + 1 :], True)):
+            for offset in range(0, len(sequence), 2):
+                sub = self._argument("m:sub", sequence[offset], variant)
+                sup = self._argument(
+                    "m:sup", sequence[offset + 1] if offset + 1 < len(sequence) else None, variant
+                )
+                wrapper = OxmlElement("m:sPre" if left else "m:sSubSup")
+                wrapper.extend((sub, sup, base) if left else (base, sub, sup))
+                base = OxmlElement("m:e")
+                base.append(wrapper)
+        parent.extend(base)
+
+    def _append_matrix(self, parent, node, variant):
+        rows = []
+        for row in node:
+            tag = self._local(row)
+            if tag not in {"mtr", "mlabeledtr"}:
+                continue
+            cells = [cell for cell in row if self._local(cell) == "mtd"]
+            rows.append(cells[1:] + cells[:1] if tag == "mlabeledtr" else cells)
+        width = max(map(len, rows), default=0)
+        if not width:
+            return
+        if width > 64:
+            # Word limits native matrices to 64 columns (MS-OI29500 §22.1.2.67).
+            raise ValueError("Word supports up to 64 columns in a native equation matrix.")
+        matrix = OxmlElement("m:m")
+        alignments = node.get("columnalign", "").split()
+        if not alignments:
+            alignments = [cell.get("columnalign", "center") for cell in rows[0]]
+        if any(alignment in {"left", "right"} for alignment in alignments):
+            properties = OxmlElement("m:mPr")
+            columns = OxmlElement("m:mcs")
+            for index in range(width):
+                alignment = alignments[min(index, len(alignments) - 1)]
+                column = OxmlElement("m:mc")
+                column_properties = OxmlElement("m:mcPr")
+                justification = OxmlElement("m:mcJc")
+                justification.set(
+                    qn("m:val"), alignment if alignment in {"left", "right"} else "center"
+                )
+                column_properties.append(justification)
+                column.append(column_properties)
+                columns.append(column)
+            properties.append(columns)
+            matrix.append(properties)
+        for row in rows:
+            mr = OxmlElement("m:mr")
+            for index in range(width):
+                mr.append(self._argument("m:e", row[index] if index < len(row) else None, variant))
+            matrix.append(mr)
+        parent.append(matrix)
+
     def _append_row(self, parent, children: list, variant: str | None) -> None:
         i = 0
         while i < len(children):
             child = children[i]
+            tag = self._local(child)
+            if (
+                tag in {"msubsup", "msub", "msup"}
+                and len(child) >= 2
+                and self._local(child[0]) == "mrow"
+                and not len(child[0])
+                and i + 1 < len(children)
+                and self._is_reasonable_operand(children[i + 1])
+            ):
+                sub = child[1] if tag != "msup" else None
+                sup = child[-1] if tag != "msub" else None
+                pre = OxmlElement("m:sPre")
+                pre.extend(
+                    [
+                        self._argument("m:sub", sub, variant),
+                        self._argument("m:sup", sup, variant),
+                        self._argument("m:e", children[i + 1], variant),
+                    ]
+                )
+                parent.append(pre)
+                i += 2
+                continue
             if self._is_nary_node(child):
                 # Consecutive integral/sum/product nodes need to nest around a real operand.
                 # Treating only the next operator as the operand creates an empty inner m:e,

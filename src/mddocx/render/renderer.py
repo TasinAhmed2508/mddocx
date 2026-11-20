@@ -156,6 +156,7 @@ class DocxRenderer:
             self._plain_inline_text,
             self.config.references.equation_number_format,
             self.config.references.caption_number_format,
+            self.config.references.listing_numbering,
         )
         self.context = RenderContext(
             word_document=self.document,
@@ -174,8 +175,9 @@ class DocxRenderer:
         style_file = getattr(self.config.citations, "style_file", None)
         if style_file is not None and not Path(style_file).is_absolute():
             style_file = Path(self.config.base_dir or ".") / style_file
+        locale = self.config.citations.locale
         self._citation_style = self.bibliography.resolve_style(
-            self.config.citations.style, style_file
+            self.config.citations.style, style_file, locale=locale if locale != "en-US" else None
         )
         for diagnostic in self.bibliography.diagnostics:
             code, _, message = diagnostic.partition(" ")
@@ -298,7 +300,7 @@ class DocxRenderer:
         elif isinstance(node, PageBreak):
             text_blocks.render_page_break(self)
         elif isinstance(node, SectionBreak):
-            text_blocks.render_section_break(self)
+            text_blocks.render_section_break(self, node)
         else:
             source = getattr(node, "source", None)
             self.reporter.warn(

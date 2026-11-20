@@ -72,6 +72,7 @@ def compare_document(
         _plain_text,
         config.references.equation_number_format,
         config.references.caption_number_format,
+        config.references.listing_numbering,
     )
     notes: dict[str, int] = {}
     note_kind = config.notes.style
@@ -142,8 +143,13 @@ def compare_document(
             expected.extend(units)
             return
         target = references.get(node.identifier) if node.identifier else None
+        field_label = (
+            "" if label == "Listing" and not config.references.listing_numbering else label
+        )
         caption = _Unit(
-            "caption", (label, clean_xml_text(text), target.bookmark if target else None), node
+            "caption",
+            (field_label, clean_xml_text(text), target.bookmark if target else None),
+            node,
         )
         if getattr(config.references, f"{label.lower()}_caption_position") == "above":
             expected.extend((caption, *units))

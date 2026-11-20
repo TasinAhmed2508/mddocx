@@ -41,16 +41,13 @@ def ensure_styles(document, config: RenderConfig) -> None:
     complex_script = fonts.complex_script
     preserve = bool(config.template and config.preserve_template_styles)
 
-    if "MD Normal" not in styles:
+    normal_created = "MD Normal" not in styles
+    if normal_created:
         s = styles.add_style("MD Normal", WD_STYLE_TYPE.PARAGRAPH)
         s.base_style = styles["Normal"]
-        _set_font(s, body_font, east_asia, complex_script)
-        s.font.size = Pt(theme.body_size_pt)
-        s.paragraph_format.line_spacing = theme.line_spacing
-        s.paragraph_format.space_after = Pt(theme.paragraph_after_pt)
-        s.paragraph_format.widow_control = True
-    elif not preserve:
+    else:
         s = styles["MD Normal"]
+    if normal_created or not preserve:
         _set_font(s, body_font, east_asia, complex_script)
         s.font.size = Pt(theme.body_size_pt)
         s.paragraph_format.line_spacing = theme.line_spacing
@@ -72,6 +69,10 @@ def ensure_styles(document, config: RenderConfig) -> None:
             s.font.color.rgb = RGBColor.from_string(theme.heading_color)
             s.paragraph_format.keep_with_next = True
             s.paragraph_format.keep_together = True
+            if theme.heading_space_before_pt is not None:
+                s.paragraph_format.space_before = Pt(theme.heading_space_before_pt)
+            if theme.heading_space_after_pt is not None:
+                s.paragraph_format.space_after = Pt(theme.heading_space_after_pt)
             if level == 1:
                 s.paragraph_format.page_break_before = config.h1_page_break_before
             _outline(s, level - 1)

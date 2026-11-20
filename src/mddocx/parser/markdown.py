@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from html import unescape
+from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
@@ -64,7 +65,9 @@ from mddocx.extensions.base import call_configure_markdown, parse_custom_block, 
 from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
 from mddocx.recovery import recovery_block
 from mddocx.config import MetadataConfig
-from mddocx.metadata import MetadataSanitizationReport, sanitize_markdown_metadata
+from mddocx.metadata import sanitize_markdown_metadata
+
+_IMAGE_LINK_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".svg", ".webp"}
 
 
 class MarkdownParser:
@@ -118,9 +121,6 @@ class MarkdownParser:
         self.max_table_cells = max_table_cells
         self.extensions = extensions
         self.metadata_config = metadata_config or MetadataConfig()
-        self.last_metadata_report = MetadataSanitizationReport(
-            policy=self.metadata_config.ai_export
-        )
         self.md = MarkdownIt("commonmark").enable("table").enable("strikethrough")
         from .tables import table_block
 
@@ -142,13 +142,7 @@ class MarkdownParser:
     ) -> Document:
         self.source_file = source_file
         if sanitize_metadata:
-            sanitized = sanitize_markdown_metadata(markdown, self.metadata_config)
-            markdown = sanitized.markdown
-            self.last_metadata_report = sanitized.report
-        else:
-            self.last_metadata_report = MetadataSanitizationReport(
-                policy=self.metadata_config.ai_export
-            )
+            markdown = sanitize_markdown_metadata(markdown, self.metadata_config).markdown
         metadata, body, line_offset = split_front_matter(markdown, source_file=self.source_file)
         body = normalize_export_citations(body, strip=self.metadata_config.ai_export != "keep")
         body, footnote_sources = extract_footnote_definitions(body)
@@ -211,11 +205,13 @@ class MarkdownParser:
             elif t.type == "paragraph_open":
                 inline = tokens[i + 1]
                 content = self._inline(inline.children or [], self._pos(t))
+                if len(content) == 1 and (linked_image := self._linked_image(content[0])):
+                    content = [linked_image]
                 # Promote a standalone image (optionally followed by an attribute list) to a block node.
                 if (
                     content
                     and isinstance(content[0], Image)
-                    and all(isinstance(x, (Image, Text)) for x in content)
+                    and all(isinstance(x, Text) for x in content[1:])
                 ):
                     im = content[0]
                     identifier, attrs = self._extract_trailing_attrs(content[1:])
@@ -363,8 +359,10 @@ class MarkdownParser:
                 directive = t.content.strip().lower()
                 if directive == "<!-- pagebreak -->":
                     nodes.append(PageBreak(source=self._pos(t)))
-                elif directive == "<!-- sectionbreak -->":
-                    nodes.append(SectionBreak(source=self._pos(t)))
+                elif section := re.fullmatch(
+                    r"<!--\s*sectionbreak(?:\s+orientation=(portrait|landscape))?\s*-->", directive
+                ):
+                    nodes.append(SectionBreak(orientation=section[1], source=self._pos(t)))
                 elif images := self._html_images(t.content):
                     nodes.extend(
                         ImageBlock(
@@ -688,6 +686,30 @@ class MarkdownParser:
             elif hasattr(node, "children"):
                 parts.append(MarkdownParser._plain_text(node.children))
         return "".join(parts)
+
+    @staticmethod
+    def _linked_image(node) -> Image | None:
+        if isinstance(node, Link):
+            if any(not isinstance(child, Text) for child in node.children):
+                return None
+            url = node.href
+            alt = MarkdownParser._plain_text(node.children)
+            title = node.title
+        elif isinstance(node, Text):
+            url, alt, title = node.text.strip(), "", None
+            if not url.startswith(("http://", "https://")) or any(c.isspace() for c in url):
+                return None
+        else:
+            return None
+        try:
+            parsed = urlsplit(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                return None
+        except ValueError:
+            return None
+        if PurePosixPath(unquote(parsed.path)).suffix.lower() not in _IMAGE_LINK_SUFFIXES:
+            return None
+        return Image(src=url, alt=alt if alt != url else "", title=title, source=node.source)
 
     _COMBINED_REF_RE = re.compile(
         r"\[(?P<prefix>Figure|Table|Equation|Listing|Section)\s+@(?P<target>[A-Za-z0-9_.:-]+)\]",

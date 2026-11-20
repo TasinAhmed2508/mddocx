@@ -90,3 +90,16 @@ def test_unsupported_local_csl_style_emits_diagnostic(tmp_path):
     database = BibliographyDatabase()
     assert database.resolve_style("apa", style) == "apa"
     assert any("CITE205" in message for message in database.diagnostics)
+
+
+def test_custom_csl_honors_explicit_locale(tmp_path):
+    style = tmp_path / "terms.csl"
+    style.write_text(
+        '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" default-locale="en-US">'
+        "<info><title>Terms</title><id>urn:example:terms</id></info>"
+        '<citation><layout><text term="and"/></layout></citation></style>',
+        encoding="utf-8",
+    )
+    database = BibliographyDatabase({"paper": BibliographyEntry("paper", "Paper")})
+    assert database.resolve_style("apa", style, locale="de-DE") == "csl-local"
+    assert database.cite(["paper"], "csl-local") == "und"

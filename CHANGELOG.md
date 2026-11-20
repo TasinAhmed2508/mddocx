@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add the `report` theme and explicit portrait or landscape section directives.
+- Embed direct, standalone image links through the existing resource policy. Keep adjacent
+  inline figures and avoid repeated downloads of the same image during conversion.
+- Keep ragged equation arrays, prescripts, hidden operands, and stretchy delimiters as
+  native Word objects. Batch large sets of simple equations in bounded groups.
+- Account for merged cells when checking whether table rows are ragged.
+
 ## 1.5.0rc2
 
 - Limit automatic shell discovery and guided pickers to files directly in the current folder.

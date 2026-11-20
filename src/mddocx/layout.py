@@ -90,18 +90,21 @@ class LayoutPlanner:
         available = self._portrait_available_width_mm()
         decisions: list[TableLayoutDecision] = []
         blocks: list[BlockLayoutDecision] = []
+        section_orientation = self.config.page.orientation
         for node in _walk(document):
             block = self._block_decision(node)
             if block is not None:
                 blocks.append(block)
+            if isinstance(node, SectionBreak):
+                section_orientation = node.orientation or self.config.page.orientation
             if not isinstance(node, Table) or not node.rows:
                 continue
             portrait_allocation = allocate_table_widths_mm(node, self.config, available)
             columns = len(portrait_allocation.intrinsic_widths_mm)
             intrinsic = portrait_allocation.intrinsic_total_mm
-            orientation: Literal["portrait", "landscape"] = self.config.page.orientation
+            orientation: Literal["portrait", "landscape"] = section_orientation
             reason = "document orientation"
-            if self.config.page.orientation == "portrait" and self.config.table.auto_landscape:
+            if section_orientation == "portrait" and self.config.table.auto_landscape:
                 if columns >= self.config.table.landscape_min_columns:
                     orientation = "landscape"
                     reason = "column threshold"
@@ -131,6 +134,8 @@ class LayoutPlanner:
                     column_widths_mm=target_allocation.allocated_widths_mm,
                 )
             )
+            if not self.config.table.restore_portrait_after_landscape:
+                section_orientation = orientation
         return LayoutPlan(tuple(decisions), tuple(blocks))
 
     def _block_decision(self, node: Node) -> BlockLayoutDecision | None:
@@ -161,10 +166,14 @@ class LayoutPlanner:
                 or (self.config.image_captions_from_title and node.title)
                 or node.identifier
             )
-            position = self.config.references.figure_caption_position if has_caption else None
+            position = (
+                self.config.references.figure_caption_position
+                if has_caption and self.config.references.captions
+                else None
+            )
             return BlockLayoutDecision(
                 id(node),
-                keep_with_next=position == "below",
+                keep_with_next=position == "below" and self.config.figures.caption_keep_with_figure,
                 keep_together=True,
                 caption_position=position,
                 treatment="native-figure",

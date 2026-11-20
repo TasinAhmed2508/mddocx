@@ -16,6 +16,8 @@ class ThemeSpec:
     code_size_pt: float
     table_header_fill: str
     heading_color: str = "000000"
+    heading_space_before_pt: float | None = None
+    heading_space_after_pt: float | None = None
 
 
 THEMES: dict[str, ThemeSpec] = {
@@ -78,6 +80,21 @@ THEMES: dict[str, ThemeSpec] = {
         quote_indent_pt=15,
         code_size_pt=8.5,
         table_header_fill="F4F4F4",
+    ),
+    "report": ThemeSpec(
+        body_font="Aptos",
+        heading_font="Aptos Display",
+        code_font="Consolas",
+        body_size_pt=11,
+        line_spacing=1.18,
+        heading_sizes_pt=(25, 19, 15, 13, 12, 11),
+        paragraph_after_pt=7,
+        quote_indent_pt=18,
+        code_size_pt=9,
+        table_header_fill="E3ECF8",
+        heading_color="16375D",
+        heading_space_before_pt=15,
+        heading_space_after_pt=6,
     ),
 }
 

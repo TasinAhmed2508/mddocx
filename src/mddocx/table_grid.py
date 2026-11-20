@@ -66,3 +66,26 @@ def repeatable_header_rows(table: Table) -> int:
         if any(index + cell.row_span > count for cell in row.cells):
             return 0
     return count
+
+
+def has_ragged_rows(table: Table) -> bool:
+    """Count both newly emitted cells and the columns occupied by earlier spans."""
+    ends = [0] * (len(table.rows) + 1)
+    active = 0
+    widths = set()
+    for index, row in enumerate(table.rows):
+        active -= ends[index]
+        for cell in row.cells:
+            height, span = cell.row_span, cell.column_span
+            if (
+                type(height) is not int
+                or type(span) is not int
+                or height < 1
+                or span < 1
+                or index + height > len(table.rows)
+            ):
+                return False  # The grid validator reports the invalid span.
+            active += span
+            ends[index + height] += span
+        widths.add(active)
+    return len(widths) > 1

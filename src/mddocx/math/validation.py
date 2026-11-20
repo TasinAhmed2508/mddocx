@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import Counter
+from unicodedata import normalize
 
 from lxml import etree
 
@@ -35,6 +36,7 @@ ALLOWED_MATHML = {
     "menclose",
     "mtable",
     "mtr",
+    "mlabeledtr",
     "mtd",
     "mstyle",
     "mphantom",
@@ -101,7 +103,7 @@ def validate_omml(omml: object) -> None:
             raise UnsupportedLatexError("OMML matrix is not rectangular")
 
 
-def semantic_fingerprint(mathml_root, omml: object) -> str:
+def semantic_fingerprint(mathml_root) -> str:
     mathml_tokens = _node_tokens(mathml_root)
     structure = ",".join(etree.QName(node).localname for node in mathml_root.iter())
     return hashlib.sha256((structure + "|" + "".join(mathml_tokens)).encode()).hexdigest()
@@ -110,34 +112,41 @@ def semantic_fingerprint(mathml_root, omml: object) -> str:
 def semantic_tokens_preserved(mathml_root, omml: object) -> bool:
     expected = _node_tokens(mathml_root)
     actual = _node_tokens(omml)
-    return not expected or _ordered_overlap(expected, actual)
+    return not expected or _contains_tokens(expected, actual)
 
 
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
-    source = re.sub(r"\\(?:begin|end)\s*\{[^{}]+\}", "", latex)
+    source = re.sub(r"\\begin\s*\{(?:array|alignedat)\}\s*\{[^{}]*\}", "", latex)
+    source = re.sub(r"\\(?:begin|end)\s*\{[^{}]+\}", "", source)
+    source = re.sub(
+        r"\\(?:hspace|vspace|textcolor|color|colorbox)\*?(?:\[[^\]]*\])?\s*\{[^{}]*\}",
+        "",
+        source,
+    )
     source = re.sub(r"\\[A-Za-z]+\*?", "", source)
     expected = _tokens(source)
     actual = _node_tokens(mathml_root)
-    return not expected or _ordered_overlap(expected, actual)
+    return not expected or _contains_tokens(expected, actual)
 
 
 def _tokens(text: str) -> list[str]:
     # Structural validation covers operators and layout. Identifiers and numerals are
     # the stable semantic payload across MathML/OMML (accents, n-ary operators, and
     # invisible function application are intentionally encoded as properties).
-    return re.findall(r"[A-Za-z0-9]+", text)
+    # TeX source may write "2xy", but MathML stores the three atoms separately.
+    return [character for character in normalize("NFKC", text) if character.isalnum()]
 
 
 def _node_tokens(root: object) -> list[str]:
     tokens: list[str] = []
     for node in root.iter():
-        if node.text:
+        if node.text and etree.QName(node).localname not in {"annotation", "annotation-xml"}:
             tokens.extend(_tokens(node.text))
     return tokens
 
 
-def _ordered_overlap(expected: list[str], actual: list[str]) -> bool:
+def _contains_tokens(expected: list[str], actual: list[str]) -> bool:
     # OMML stores degrees, limits, and matrix cells in schema order rather than visual
     # MathML order. Token multiplicity catches loss without rejecting that reordering.
     wanted, present = Counter(expected), Counter(actual)

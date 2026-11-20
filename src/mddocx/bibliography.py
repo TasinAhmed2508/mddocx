@@ -55,7 +55,9 @@ class BibliographyDatabase:
         self._csl: CslProcessor | None = None
         self._find_doi_conflicts()
 
-    def resolve_style(self, requested: str, style_file: str | Path | None = None) -> str:
+    def resolve_style(
+        self, requested: str, style_file: str | Path | None = None, *, locale: str | None = None
+    ) -> str:
         """Validate a local CSL file and select its supported bundled rendering profile."""
         if style_file is None:
             return requested
@@ -72,7 +74,7 @@ class BibliographyDatabase:
             self.diagnostics.append(f"CITE205 Invalid CSL style root in {path}")
             return requested
         try:
-            self._csl = CslProcessor(path, self.entries.values())
+            self._csl = CslProcessor(path, self.entries.values(), locale=locale)
             return "csl-local"
         except (CslUnavailable, ValueError, OSError) as exc:
             self.diagnostics.append(f"CITE206 Could not activate CSL style {path}: {exc}")

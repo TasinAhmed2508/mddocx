@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Render aligned equation pairs and nested matrices as native Word math through the Python
+  fallback, with editable text labels and explicit top or bottom alignment.
+- Preserve matrix column alignment when Word lays out the equation.
+- Detect when a structured alignment or matrix has been flattened in a generated equation.
 - Verify Word section boundaries, break types, and portrait or landscape orientation offline.
 - Preserve every CSV column in native tables, including values under repeated headers and fields
   beyond the header row. Keep a single Word line break for each source line break.

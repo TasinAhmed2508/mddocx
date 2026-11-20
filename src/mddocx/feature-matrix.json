@@ -94,7 +94,7 @@
         "tests/test_verification.py",
         "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"
       ],
-      "verify": "Native OMML presence and structure, source identifiers and numerals, fractions and radicals"
+      "verify": "Native OMML presence and structure, source identifiers and numerals, fractions, radicals, and alignment arrays or matrices"
     },
     {
       "id": "images-and-figures",

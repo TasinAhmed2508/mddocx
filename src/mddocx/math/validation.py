@@ -7,7 +7,7 @@ from unicodedata import normalize
 
 from lxml import etree
 
-from .latex import UnsupportedLatexError
+from .latex import UnsupportedLatexError, _ENVIRONMENT_TOKEN, _MATRIX_ENVIRONMENTS
 
 MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
@@ -130,6 +130,18 @@ def semantic_tokens_preserved(mathml_root, omml: object) -> bool:
     return not expected or _contains_tokens(expected, actual)
 
 
+def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
+    if r"\begin" not in latex:
+        return True
+    expected = sum(
+        match[1] == "begin" and match[2].strip() in _MATRIX_ENVIRONMENTS
+        for match in _ENVIRONMENT_TOKEN.finditer(latex)
+    )
+    if not expected:
+        return True
+    return sum(1 for _ in omml.iter(f"{{{OMML_NS}}}m", f"{{{OMML_NS}}}eqArr")) >= expected
+
+
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
     # mhchem expands scientific notation and converts a standalone v to a precipitate arrow.
@@ -143,7 +155,12 @@ def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
         lambda group: re.sub(r"(?<=\s)(?:v|\(v\))(?=\s*(?:\+|\}))", "↓", group[0]),
         source,
     )
-    source = re.sub(r"\\begin\s*\{(?:array|alignedat)\}\s*\{[^{}]*\}", "", source)
+    source = re.sub(
+        r"\\begin\s*\{(?:array|alignedat|alignat\*?)\}\s*(?:\[\s*[tcb]\s*\]\s*)?\{[^{}]*\}",
+        "",
+        source,
+    )
+    source = re.sub(r"\\begin\s*\{(?:aligned|gathered)\}\s*\[\s*[tcb]\s*\]", "", source)
     source = re.sub(r"\\(?:begin|end)\s*\{[^{}]+\}", "", source)
     source = re.sub(
         r"\\(?:hspace|vspace|textcolor|color|colorbox)\*?(?:\[[^\]]*\])?\s*\{[^{}]*\}",

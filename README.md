@@ -226,8 +226,8 @@ are padded. Unsupported HTML tables remain visible as source text with a diagnos
 Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
 heading levels and bookmarks, hard breaks, list nesting and task status, Markdown and imported
 CSV/JSON table cells, hyperlink targets, image alt text, native equation structure and source
-identifiers and numerals, footnotes and endnotes (including their equations), simple captions
-and reference fields, native chart/workbook relationships, and Word section boundaries, break
+identifiers and numerals, alignment arrays and matrices, footnotes and endnotes, simple
+captions and reference fields, native chart/workbook relationships, and Word section boundaries, break
 types, and orientation. It returns **0** for a match, **3** for differences or incomplete
 coverage, and **2** for invalid input or package errors. Visual
 pagination, algebraic equivalence, drawing content, workbook cell values, and generated structures

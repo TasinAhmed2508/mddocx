@@ -14,8 +14,10 @@ from .models import MathConversion
 from .normalize import normalize_equation
 from .sidecar import MathJaxSidecar, MathJaxSidecarError
 from .validation import (
+    MATHML_NS,
     semantic_fingerprint,
     semantic_tokens_preserved,
+    source_matrices_preserved,
     source_tokens_preserved,
     validate_mathml,
     validate_omml,
@@ -23,6 +25,7 @@ from .validation import (
 
 _BATCH_COMMANDS = {"frac", "sum", "sqrt", "left", "right", "cdot", "times", "le", "ge", "ce", "pu"}
 _BATCH_SIZE = 128
+_MATHJAX_TEXT_AMPERSAND = re.compile(r"(?<!\\)\\&")
 
 
 class MathConverter(Protocol):
@@ -134,7 +137,8 @@ class DefaultMathConverter:
         normalized = normalize_equation(latex)
         failures: list[str] = []
         engines = []
-        if self._sidecar.available:
+        sidecar_ready = self._sidecar.available
+        if sidecar_ready:
             engines.append(("mathjax-sidecar", lambda: self._convert_sidecar(key, normalized.text)))
         if self._external is not None:
             engines.append(("latex2mathml", lambda: self._external(normalized.text)))
@@ -143,8 +147,16 @@ class DefaultMathConverter:
             try:
                 mathml = operation()
                 root = validate_mathml(mathml)
-                if engine == "mathjax-sidecar" and r"\ce" in normalized.text:
-                    if attach_chemistry_scripts(root):
+                if engine == "mathjax-sidecar":
+                    changed = r"\ce" in normalized.text and attach_chemistry_scripts(root)
+                    if r"\&" in normalized.text:
+                        for token in root.iter(f"{{{MATHML_NS}}}mtext"):
+                            text = token.text or ""
+                            rendered = _MATHJAX_TEXT_AMPERSAND.sub("&", text)
+                            if rendered != text:
+                                token.text = rendered
+                                changed = True
+                    if changed:
                         mathml = etree.tostring(root, encoding="unicode")
                 if engine != "mddocx-basic" and not source_tokens_preserved(normalized.text, root):
                     raise UnsupportedLatexError(
@@ -152,6 +164,8 @@ class DefaultMathConverter:
                     )
                 omml = self.mathml_to_omml(mathml, display, root=root)
                 validate_omml(omml)
+                if not source_matrices_preserved(normalized.text, omml):
+                    raise UnsupportedLatexError(f"{engine} output lost an alignment or matrix")
                 fingerprint = semantic_fingerprint(root)
                 semantic_valid = semantic_tokens_preserved(root, omml)
                 if not semantic_valid and engine != "mddocx-basic":
@@ -174,7 +188,8 @@ class DefaultMathConverter:
                 semantic_fingerprint=fingerprint,
                 label=normalized.label,
             )
-            if self._cache_enabled and not failures:
+            # A sidecar failure can be transient, while the local Python fallback is deterministic.
+            if self._cache_enabled and (not failures or not sidecar_ready):
                 if len(self._conversions) == 128:
                     del self._conversions[next(iter(self._conversions))]
                 self._conversions[key] = deepcopy(result)

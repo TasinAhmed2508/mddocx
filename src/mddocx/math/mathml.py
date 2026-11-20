@@ -407,21 +407,32 @@ class MathMLToOMML:
         alignments = node.get("columnalign", "").split()
         if not alignments:
             alignments = [cell.get("columnalign", "center") for cell in rows[0]]
+        baseline = {"baseline 1": "top", "baseline -1": "bot", "top": "top", "bottom": "bot"}.get(
+            node.get("align", "")
+        )
+        properties = OxmlElement("m:mPr")
+        if baseline:
+            base_jc = OxmlElement("m:baseJc")
+            base_jc.set(qn("m:val"), baseline)
+            properties.append(base_jc)
         if any(alignment in {"left", "right"} for alignment in alignments):
-            properties = OxmlElement("m:mPr")
             columns = OxmlElement("m:mcs")
             for index in range(width):
                 alignment = alignments[min(index, len(alignments) - 1)]
                 column = OxmlElement("m:mc")
                 column_properties = OxmlElement("m:mcPr")
+                # Word can ignore justification when the column group omits its count.
+                count = OxmlElement("m:count")
+                count.set(qn("m:val"), "1")
                 justification = OxmlElement("m:mcJc")
                 justification.set(
                     qn("m:val"), alignment if alignment in {"left", "right"} else "center"
                 )
-                column_properties.append(justification)
+                column_properties.extend((count, justification))
                 column.append(column_properties)
                 columns.append(column)
             properties.append(columns)
+        if len(properties):
             matrix.append(properties)
         for row in rows:
             mr = OxmlElement("m:mr")

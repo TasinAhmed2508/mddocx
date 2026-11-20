@@ -98,6 +98,35 @@ def test_clean_document_verifies_offline(reference, monkeypatch, capsys):
     assert report["ok"] and report["checked_units"] == 7
 
 
+def test_verify_reports_flattened_nested_math_matrix(tmp_path, monkeypatch):
+    monkeypatch.setattr("mddocx.math.sidecar.node_executable", lambda: None)
+    source = tmp_path / "alignment.md"
+    source.write_text(
+        "$$\n"
+        r"\begin{alignedat}[t]{2}A&=\begin{bmatrix}a&b\\c&d\end{bmatrix}&x&=1\\B&=2&y&=3\end{alignedat}"
+        "\n$$\n",
+        encoding="utf-8",
+    )
+    target = source.with_suffix(".docx")
+    config = RenderConfig()
+    config.math_failure.mode = "error"
+    compiler = Compiler(config)
+    payload = compiler.compile_file(source, target).output_bytes
+    assert compiler.verify(source, target).ok
+
+    parts = read_parts(payload)
+    root = etree.fromstring(parts["word/document.xml"])
+    outer, inner = root.findall(".//m:m", NS)
+    for run in inner.findall(".//m:r", NS):
+        inner.addprevious(run)
+    inner.getparent().remove(inner)
+    assert len(outer.findall("m:mr", NS)) == 2
+    parts["word/document.xml"] = etree.tostring(root)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part, finding.line) == ("VERIFY303", "word/document.xml", 1)
+    assert "lost an alignment array or matrix" in finding.message
+
+
 @pytest.mark.parametrize(
     ("query", "attribute", "value"),
     [

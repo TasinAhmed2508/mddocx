@@ -95,3 +95,11 @@ Microsoft Word laid out an 84-row, eight-column survey in **seven pages with com
 Report-theme cells**, down from nine pages with body paragraph spacing. Both exports
 contain all 84 record IDs exactly once, with repeated table headers and portrait
 pages before and after the landscape section.
+
+## Repeated Python-only alignments
+
+On Windows with Python 3.12 and Node.js disabled, five alternating pairs of
+strict conversions generated documents with 160 occurrences of the same
+two-pair alignment containing a nested matrix and a fraction. The median
+conversion CPU time was **0.484 s with the math cache disabled** and **0.281 s
+with it enabled**. All ten DOCX files were byte-identical.

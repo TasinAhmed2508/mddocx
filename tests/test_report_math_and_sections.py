@@ -50,6 +50,76 @@ def test_mathml_prescripts_and_equation_row_labels_keep_semantics():
     assert [node.text for node in equation.iter(qn("m:t"))] == ["i", "2", "A", "j", "\u200b", "(7)"]
 
 
+@pytest.mark.parametrize("bundled", [False, True])
+def test_alignedat_keeps_two_pairs_and_top_baseline(bundled):
+    sidecar = MathJaxSidecar() if bundled else SimpleNamespace(available=False)
+    if bundled and not sidecar.available:
+        pytest.skip("Bundled MathJax requires a local Node runtime")
+    tex = r"\begin{alignedat}[t]{2}a&=b & c&=d\\uu&=v & x&=\frac{1}{y}\end{alignedat}"
+    equation = DefaultMathConverter(sidecar=sidecar).convert(tex, display=True)
+    assert equation.engine == ("mathjax-sidecar" if bundled else "mddocx-basic")
+    matrix = next(equation.omml.iter(qn("m:m")))
+    assert [node.get(qn("m:val")) for node in matrix.iter(qn("m:mcJc"))] == [
+        "right",
+        "left",
+        "right",
+        "left",
+    ]
+    assert [node.get(qn("m:val")) for node in matrix.iter(qn("m:count"))] == ["1"] * 4
+    assert next(matrix.iter(qn("m:baseJc"))).get(qn("m:val")) == "top"
+    rows = [["".join(cell.itertext()) for cell in row] for row in matrix.findall(qn("m:mr"))]
+    assert rows == [["a", "=b", "c", "=d"], ["uu", "=v", "x", "=1y"]]
+    assert next(matrix.iter(qn("m:f")), None) is not None
+
+
+@pytest.mark.parametrize("bundled", [False, True])
+def test_nested_matrix_and_ampersand_stay_inside_outer_alignment_cells(bundled):
+    sidecar = MathJaxSidecar() if bundled else SimpleNamespace(available=False)
+    if bundled and not sidecar.available:
+        pytest.skip("Bundled MathJax requires a local Node runtime")
+    tex = (
+        r"\begin{aligned}[b]F&=\begin{pmatrix}a&b\\c&d\end{pmatrix}"
+        r"\\L&=\text{A \& B}\end{aligned}"
+    )
+    equation = DefaultMathConverter(sidecar=sidecar).convert(tex, display=True).omml
+    outer, inner = list(equation.iter(qn("m:m")))
+    assert next(outer.iter(qn("m:baseJc"))).get(qn("m:val")) == "bot"
+    assert [len(row) for row in outer.findall(qn("m:mr"))] == [2, 2]
+    assert ["".join(row.itertext()) for row in inner.findall(qn("m:mr"))] == ["ab", "cd"]
+    assert inner in outer.findall(".//" + qn("m:mr") + "/" + qn("m:e") + "//" + qn("m:m"))
+    assert "".join(outer.findall(qn("m:mr"))[1][1].itertext()) == "=A & B"
+
+
+def test_basic_alignedat_preserves_empty_pairs_and_rejects_excess_columns():
+    from mddocx.math.latex import BasicLatexToMathML
+
+    parser = BasicLatexToMathML()
+    valid = parser.convert(r"\begin{alignedat}{2}a&=b\\c&=d\end{alignedat}")
+    result = MathMLToOMML().convert(valid)
+    assert [len(row) for row in result.iter(qn("m:mr"))] == [4, 4]
+    with pytest.raises(ValueError, match="Too many alignment columns"):
+        parser.convert(r"\begin{alignedat}{1}a&b&c\end{alignedat}")
+
+
+def test_fallback_caches_only_native_alignment_when_external_result_is_flat():
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+    calls = []
+
+    def flatten(latex):
+        calls.append(latex)
+        return '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>a</mi><mi>b</mi></math>'
+
+    converter._external = flatten
+    source = r"\begin{alignedat}{1}a&=b\end{alignedat}"
+    first = converter.convert(source, display=True)
+    second = converter.convert(source, display=True)
+    assert first.engine == second.engine == "mddocx-basic"
+    assert len(calls) == 1
+    assert "lost an alignment or matrix" in first.warnings[0]
+    assert first.omml is not second.omml
+    assert next(second.omml.iter(qn("m:m")), None) is not None
+
+
 def test_pure_python_sideset_keeps_limit_and_script_positions():
     converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
     result = converter.convert(r"\sideset{_a^b}{_c^d}\sum_{i=1}^{n} i", display=True)

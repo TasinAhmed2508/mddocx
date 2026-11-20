@@ -5,6 +5,24 @@ from xml.etree import ElementTree as ET
 
 MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 ET.register_namespace("", MATHML_NS)
+_ENVIRONMENT_TOKEN = re.compile(r"\\(?:(begin|end)\s*\{([^{}]+)\}|[A-Za-z]+|.)|[{}&]")
+_ALIGN_PAIRS = {"alignedat", "alignat", "alignat*"}
+_ALIGN_COLUMNS = _ALIGN_PAIRS | {"aligned", "align", "align*", "split"}
+_OPTIONAL_ALIGNMENT = {"alignedat", "aligned", "gathered", "array"}
+_TEXT_ESCAPE = re.compile(r"\\([&#%{}_$])")
+_MATRIX_DELIMITERS = {
+    "pmatrix": ("(", ")"),
+    "bmatrix": ("[", "]"),
+    "Bmatrix": ("{", "}"),
+    "vmatrix": ("|", "|"),
+    "Vmatrix": ("‖", "‖"),
+    "cases": ("{", ""),
+}
+_MATRIX_ENVIRONMENTS = (
+    {"array", "matrix", "smallmatrix", "gather", "gather*", "gathered"}
+    | _ALIGN_COLUMNS
+    | _MATRIX_DELIMITERS.keys()
+)
 
 GREEK = {
     "alpha": "α",
@@ -300,6 +318,9 @@ class _Parser:
         start = self.i
         depth = 1
         while self.i < len(self.text):
+            if self.text[self.i] == "\\":
+                self.i += 2
+                continue
             if self.text[self.i] == "{":
                 depth += 1
             elif self.text[self.i] == "}":
@@ -450,7 +471,7 @@ class _Parser:
         if cmd == "boxed":
             return _e("menclose", None, self.parse_required_arg(), notation="box")
         if cmd == "text":
-            return _e("mtext", self._read_braced_raw())
+            return _e("mtext", _TEXT_ESCAPE.sub(r"\1", self._read_braced_raw()))
         if cmd in ACCENTS:
             base = self.parse_required_arg()
             return _e("mover", None, base, _e("mo", ACCENTS[cmd]), accent="true")
@@ -530,42 +551,45 @@ class _Parser:
         return "" if ch == "." else ch
 
     def _parse_environment(self, env: str) -> ET.Element:
-        supported = {
-            "equation",
-            "equation*",
-            "matrix",
-            "pmatrix",
-            "bmatrix",
-            "Bmatrix",
-            "vmatrix",
-            "Vmatrix",
-            "aligned",
-            "align",
-            "align*",
-            "gather",
-            "gather*",
-            "gathered",
-            "cases",
-            "split",
-        }
-        if env not in supported:
+        grid = env in _MATRIX_ENVIRONMENTS
+        if not grid and env not in {"equation", "equation*"}:
             raise ValueError(f"Unsupported LaTeX environment: {env}")
-        marker = f"\\end{{{env}}}"
-        end = self.text.find(marker, self.i)
-        if end < 0:
-            raise ValueError(f"Unclosed LaTeX environment: {env}")
-        content = self.text[self.i : end]
-        self.i = end + len(marker)
+        baseline = self._read_bracket_raw() if env in _OPTIONAL_ALIGNMENT else None
+        align = {"t": "top", "b": "bottom", "c": "center"}.get(
+            "c" if baseline is None else baseline.strip()
+        )
+        if align is None:
+            raise ValueError(f"Invalid vertical alignment for LaTeX environment: {env}")
+        alignments: list[str] = []
+        if env in _ALIGN_PAIRS:
+            pairs = self._read_braced_raw().strip()
+            if not re.fullmatch(r"[1-9][0-9]?", pairs) or int(pairs) > 32:
+                raise ValueError("alignedat requires 1 to 32 alignment pairs for Word.")
+            alignments = ["right", "left"] * int(pairs)
+        if env == "array":
+            spec = "".join(self._read_braced_raw().split())
+            if not re.fullmatch(r"[lcr]{1,64}", spec):
+                raise ValueError("Word fallback supports up to 64 l/c/r array columns.")
+            alignments = [{"l": "left", "c": "center", "r": "right"}[column] for column in spec]
 
-        if env in {"equation", "equation*"}:
-            parser = _Parser(content.strip())
-            items = parser.parse_sequence()
+        rows = self._environment_rows(env, grid=grid)
+        if not grid:
+            items = _Parser(rows[0][0]).parse_sequence()
             return items[0] if len(items) == 1 else _e("mrow", None, *items)
 
-        rows = [row.strip() for row in re.split(r"\\\\", content) if row.strip()]
+        width = max(map(len, rows), default=0)
+        if width > 64:
+            raise ValueError("Word supports up to 64 columns in a native equation matrix.")
+        if alignments and width > len(alignments):
+            raise ValueError(f"Too many alignment columns for {env}.")
+        if env in _ALIGN_COLUMNS and not alignments:
+            alignments = ["right" if index % 2 == 0 else "left" for index in range(width)]
+        if env == "cases":
+            alignments = ["left"]
         mrows: list[ET.Element] = []
-        for row in rows:
-            cells = row.split("&")
+        for cells in rows:
+            if env in _ALIGN_PAIRS or env == "array":
+                cells.extend([""] * (len(alignments) - len(cells)))
             mtds = []
             for cell in cells:
                 parser = _Parser(cell.strip())
@@ -573,41 +597,54 @@ class _Parser:
                 cell_node = items[0] if len(items) == 1 else _e("mrow", None, *items)
                 mtds.append(_e("mtd", None, cell_node))
             mrows.append(_e("mtr", None, *mtds))
-        left_aligned = {"aligned", "align", "align*", "cases", "split"}
         table = _e(
             "mtable",
             None,
             *mrows,
-            columnalign="left" if env in left_aligned else "center",
+            columnalign=" ".join(alignments) or "center",
+            align=align,
         )
-        if env in {
-            "aligned",
-            "align",
-            "align*",
-            "gather",
-            "gather*",
-            "gathered",
-            "split",
-            "matrix",
-        }:
+        if env not in _MATRIX_DELIMITERS:
             return table
-        opens = {
-            "pmatrix": "(",
-            "bmatrix": "[",
-            "Bmatrix": "{",
-            "vmatrix": "|",
-            "Vmatrix": "‖",
-            "cases": "{",
-        }
-        closes = {
-            "pmatrix": ")",
-            "bmatrix": "]",
-            "Bmatrix": "}",
-            "vmatrix": "|",
-            "Vmatrix": "‖",
-            "cases": "",
-        }
-        return _e("mfenced", None, table, open=opens[env], close=closes[env])
+        opening, closing = _MATRIX_DELIMITERS[env]
+        return _e("mfenced", None, table, open=opening, close=closing)
+
+    def _environment_rows(self, env: str, *, grid: bool) -> list[list[str]]:
+        rows: list[list[str]] = []
+        cells: list[str] = []
+        nested: list[str] = []
+        depth = 0
+        start = self.i
+        for match in _ENVIRONMENT_TOKEN.finditer(self.text, start):
+            token, directive, name = match[0], match[1], match[2]
+            if directive == "begin":
+                nested.append(name.strip())
+            elif directive == "end":
+                closing = name.strip()
+                if nested:
+                    if nested.pop() != closing:
+                        raise ValueError(f"Mismatched LaTeX environment: {closing}")
+                elif closing == env and depth == 0:
+                    cells.append(self.text[start : match.start()])
+                    self.i = match.end()
+                    if len(cells) > 1 or cells[0].strip() or not grid:
+                        rows.append(cells)
+                    return rows
+                else:
+                    raise ValueError(f"Mismatched LaTeX environment: {closing}")
+            elif token == "{":
+                depth += 1
+            elif token == "}":
+                depth -= 1
+                if depth < 0:
+                    raise ValueError(f"Unexpected closing brace in {env}.")
+            elif grid and depth == 0 and not nested and token in {"&", r"\\"}:
+                cells.append(self.text[start : match.start()])
+                start = match.end()
+                if token == r"\\":
+                    rows.append(cells)
+                    cells = []
+        raise ValueError(f"Unclosed LaTeX environment: {env}")
 
     def _skip_spaces(self) -> None:
         while self.i < len(self.text) and self.text[self.i].isspace():

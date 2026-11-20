@@ -22,7 +22,7 @@ from .inspection import M, NS, R, W
 from .layout import LayoutPlanner
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
-from .math.validation import source_tokens_preserved, validate_omml
+from .math.validation import source_matrices_preserved, source_tokens_preserved, validate_omml
 from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import clean_xml_text
@@ -492,6 +492,13 @@ def _equation_findings(
                 yield _finding(
                     "VERIFY303",
                     "Native equation lost a source identifier or numeral.",
+                    node,
+                    part=part,
+                )
+            elif not source_matrices_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation lost an alignment array or matrix.",
                     node,
                     part=part,
                 )

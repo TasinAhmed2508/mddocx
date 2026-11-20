@@ -8,6 +8,10 @@ built-in engine, and `validation.py` validates both intermediate MathML and OMML
 Conversion is local and deterministic. Unsupported expressions raise to the
 renderer, which applies the configured editable-text fallback or strict policy.
 
+The built-in engine preserves `alignedat` alignment pairs, simple `array` column
+alignment, and nested matrices when the MathJax runtime is unavailable. Explicit
+top and bottom alignment map to native Word matrix baseline properties.
+
 The bundled sidecar supports `\ce` for reactions and `\pu` for physical units.
 Standard reaction and equilibrium arrows use portable Unicode glyphs. Specialty
 bonds and unequal equilibrium arrows without a Word mapping use the math failure

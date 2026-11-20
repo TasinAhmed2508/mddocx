@@ -26,7 +26,8 @@ def main() -> None:
             encoding="utf-8",
         )
         (root / "sample.md").write_text(
-            "# Editable report\n\nবাংলা English. Equation $x^2$.\n\n![Blue box](sample.svg)\n\n"
+            "# Editable report\n\nবাংলা English. Equation $x^2$.\n\n"
+            "$$\n\\ce{2H2 + O2 -> 2H2O}\n$$\n\n![Blue box](sample.svg)\n\n"
             "<table><tr><th colspan='2'>Heading</th></tr><tr><td>1</td><td>2</td></tr></table>",
             encoding="utf-8",
         )
@@ -35,13 +36,13 @@ def main() -> None:
         assert report["status"] == "ok", report
         output = root / "sample.docx"
         inspection = inspect_docx_bytes(output.read_bytes())
-        assert (
-            inspection.ok and inspection.drawings == inspection.equations == inspection.tables == 1
-        )
+        assert inspection.ok and inspection.drawings == inspection.tables == 1
+        assert inspection.equations == 2
         result = Compiler().verify(root / "sample.md", output)
         assert result.ok, result.findings
     print(
-        f"Installed mddocx {__version__}: MathJax, SVG, CSL, HTML tables, and verification passed"
+        f"Installed mddocx {__version__}: MathJax chemistry, SVG, CSL, HTML tables, "
+        "and verification passed"
     )
 
 

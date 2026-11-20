@@ -7,7 +7,9 @@ import pytest
 
 from mddocx import Compiler, RenderConfig
 from mddocx.math.converter import DefaultMathConverter
+from mddocx.math.latex import UnsupportedLatexError
 from mddocx.math.mathml import MathMLToOMML
+from mddocx.math.sidecar import MathJaxSidecar
 
 
 @pytest.mark.parametrize(
@@ -46,6 +48,73 @@ def test_mathml_prescripts_and_equation_row_labels_keep_semantics():
     pre = next(equation.iter(qn("m:sPre")))
     assert [node.tag for node in pre] == [qn(n) for n in ("m:sub", "m:sup", "m:e")]
     assert [node.text for node in equation.iter(qn("m:t"))] == ["i", "2", "A", "j", "\u200b", "(7)"]
+
+
+def test_pure_python_sideset_keeps_limit_and_script_positions():
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+    result = converter.convert(r"\sideset{_a^b}{_c^d}\sum_{i=1}^{n} i", display=True)
+    math = result.omml
+    assert result.engine == "latex2mathml"
+    left = next(math.iter(qn("m:sPre")))
+    right = next(left.iter(qn("m:sSubSup")))
+    assert ["".join(left.find(qn(tag)).itertext()) for tag in ("m:sub", "m:sup")] == ["a", "b"]
+    assert ["".join(right.find(qn(tag)).itertext()) for tag in ("m:e", "m:sub", "m:sup")] == [
+        "∑",
+        "c",
+        "d",
+    ]
+    assert "".join(math[0].find(qn("m:lim")).itertext()) == "n"
+    lower = next(math.iter(qn("m:limLow")))
+    assert "".join(lower.find(qn("m:lim")).itertext()) == "i=1"
+    assert not list(math.iter(qn("m:phant")))
+
+
+def test_chemistry_and_units_compile_and_verify_as_native_word_math(tmp_path):
+    if not MathJaxSidecar().available:
+        pytest.skip("Bundled MathJax requires a local Node runtime")
+    source = tmp_path / "chemistry.md"
+    formulas = (
+        (r"\ce{2H2 + O2 -> 2H2O}", "⟶", "m:sSub"),
+        (r"\ce{N2 + 3H2 <=> 2NH3}", "⇌", "m:sSub"),
+        (r"\ce{SO4^2- + Ba^2+ -> BaSO4 v}", "↓", "m:sSup"),
+        (r"\ce{A ->[\text{heat}] B}", "heat", "m:limUpp"),
+        (r"\pu{3.4e-12 V}", "10", "m:sSup"),
+        (r"\ce{^{14}_{6}C}", "14", "m:sPre"),
+    )
+    source.write_text("\n\n".join(f"$$\n{latex}\n$$" for latex, _, _ in formulas), encoding="utf-8")
+    config = RenderConfig()
+    config.math_failure.mode = "error"
+    compiler = Compiler(config)
+    output = source.with_suffix(".docx")
+    compiler.compile_file(source, output)
+    report = compiler.verify(source, output)
+    assert report.ok, report
+    equations = list(Document(output)._element.iter(qn("m:oMath")))
+    for equation, (_, expected, structure) in zip(equations, formulas, strict=True):
+        text = "".join(equation.itertext())
+        assert expected in text
+        assert not any(0xE000 <= ord(character) <= 0xF8FF for character in text)
+        assert next(equation.iter(qn(structure)), None) is not None
+        assert not list(equation.iter(qn("m:phant")))
+    sulphate = next(equations[2].iter(qn("m:sSubSup")))
+    assert "".join(sulphate.find(qn("m:e")).itertext()) == "SO"
+    assert "".join(sulphate.find(qn("m:sub")).itertext()) == "4"
+    assert "".join(sulphate.find(qn("m:sup")).itertext()) == "2−"
+    assert next(sulphate.iter(qn("m:sty"))).get(qn("m:val")) == "p"
+    isotope = next(equations[-1].iter(qn("m:sPre")))
+    assert ["".join(isotope.find(qn(tag)).itertext()) for tag in ("m:sub", "m:sup", "m:e")] == [
+        "6",
+        "14",
+        "C",
+    ]
+
+
+def test_unmapped_chemistry_symbol_reports_word_limitation():
+    sidecar = MathJaxSidecar()
+    if not sidecar.available:
+        pytest.skip("Bundled MathJax requires a local Node runtime")
+    with pytest.raises(UnsupportedLatexError, match="no portable Word mapping"):
+        DefaultMathConverter(sidecar=sidecar).convert(r"\ce{A <=>> B}")
 
 
 def test_word_matrix_column_limit_is_reported_before_emission():

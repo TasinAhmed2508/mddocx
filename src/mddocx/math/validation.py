@@ -132,7 +132,18 @@ def semantic_tokens_preserved(mathml_root, omml: object) -> bool:
 
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
-    source = re.sub(r"\\begin\s*\{(?:array|alignedat)\}\s*\{[^{}]*\}", "", latex)
+    # mhchem expands scientific notation and converts a standalone v to a precipitate arrow.
+    source = re.sub(
+        r"(\\pu\s*\{\s*[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))[eE](?=[+-]?\d)",
+        r"\g<1>10",
+        latex,
+    )
+    source = re.sub(
+        r"\\ce\s*\{[^{}]*\}",
+        lambda group: re.sub(r"(?<=\s)(?:v|\(v\))(?=\s*(?:\+|\}))", "↓", group[0]),
+        source,
+    )
+    source = re.sub(r"\\begin\s*\{(?:array|alignedat)\}\s*\{[^{}]*\}", "", source)
     source = re.sub(r"\\(?:begin|end)\s*\{[^{}]+\}", "", source)
     source = re.sub(
         r"\\(?:hspace|vspace|textcolor|color|colorbox)\*?(?:\[[^\]]*\])?\s*\{[^{}]*\}",

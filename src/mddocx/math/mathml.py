@@ -79,6 +79,10 @@ class MathMLToOMML:
         tag = self._local(node)
         variant = node.get("mathvariant") or inherited_variant
 
+        if tag == "mrow" and (sideset := self._sideset(node)):
+            base, pre, post = sideset
+            self._append_script_pairs(parent, base, pre, post, variant)
+            return
         if tag in {"math", "mrow"}:
             children = list(node)
             if not self._append_fenced_row(parent, children, variant):
@@ -115,7 +119,8 @@ class MathMLToOMML:
             # TeX ``\\text{...}`` and MathML string literals are prose, not
             # mathematical identifiers. Word otherwise applies math italic to
             # them, which visibly breaks AI-generated explanatory boxes.
-            token_variant = "normal" if tag in {"mtext", "ms"} and variant is None else variant
+            upright = tag in {"mtext", "ms"} or (tag == "mi" and len(value.strip()) > 1)
+            token_variant = "normal" if upright and variant is None else variant
             self._run(parent, value, variant=token_variant)
             return
         if tag == "mspace":
@@ -165,6 +170,10 @@ class MathMLToOMML:
             parent.append(rad)
             return
         if tag in {"msup", "msub", "msubsup"}:
+            if len(node) >= 2 and self._sideset(node[0]):
+                limit_tag = {"msup": "mover", "msub": "munder", "msubsup": "munderover"}[tag]
+                self._append_generic_limits(parent, node, limit_tag, variant)
+                return
             if self._is_nary_script(node):
                 parent.append(self._make_nary(node, inherited_variant=variant))
                 return
@@ -325,13 +334,50 @@ class MathMLToOMML:
         return argument
 
     def _append_multiscripts(self, parent, node, variant):
-        base = self._argument("m:e", node[0], variant)
         scripts = list(node)[1:]
         boundary = next(
             (i for i, child in enumerate(scripts) if self._local(child) == "mprescripts"),
             len(scripts),
         )
-        for sequence, left in ((scripts[:boundary], False), (scripts[boundary + 1 :], True)):
+        self._append_script_pairs(
+            parent, node[0], scripts[boundary + 1 :], scripts[:boundary], variant
+        )
+
+    def _sideset(self, node):
+        # latex2mathml duplicates the operator inside a zero-width phantom for left scripts.
+        if len(node) != 3 or self._local(node) != "mrow":
+            return None
+        pre, spacing, post = node
+        if not len(pre) or not len(post) or pre[0].get("width") != "0":
+            return None
+        if self._local(spacing) != "mstyle" or len(spacing) != 1:
+            return None
+        if self._local(spacing[0]) != "mspace" or spacing[0].get("width") != "-0.167em":
+            return None
+        phantom = pre[0].find("{*}mphantom/{*}mo")
+        base = post[0]
+        if (
+            phantom is None
+            or self._local(base) != "mo"
+            or base.get("movablelimits") != "false"
+            or self._text(base) != self._text(phantom)
+        ):
+            return None
+        return base, self._script_pair(pre), self._script_pair(post)
+
+    def _script_pair(self, node):
+        tag = self._local(node)
+        if tag == "msubsup":
+            return list(node)[1:]
+        if tag == "msub":
+            return [node[1], None]
+        if tag == "msup":
+            return [None, node[1]]
+        return []
+
+    def _append_script_pairs(self, parent, operator, pre, post, variant):
+        base = self._argument("m:e", operator, variant)
+        for sequence, left in ((post, False), (pre, True)):
             for offset in range(0, len(sequence), 2):
                 sub = self._argument("m:sub", sequence[offset], variant)
                 sup = self._argument(

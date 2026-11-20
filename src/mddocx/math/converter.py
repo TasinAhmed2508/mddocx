@@ -5,6 +5,9 @@ from pathlib import Path
 import re
 from typing import Protocol
 
+from lxml import etree
+
+from .chemistry import attach_chemistry_scripts
 from .latex import BasicLatexToMathML, UnsupportedLatexError
 from .mathml import MathMLToOMML
 from .models import MathConversion
@@ -18,7 +21,7 @@ from .validation import (
     validate_omml,
 )
 
-_BATCH_COMMANDS = {"frac", "sum", "sqrt", "left", "right", "cdot", "times", "le", "ge"}
+_BATCH_COMMANDS = {"frac", "sum", "sqrt", "left", "right", "cdot", "times", "le", "ge", "ce", "pu"}
 _BATCH_SIZE = 128
 
 
@@ -140,6 +143,9 @@ class DefaultMathConverter:
             try:
                 mathml = operation()
                 root = validate_mathml(mathml)
+                if engine == "mathjax-sidecar" and r"\ce" in normalized.text:
+                    if attach_chemistry_scripts(root):
+                        mathml = etree.tostring(root, encoding="unicode")
                 if engine != "mddocx-basic" and not source_tokens_preserved(normalized.text, root):
                     raise UnsupportedLatexError(
                         f"{engine} output lost one or more source identifier or numeral tokens"

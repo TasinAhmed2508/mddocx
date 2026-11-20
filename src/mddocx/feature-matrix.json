@@ -66,7 +66,7 @@
     },
     {
       "id": "math",
-      "syntax": "$...$, $$...$$, \\(...\\), \\[...\\] and math/latex/tex fences",
+      "syntax": "$...$, $$...$$, \\(...\\), \\[...\\] and math/latex/tex fences, including common \\ce and \\pu notation with bundled MathJax",
       "ast": "InlineMath and MathBlock",
       "ooxml": "native m:oMath and m:oMathPara/OMML",
       "malformed_diagnostic": "MATH101 for unmatched explicit delimiters; MATH201 for conversion fallback",
@@ -76,6 +76,7 @@
         "tests/test_ai_math_compatibility.py",
         "tests/test_smart_math_pipeline.py",
         "tests/test_equation_conformance_corpus.py",
+        "tests/test_report_math_and_sections.py",
         "tests/test_verification.py",
         "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"
       ],

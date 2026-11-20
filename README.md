@@ -280,9 +280,10 @@ inspect canonical AST and layout decisions without duplicating compiler internal
 ### AI-generated equations
 
 Common inline forms (`\\(...\\)` and `$...$`), display forms (`\\[...\\]` and `$$...$$`),
-and `math`, `latex`, or `tex` fenced blocks are converted to editable Word equations. Math-like
-text inside code spans and ordinary code fences is preserved as code, and common currency forms
-are preserved as text.
+and `math`, `latex`, or `tex` fenced blocks are converted to editable Word equations. The
+bundled MathJax engine also supports `\ce` reactions and `\pu` units with common chemistry
+arrows. Math-like text inside code spans and ordinary code fences is preserved as code, and
+common currency forms are preserved as text.
 
 When an equation uses syntax that the active math engine cannot convert, mddocx preserves its
 source as editable text and emits a `MATH201` warning. Use `--strict-math` when every equation must

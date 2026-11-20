@@ -72,3 +72,14 @@ For 600 distinct fractions with `latex2mathml` on the same Python version,
 removing the redundant OMML cache reduced retained Python allocations from
 366,536 to 120,489 bytes under `tracemalloc`. The combined OMML SHA-256 matched
 commit `889a360`. This measurement covers Python allocations in the converter.
+
+## Chemistry equations
+
+On Windows with Python 3.12, five alternating pairs of strict conversions rendered
+40 distinct reactions of the form `\ce{n H2 + O2 -> n H2O}` for `n` from 1 to 40.
+Grouping the reactions into one bundled MathJax request reduced median conversion
+time from **3.560 s to 0.316 s**. Both modes produced byte-identical DOCX files.
+
+The 20-section mixed report measured **0.586 s to 0.573 s** across five alternating
+pairs, comparing commit `e32a386` with the chemistry changes. All outputs matched byte
+for byte.

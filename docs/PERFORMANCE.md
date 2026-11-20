@@ -103,3 +103,18 @@ strict conversions generated documents with 160 occurrences of the same
 two-pair alignment containing a nested matrix and a fraction. The median
 conversion CPU time was **0.484 s with the math cache disabled** and **0.281 s
 with it enabled**. All ten DOCX files were byte-identical.
+
+## Paragraph style lookup
+
+Five alternating pairs on Windows with Python 3.12.11 compared the style cache against
+commit `56e5e85`, timing `Compiler().compile_string(source)` in a fresh process per run.
+The table and mixed report use the existing roadmap workloads. The heading stress test
+joins 2,000 blocks of `f"## Checkpoint {i}\n\nOne short result."` with blank lines.
+
+| Workload | Before | After | DOCX bytes |
+| --- | ---: | ---: | ---: |
+| 2,000 headings and paragraphs | 4.905 s | 1.972 s | 60,987 |
+| 20 mixed sections | 0.571 s | 0.493 s | 38,895 |
+| 60 × 24 table | 0.807 s | 0.791 s | 40,982 |
+
+All ten DOCX files for each workload had the same SHA-256 hash.

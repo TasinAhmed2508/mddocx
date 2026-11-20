@@ -42,7 +42,7 @@ def render_caption(
     *,
     keep_with_next: bool = True,
 ) -> None:
-    p = renderer.document.add_paragraph(style=renderer._style("MD Caption"))
+    p = renderer._add_paragraph("MD Caption")
     p.paragraph_format.keep_together = True
     p.paragraph_format.keep_with_next = keep_with_next
     target = renderer.references.get(identifier) if identifier and renderer.references else None
@@ -139,7 +139,7 @@ def render_bibliography(renderer: DocxRenderer) -> None:
         and (last.style.name or "").startswith(("MD Heading", "Heading"))
     )
     if not has_explicit_heading:
-        p = renderer.document.add_paragraph(style=renderer._style("MD Heading 1"))
+        p = renderer._add_paragraph("MD Heading 1")
         p.add_run(title)
         renderer._apply_text_policy(p, title)
     cited = set(renderer._cited_keys)
@@ -147,7 +147,7 @@ def render_bibliography(renderer: DocxRenderer) -> None:
     keys = None if include_all or not cited else renderer._cited_keys
     entries = renderer.bibliography.formatted_segments(renderer._citation_style, keys)
     for key, segments in entries:
-        bp = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+        bp = renderer._add_paragraph("MD Normal")
         bp.paragraph_format.left_indent = Mm(6)
         bp.paragraph_format.first_line_indent = Mm(-6)
         for segment in segments:

@@ -48,7 +48,7 @@ def render_chart(renderer: DocxRenderer, node: ChartBlock) -> None:
     token = f"MDDOCX_CHART_{len(renderer._chart_entries) + 1}_PLACEHOLDER"
     entry.token = token
     renderer._chart_entries.append(entry)
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+    p = renderer._add_paragraph("MD Normal")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_together = True
     if caption and renderer.config.references.figure_caption_position == "below":

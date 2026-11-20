@@ -12,6 +12,7 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
@@ -122,6 +123,7 @@ class DocxRenderer:
         self._chart_entries: list[ChartEntry] = []
         self._table_section_restorations = []
         self._layout_plan = LayoutPlan()
+        self._paragraph_styles: dict[str, str | None] = {}
         self.context: RenderContext | None = None
         self._math_renderer: NativeMathRenderer | None = None
 
@@ -136,6 +138,7 @@ class DocxRenderer:
         self._theme = get_theme(self.config.theme)
         self.fonts = FontSlots.resolve(self.config, self._theme)
         self.document = document_setup.open_document(self)
+        self._paragraph_styles.clear()
         validate_style_mapping(self.document, self.config, self.reporter)
         ensure_styles(self.document, self.config)
         document_setup.configure_document(self)
@@ -259,6 +262,21 @@ class DocxRenderer:
 
     def _style(self, canonical: str) -> str:
         return resolve_style_name(self.document, self.config, canonical)
+
+    def _paragraph_style_id(self, canonical: str) -> str | None:
+        if self.config.extensions:
+            # Extensions can change the style mapping or modify the live Word styles.
+            return self.document.part.get_style_id(self._style(canonical), WD_STYLE_TYPE.PARAGRAPH)
+        if canonical not in self._paragraph_styles:
+            self._paragraph_styles[canonical] = self.document.part.get_style_id(
+                self._style(canonical), WD_STYLE_TYPE.PARAGRAPH
+            )
+        return self._paragraph_styles[canonical]
+
+    def _add_paragraph(self, style: str):
+        paragraph = self.document.add_paragraph()
+        paragraph._p.style = self._paragraph_style_id(style)
+        return paragraph
 
     def _apply_planned_paragraph_layout(self, paragraph, node) -> None:
         decision = self._layout_plan.for_node(node)

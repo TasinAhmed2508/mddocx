@@ -25,12 +25,12 @@ def render_math_block(renderer: DocxRenderer, node: MathBlock) -> None:
     ):
         render_numbered_equation(renderer, node)
     else:
-        p = renderer.document.add_paragraph(style=renderer._style("MD Equation"))
+        p = renderer._add_paragraph("MD Equation")
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         renderer._apply_planned_paragraph_layout(p, node)
         renderer._append_math(p, node.source_text, display=True, source=node.source)
     if node.caption:
-        cp = renderer.document.add_paragraph(style=renderer._style("MD Caption"))
+        cp = renderer._add_paragraph("MD Caption")
         cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         cp.add_run(clean_xml_text(node.caption))
 
@@ -44,7 +44,7 @@ def render_numbered_equation(renderer: DocxRenderer, node: MathBlock) -> None:
     table.columns[1].width = int(usable * 0.12)
     tables.remove_table_borders(table)
     p = table.cell(0, 0).paragraphs[0]
-    p.style = renderer._style("MD Equation")
+    p._p.style = renderer._paragraph_style_id("MD Equation")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_together = True
     renderer._append_math(p, node.source_text, display=True, source=node.source)

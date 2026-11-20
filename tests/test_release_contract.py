@@ -221,6 +221,22 @@ def test_template_style_mapping_uses_existing_semantic_targets(tmp_path: Path):
     assert reopened.paragraphs[1].style.name == "Company Body"
 
 
+def test_extension_can_change_paragraph_styles_during_render():
+    from mddocx.ast.block import Paragraph
+
+    class SwitchBodyStyle:
+        def render_block(self, renderer, node):
+            if isinstance(node, Paragraph) and node.children[0].text == "Second paragraph.":
+                renderer.config.style_map.mapping["MD Normal"] = "Title"
+            return False
+
+    config = RenderConfig(extensions=(SwitchBodyStyle(),))
+    blob = MarkdownWord(config).render_string("First paragraph.\n\nSecond paragraph.")
+    paragraphs = WordDocument(BytesIO(blob)).paragraphs
+
+    assert [paragraph.style.name for paragraph in paragraphs] == ["MD Normal", "Title"]
+
+
 def test_missing_mapped_template_style_is_actionable(tmp_path: Path):
     template_path = tmp_path / "base.docx"
     WordDocument().save(template_path)

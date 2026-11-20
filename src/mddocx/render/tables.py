@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from docx.enum.section import WD_SECTION
-from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
@@ -150,11 +149,8 @@ def render_table(renderer: DocxRenderer, node: Table, *, caption_below: bool = F
     text_style = (
         "MD Table Text" if renderer._theme.table_paragraph_after_pt is not None else "MD Normal"
     )
-    body_style_id = table.part.get_style_id(renderer._style(text_style), WD_STYLE_TYPE.PARAGRAPH)
+    body_style_id = renderer._paragraph_style_id(text_style)
     grid = [list(row.cells) for row in table.rows]
-    for cells in grid:
-        for cell, width in zip(cells, widths):
-            cell.width = width
     header_prefix = repeatable_header_rows(node)
     for r_idx, (row, entries) in enumerate(zip(table.rows, placements)):
         if r_idx < header_prefix and renderer.config.table.repeat_header:

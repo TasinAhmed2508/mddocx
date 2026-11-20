@@ -41,7 +41,7 @@ def render_image_block(renderer: DocxRenderer, node: ImageBlock) -> None:
             node.identifier,
             keep_with_next=renderer.config.figures.caption_keep_with_figure,
         )
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+    p = renderer._add_paragraph("MD Normal")
     renderer._apply_planned_paragraph_layout(p, node)
     p.alignment = {"left": WD_ALIGN_PARAGRAPH.LEFT, "right": WD_ALIGN_PARAGRAPH.RIGHT}.get(
         node.align or renderer.config.figures.default_align, WD_ALIGN_PARAGRAPH.CENTER

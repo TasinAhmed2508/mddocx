@@ -60,7 +60,7 @@ def render_text_layout(renderer, node) -> bool:
             for cell, value, width in zip(row.cells, values, widths):
                 cell.width = Mm(width)
                 p = cell.paragraphs[0]
-                p.style = renderer._style("MD Normal")
+                p._p.style = renderer._paragraph_style_id("MD Normal")
                 p.paragraph_format.space_after = Pt(0)
                 p.paragraph_format.space_before = Pt(0)
                 p.paragraph_format.line_spacing = 1
@@ -187,7 +187,7 @@ def render_text_layout(renderer, node) -> bool:
     left, photo = outer.rows[0].cells
     for index, values in enumerate(fields):
         p = left.paragraphs[0] if index == 0 else left.add_paragraph()
-        p.style = renderer._style("MD Normal")
+        p._p.style = renderer._paragraph_style_id("MD Normal")
         p.paragraph_format.space_after = Pt(0)
         p.paragraph_format.line_spacing = 1
         # Use tab stops rather than Unicode character counts for shaped Bangla.
@@ -202,7 +202,7 @@ def render_text_layout(renderer, node) -> bool:
     box = photo.add_table(rows=1, cols=1)
     box.cell(0, 0).vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     bp = box.cell(0, 0).paragraphs[0]
-    bp.style = renderer._style("MD Normal")
+    bp._p.style = renderer._paragraph_style_id("MD Normal")
     renderer._configure_run(bp.add_run("ছবি"), "ছবি")
     box.autofit = False
     set_table_fixed_layout(box)
@@ -216,7 +216,7 @@ def render_text_layout(renderer, node) -> bool:
     if addresses:
         table(addresses, [available / 2, available / 2])
     for value in signatures:
-        p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+        p = renderer._add_paragraph("MD Normal")
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p.paragraph_format.space_after = Pt(3)
         renderer._configure_run(p.add_run(value), value)

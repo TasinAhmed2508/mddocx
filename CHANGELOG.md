@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Resolve each paragraph style once per document to speed up long reports while preserving
+  live style changes made by extensions. Remove the redundant per-cell width write.
 - Apply captions and sizing to standalone image links, fit pictures within table cells,
   and detect missing or external-only picture bindings during offline verification.
 - Apply the same image detection in the shell and compiler when setting permitted image hosts.

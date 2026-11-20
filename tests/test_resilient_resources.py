@@ -186,11 +186,18 @@ def test_direct_image_links_obey_block_remote_flag(tmp_path):
         assert b"/plate.jpg" in package.read("word/_rels/document.xml.rels")
 
 
-def test_invalid_remote_image_port_is_reported_without_a_request(tmp_path):
+@pytest.mark.parametrize(
+    "source",
+    [
+        "![Plate](https://example.com:invalid/plate.jpg)",
+        '<img alt="Plate" src="https://[bad/plate.jpg">',
+    ],
+)
+def test_invalid_remote_image_url_is_reported_without_a_request(tmp_path, source):
     compiler = Compiler()
-    result = compiler.compile_string(
-        "![Plate](https://example.com:invalid/plate.jpg)", base_dir=tmp_path
-    )
+    md = tmp_path / "report.md"
+    md.write_text(source, encoding="utf-8")
+    result = compiler.compile_file(md, md.with_suffix(".docx"))
     assert [diagnostic.code for diagnostic in result.diagnostics] == ["RESOURCE208"]
 
 

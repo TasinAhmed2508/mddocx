@@ -10,6 +10,62 @@ from mddocx.cli import main
 from mddocx.inspection import NS
 from mddocx.ooxml import bangla
 from mddocx.ooxml.package import read_parts, write_parts
+from mddocx.ooxml.sequence import get_or_add
+
+
+@pytest.mark.parametrize("change", ["rotate", "remove", "move", "continuous"])
+def test_verify_reports_wide_table_section_edits(tmp_path, capsys, change):
+    source = tmp_path / "sections.md"
+    source.write_text(
+        "# Before\n\n| A | B | C | D | E | F |\n|---|---|---|---|---|---|\n"
+        "| 1 | 2 | 3 | 4 | 5 | 6 |\n\n# After\n",
+        encoding="utf-8",
+    )
+    target = source.with_suffix(".docx")
+    config = RenderConfig()
+    config.table.auto_landscape = True
+    Compiler(config).compile_file(source, target)
+    arguments = ["verify", str(source), str(target), "--auto-landscape-tables", "--json"]
+    assert main(arguments) == 0
+    assert json.loads(capsys.readouterr().out)["ok"]
+    parts = read_parts(target.read_bytes())
+    root = etree.fromstring(parts["word/document.xml"])
+    marker = root.find(".//w:p/w:pPr/w:sectPr", NS).getparent().getparent()
+    landscape = root.xpath(".//w:sectPr[w:pgSz/@w:orient='landscape']", namespaces=NS)[0]
+    page = landscape.find("w:pgSz", NS)
+    w = f"{{{NS['w']}}}"
+    if change == "rotate":
+        page.set(w + "orient", "portrait")
+        width, height = page.get(w + "w"), page.get(w + "h")
+        page.set(w + "w", height)
+        page.set(w + "h", width)
+    elif change == "remove":
+        marker.getparent().remove(marker)
+    elif change == "move":
+        root.find(".//w:body/w:tbl", NS).addnext(marker)
+    else:
+        get_or_add(landscape, "w:type").set(w + "val", "continuous")
+    parts["word/document.xml"] = etree.tostring(root)
+    target.write_bytes(write_parts(parts))
+    assert main(arguments) == 3
+    (finding,) = json.loads(capsys.readouterr().out)["findings"]
+    assert (finding["code"], finding["part"], finding["line"]) == (
+        "VERIFY303",
+        "word/document.xml",
+        3,
+    )
+    assert "Word section" in finding["message"]
+
+
+def test_verify_explicit_same_orientation_break_and_document_page_flags(tmp_path, capsys):
+    source = tmp_path / "sections.md"
+    source.write_text("# Before\n\n<!-- sectionbreak -->\n\n# After\n", encoding="utf-8")
+    target = source.with_suffix(".docx")
+    layout = ["--page-size", "Letter", "--orientation", "landscape"]
+    assert main([str(source), "-o", str(target), *layout]) == 0
+    capsys.readouterr()
+    assert main(["verify", str(source), str(target), *layout, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"]
 
 
 @pytest.fixture

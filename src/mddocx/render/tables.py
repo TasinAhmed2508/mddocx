@@ -13,7 +13,7 @@ from docx.shared import Pt, Twips
 
 from mddocx.ast.block import Table
 from mddocx.diagnostics import Diagnostic, MddocxError
-from mddocx.layout import _plain_text, allocate_table_widths_mm
+from mddocx.layout import LayoutPlanner, _plain_text, allocate_table_widths_mm
 from mddocx.table_grid import repeatable_header_rows, table_grid
 from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.utils import (
@@ -109,11 +109,12 @@ def table_should_landscape(renderer: DocxRenderer, node: Table) -> bool:
     ):
         return False
     decision = renderer._layout_plan.for_table(node)
-    if decision is not None and not (
-        renderer.config.template and renderer.config.preserve_template_page_setup
-    ):
+    preserve_page = renderer.config.template and renderer.config.preserve_template_page_setup
+    if decision is not None and not preserve_page:
         return decision.orientation == "landscape"
     cols, _ = table_grid(node, renderer.config.limits.max_table_cells)
+    if not preserve_page:
+        return LayoutPlanner(renderer.config).landscape_reason(node, cols) is not None
     if cols >= renderer.config.table.landscape_min_columns:
         return True
     sec = renderer.document.sections[-1]

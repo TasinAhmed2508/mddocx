@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
+from itertools import zip_longest
 import json
 from pathlib import PurePosixPath
 import re
+from typing import Literal
 
 from lxml import etree
 
@@ -17,6 +19,7 @@ from .config import RenderConfig
 from .data import load_data_table
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
+from .layout import LayoutPlanner
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
 from .math.validation import source_tokens_preserved, validate_omml
@@ -75,11 +78,21 @@ class _Unit:
         return self.kind, self.content
 
 
+@dataclass(frozen=True, slots=True)
+class _SectionStart:
+    offset: int
+    orientation: Literal["portrait", "landscape"]
+    source: Node | None = None
+    restoration: bool = False
+
+
 def compare_document(
     document: Document, roots: dict[str, etree._Element], config: RenderConfig
 ) -> VerificationResult:
     expected: list[_Unit] = []
     findings: list[VerificationFinding] = []
+    sections = [_SectionStart(0, config.page.orientation)]
+    layout = LayoutPlanner(config)
     references = ReferenceRegistry.from_document(
         document,
         _plain_text,
@@ -94,6 +107,18 @@ def compare_document(
 
     def incomplete(reason: str, node: Node | None = None) -> None:
         findings.append(_finding("VERIFY304", reason, node))
+
+    def start_section(
+        orientation: Literal["portrait", "landscape"], node: Node, *, automatic: bool = False
+    ) -> None:
+        start = _SectionStart(len(expected), orientation, node)
+        prior = sections[-1]
+        if prior.offset == start.offset and (
+            prior.restoration or (automatic and len(sections) == 1)
+        ):
+            sections[-1] = start
+        else:
+            sections.append(start)
 
     def expected_inlines(nodes) -> tuple:
         tokens = []
@@ -223,11 +248,17 @@ def compare_document(
             elif isinstance(node, block.HorizontalRule):
                 expected.append(_Unit("paragraph", (), node))
             elif isinstance(node, block.SectionBreak):
-                incomplete("Section break layout is outside current coverage.", node)
+                start_section(node.orientation or config.page.orientation, node)
             elif isinstance(node, block.DataTableBlock):
                 blocks([load_data_table(node, config)], level)
             elif isinstance(node, block.Table):
                 columns, placements = table_grid(node, config.limits.max_table_cells)
+                rotate = (
+                    sections[-1].orientation == "portrait"
+                    and layout.landscape_reason(node, columns) is not None
+                )
+                if rotate:
+                    start_section("landscape", node, automatic=True)
                 repeat = repeatable_header_rows(node) if config.table.repeat_header else 0
                 active: dict[int, tuple[int, int]] = {}
                 expected_rows = []
@@ -262,6 +293,10 @@ def compare_document(
                     title,
                     node,
                 )
+                if rotate and config.table.restore_portrait_after_landscape:
+                    sections.append(
+                        _SectionStart(len(expected), "portrait", node, restoration=True)
+                    )
             elif isinstance(node, block.ImageBlock):
                 title = (
                     (
@@ -337,12 +372,15 @@ def compare_document(
                 incomplete(f"Block {type(node).__name__} coverage is incomplete.", node)
 
     blocks(document.children)
+    if sections[-1].restoration and sections[-1].offset == len(expected):
+        sections.pop()
     if (
         config.extensions
         or config.plugins.names
         or config.template
         or config.title_page.enabled
         or config.abstract.text
+        or config.abstract.keywords
         or config.toc.enabled
     ):
         incomplete(
@@ -377,11 +415,15 @@ def compare_document(
     main = roots[BODY].find("w:body", NS)
     if main is not None:
         findings.extend(_equation_findings(body_math, main, BODY))
-    actual = _read_body(roots)
+    actual, section_ends = _read_body(roots)
     findings.extend(_chart_findings(roots))
     expected_keys = [unit.key for unit in expected]
     actual_keys = [unit.key for unit in actual]
     if expected_keys == actual_keys:
+        if not any(finding.code == "VERIFY304" for finding in findings):
+            changed = _section_finding(sections, section_ends, len(expected))
+            if changed is not None:
+                findings.append(changed)
         return VerificationResult(len(expected), tuple(findings))
     if max(len(expected), len(actual)) > 4000:
         # shortcut: diagnose the first difference for very long files, until a bounded diff is needed.
@@ -560,7 +602,55 @@ def _plain_text(nodes) -> str:
     return clean_xml_text("".join(pieces))
 
 
-def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
+def _section_finding(
+    expected: list[_SectionStart], actual: list[tuple[int, str, str]], unit_count: int
+) -> VerificationFinding | None:
+    for index, (section, found) in enumerate(zip_longest(expected, actual)):
+        if section is None or found is None:
+            return _finding(
+                "VERIFY303",
+                f"Expected {len(expected)} Word sections, found {len(actual)}.",
+                section.source if section else None,
+            )
+        following = expected[index + 1] if index + 1 < len(expected) else None
+        end = following.offset if following else unit_count
+        actual_end, orientation, break_type = found
+        if actual_end != end:
+            detail = f"expected the end after body unit {end}, found it after {actual_end}"
+            source = following.source if following else section.source
+        elif orientation != section.orientation:
+            detail = f"expected {section.orientation} orientation, found {orientation}"
+            source = section.source
+        elif index and break_type != "nextPage":
+            detail = f"expected a next-page break, found {break_type}"
+            source = section.source
+        else:
+            continue
+        return _finding("VERIFY303", f"Word section {index + 1}: {detail}.", source)
+    return None
+
+
+def _section_end(offset: int, properties: etree._Element) -> tuple[int, str, str]:
+    page = properties.find("w:pgSz", NS)
+    section_type = properties.find("w:type", NS)
+    break_type = (
+        section_type.get(f"{{{W}}}val", "nextPage") if section_type is not None else "nextPage"
+    )
+    if page is None:
+        return offset, "missing page size", break_type
+    orientation = page.get(f"{{{W}}}orient", "portrait")
+    try:
+        width, height = int(page.get(f"{{{W}}}w", "")), int(page.get(f"{{{W}}}h", ""))
+    except ValueError:
+        return offset, "invalid page dimensions", break_type
+    if min(width, height) <= 0 or orientation != ("landscape" if width > height else "portrait"):
+        return offset, "orientation inconsistent with page dimensions", break_type
+    return offset, orientation, break_type
+
+
+def _read_body(
+    roots: dict[str, etree._Element],
+) -> tuple[list[_Unit], list[tuple[int, str, str]]]:
     relationships = roots.get(_RELS)
     links = (
         {rel.get("Id"): rel.get("Target") for rel in relationships}
@@ -569,9 +659,16 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
     )
     body = roots[BODY].find(f"{{{W}}}body")
     if body is None:
-        return []
+        return [], []
     result = []
+    section_ends = []
+    pending = None
     for child in body:
+        if pending is not None:
+            section_ends.append(_section_end(len(result), pending))
+            pending = None
+        if child.tag == f"{{{W}}}sectPr":
+            section_ends.append(_section_end(len(result), child))
         if child.tag == f"{{{W}}}tbl":
             instructions = child.xpath(".//w:instrText/text()", namespaces=NS)
             if any("SEQ Equation" in instruction for instruction in instructions):
@@ -608,6 +705,7 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
             columns = len(child.findall("w:tblGrid/w:gridCol", NS))
             result.append(_Unit("table", (columns, tuple(rows))))
         elif child.tag == f"{{{W}}}p":
+            pending = child.find("w:pPr/w:sectPr", NS)
             tokens = _read_inlines(child, links)
             before, after = child.getprevious(), child.getnext()
             if (
@@ -653,9 +751,9 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
                 result.append(_Unit("task", (checkbox.get(f"{{{NS['w14']}}}val") == "1", tokens)))
             elif level is not None:
                 result.append(_Unit("list", (int(level.get(f"{{{W}}}val", "0")), tokens)))
-            elif tokens or child.find("w:pPr/w:sectPr", NS) is None:
+            elif tokens or pending is None:
                 result.append(_Unit("paragraph", tokens))
-    return result
+    return result, section_ends
 
 
 def _word_span(element) -> int:

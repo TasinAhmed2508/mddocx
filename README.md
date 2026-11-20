@@ -226,13 +226,18 @@ are padded. Unsupported HTML tables remain visible as source text with a diagnos
 Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
 heading levels and bookmarks, hard breaks, list nesting and task status, Markdown and imported
 CSV/JSON table cells, hyperlink targets, image alt text, native equation structure and source
-identifiers and numerals,
-footnotes and endnotes (including their equations), simple captions and reference fields,
-and native chart/workbook relationships. It returns **0** for a match, **3**
-for differences or incomplete coverage, and **2** for invalid input or package errors. Visual
+identifiers and numerals, footnotes and endnotes (including their equations), simple captions
+and reference fields, native chart/workbook relationships, and Word section boundaries, break
+types, and orientation. It returns **0** for a match, **3** for differences or incomplete
+coverage, and **2** for invalid input or package errors. Visual
 pagination, algebraic equivalence, drawing content, workbook cell values, and generated structures
 such as Mermaid panels, template content, and bibliographies require their own checks. The
 machine-readable report identifies constructs the verifier cannot compare.
+
+Pass the same layout options you used to convert the file, including
+`--auto-landscape-tables`, `--orientation`, and `--page-size` when applicable.
+For example, run `mddocx verify report.md report.docx --auto-landscape-tables --json`
+for a report converted with automatic landscape tables.
 
 Conversion is strict by default under the existing image, math, and diagram policies.
 Explicit recovery replaces a malformed chart or data-table declaration or an unsupported

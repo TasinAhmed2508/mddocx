@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Verify Word section boundaries, break types, and portrait or landscape orientation offline.
 - Preserve every CSV column in native tables, including values under repeated headers and fields
   beyond the header row. Keep a single Word line break for each source line break.
 - Verify imported CSV and JSON tables offline against their local data.

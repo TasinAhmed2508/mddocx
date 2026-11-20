@@ -87,7 +87,6 @@ class LayoutPlanner:
         self.config = config
 
     def plan(self, document: Document) -> LayoutPlan:
-        available = self._portrait_available_width_mm()
         decisions: list[TableLayoutDecision] = []
         blocks: list[BlockLayoutDecision] = []
         section_orientation = self.config.page.orientation
@@ -99,44 +98,60 @@ class LayoutPlanner:
                 section_orientation = node.orientation or self.config.page.orientation
             if not isinstance(node, Table) or not node.rows:
                 continue
-            portrait_allocation = allocate_table_widths_mm(node, self.config, available)
-            columns = len(portrait_allocation.intrinsic_widths_mm)
-            intrinsic = portrait_allocation.intrinsic_total_mm
-            orientation: Literal["portrait", "landscape"] = section_orientation
-            reason = "document orientation"
-            if section_orientation == "portrait" and self.config.table.auto_landscape:
-                if columns >= self.config.table.landscape_min_columns:
-                    orientation = "landscape"
-                    reason = "column threshold"
-                elif intrinsic > available * self.config.table.landscape_width_ratio:
-                    orientation = "landscape"
-                    reason = "estimated intrinsic width"
-                else:
-                    reason = "fits portrait width"
-            target_available = (
-                self._landscape_available_width_mm() if orientation == "landscape" else available
-            )
-            target_allocation = (
-                portrait_allocation
-                if target_available == available
-                else _fit_table_widths(
-                    portrait_allocation.intrinsic_widths_mm, self.config, target_available
-                )
-            )
-            decisions.append(
-                TableLayoutDecision(
-                    node_identity=id(node),
-                    columns=columns,
-                    intrinsic_width_mm=intrinsic,
-                    available_width_mm=target_available,
-                    orientation=orientation,
-                    reason=reason,
-                    column_widths_mm=target_allocation.allocated_widths_mm,
-                )
-            )
+            decision = self._plan_table(node, section_orientation)
+            decisions.append(decision)
             if not self.config.table.restore_portrait_after_landscape:
-                section_orientation = orientation
+                section_orientation = decision.orientation
         return LayoutPlan(tuple(decisions), tuple(blocks))
+
+    def landscape_reason(
+        self, table: Table, columns: int, intrinsic_mm: float | None = None
+    ) -> str | None:
+        if not columns or not self.config.table.auto_landscape:
+            return None
+        if columns >= self.config.table.landscape_min_columns:
+            return "column threshold"
+        available = self._portrait_available_width_mm()
+        if intrinsic_mm is None:
+            intrinsic_mm = allocate_table_widths_mm(
+                table, self.config, available
+            ).intrinsic_total_mm
+        if intrinsic_mm > available * self.config.table.landscape_width_ratio:
+            return "estimated intrinsic width"
+        return None
+
+    def _plan_table(
+        self, table: Table, orientation: Literal["portrait", "landscape"]
+    ) -> TableLayoutDecision:
+        available = self._portrait_available_width_mm()
+        portrait = allocate_table_widths_mm(table, self.config, available)
+        columns = len(portrait.intrinsic_widths_mm)
+        intrinsic = portrait.intrinsic_total_mm
+        reason = "document orientation"
+        if orientation == "portrait" and self.config.table.auto_landscape:
+            rotation = self.landscape_reason(table, columns, intrinsic)
+            if rotation is not None:
+                orientation = "landscape"
+                reason = rotation
+            else:
+                reason = "fits portrait width"
+        target_width = (
+            self._landscape_available_width_mm() if orientation == "landscape" else available
+        )
+        allocation = (
+            portrait
+            if target_width == available
+            else _fit_table_widths(portrait.intrinsic_widths_mm, self.config, target_width)
+        )
+        return TableLayoutDecision(
+            node_identity=id(table),
+            columns=columns,
+            intrinsic_width_mm=intrinsic,
+            available_width_mm=target_width,
+            orientation=orientation,
+            reason=reason,
+            column_widths_mm=allocation.allocated_widths_mm,
+        )
 
     def _block_decision(self, node: Node) -> BlockLayoutDecision | None:
         if isinstance(node, Heading):

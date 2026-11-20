@@ -65,6 +65,20 @@
       "verify": "Row and cell dimensions and text"
     },
     {
+      "id": "word-sections",
+      "syntax": "Section break comments with optional orientation and automatic landscape tables",
+      "ast": "SectionBreak and Table page layout",
+      "ooxml": "w:sectPr, w:type, and w:pgSz",
+      "malformed_diagnostic": "VERIFY303 for changed Word section boundaries, break types, or orientation",
+      "word365": "Word rendering checked for landscape tables with portrait restoration",
+      "optional_renderer": "actual pagination requires a separate visual check",
+      "tests": [
+        "tests/test_layout_regressions.py",
+        "tests/test_verification.py"
+      ],
+      "verify": "Word section boundaries, next-page breaks, and portrait or landscape orientation"
+    },
+    {
       "id": "math",
       "syntax": "$...$, $$...$$, \\(...\\), \\[...\\] and math/latex/tex fences, including common \\ce and \\pu notation with bundled MathJax",
       "ast": "InlineMath and MathBlock",

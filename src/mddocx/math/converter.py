@@ -99,8 +99,14 @@ class DefaultMathConverter:
         for latex, display in dict.fromkeys(expressions):
             if len(latex) > 4096:
                 continue
-            normalized = normalize_equation(latex).text
-            if set(re.findall(r"\\([A-Za-z]+|.)", normalized)) <= _BATCH_COMMANDS:
+            try:
+                normalized = normalize_equation(latex).text
+            except UnsupportedLatexError:
+                continue
+            if (
+                len(normalized) <= 4096
+                and set(re.findall(r"\\([A-Za-z]+|.)", normalized)) <= _BATCH_COMMANDS
+            ):
                 eligible[latex, display] = normalized
         items = list(eligible.items())
         for start in range(0, len(items), _BATCH_SIZE):

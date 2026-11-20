@@ -39,6 +39,7 @@ _NATIVE_MATH = {
     "frac": "f",
     "dfrac": "f",
     "tfrac": "f",
+    "genfrac": "f",
     "binom": "f",
     "dbinom": "f",
     "tbinom": "f",
@@ -480,17 +481,17 @@ def _equation_findings(
         # The ordered content check reports missing or added math objects.
         return
     for (latex, node), equation in zip(expected, rendered, strict=True):
-        normalized = normalize_equation(latex).text
-        required = {
-            _NATIVE_MATH[command]
-            for command in _TEX_COMMAND.findall(normalized)
-            if command in _NATIVE_MATH
-        }
         try:
+            normalized = normalize_equation(latex).text
             validate_omml(equation)
         except UnsupportedLatexError as exc:
             yield _finding("VERIFY303", str(exc), node, part=part)
         else:
+            required = {
+                _NATIVE_MATH[command]
+                for command in _TEX_COMMAND.findall(normalized)
+                if command in _NATIVE_MATH
+            }
             if not source_tokens_preserved(normalized, equation):
                 yield _finding(
                     "VERIFY303",

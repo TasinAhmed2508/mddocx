@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from lxml import etree
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -49,6 +51,7 @@ STYLE_VARIANTS = {
     "sans-serif-italic": "i",
     "sans-serif-bold-italic": "bi",
 }
+_ZERO_RULE = re.compile(r"[+-]?(?:0+(?:\.0*)?|\.0+)\s*(?:[A-Za-z]+|%)?")
 
 
 class MathMLToOMML:
@@ -132,7 +135,7 @@ class MathMLToOMML:
                 self._run(parent, "\u200b", variant="normal")
                 return
             f = OxmlElement("m:f")
-            if node.get("linethickness") in {"0", "0px", "0pt", "0em"}:
+            if _ZERO_RULE.fullmatch(node.get("linethickness", "").strip()):
                 f_pr = OxmlElement("m:fPr")
                 fraction_type = OxmlElement("m:type")
                 fraction_type.set(qn("m:val"), "noBar")
@@ -276,30 +279,39 @@ class MathMLToOMML:
         first, last = children[0], children[-1]
 
         def fence(node, mathjax_class, form, plain, matrix):
-            return (
+            labeled = node.get("data-mjx-texclass") == mathjax_class
+            if labeled and self._local(node) == "mrow" and len(node) == 1:
+                node = node[0]
+            if (
                 self._local(node) == "mo"
                 and node.get("stretchy") != "false"
                 and (
-                    node.get("data-mjx-texclass") == mathjax_class
+                    labeled
                     or (node.get("fence") == "true" and node.get("form") == form)
                     or (matrix and bool(node.text) and node.text in plain)
                 )
-            )
+            ):
+                return node
+            return None
 
         left = fence(first, "OPEN", "prefix", "([{⟨|‖", self._local(children[1]) == "mtable")
         right = fence(last, "CLOSE", "postfix", ")]}⟩|‖", self._local(children[-2]) == "mtable")
-        interior = children[int(left) : len(children) - int(right)]
+        interior = children[int(left is not None) : len(children) - int(right is not None)]
         if not interior or not (
-            (left and right)
-            or ((left or right) and len(interior) == 1 and self._local(interior[0]) == "mtable")
+            (left is not None and right is not None)
+            or (
+                (left is not None or right is not None)
+                and len(interior) == 1
+                and self._local(interior[0]) == "mtable"
+            )
         ):
             return False
         self._append_delimiter(
             parent,
             interior,
             variant,
-            (first.text or "") if left else "",
-            (last.text or "") if right else "",
+            (left.text or "") if left is not None else "",
+            (right.text or "") if right is not None else "",
         )
         return True
 

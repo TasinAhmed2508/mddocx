@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Expand leading equation-local `\newcommand` definitions with bounded substitution and
+  verify the resulting native equation, including default arguments.
+- Retain native delimiters and invisible fraction rules in AMS `\genfrac` expressions.
+- Batch simple `math-check` equations through the bundled renderer and include note equations.
 - Honor heading typefaces and emphasis from themes and Word templates while retaining inline
   code and script-specific fonts.
 - Resolve each paragraph style once per document to speed up long reports while preserving

@@ -586,7 +586,7 @@
       "error"
     ],
     "remediations": [
-      "Run 'mddocx math-check' to locate unsupported TeX; simplify the expression or install the math extra."
+      "Run 'mddocx math-check' to locate unsupported TeX and 'mddocx doctor' to check math runtime availability."
     ]
   },
   {

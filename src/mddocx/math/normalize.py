@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from .macros import expand_newcommands
 from .models import NormalizedEquation
 
 _ALIASES = {
@@ -30,6 +31,10 @@ def normalize_equation(source: str) -> NormalizedEquation:
     if cleaned != text:
         text = cleaned
         repairs.append("removed invisible formatting characters")
+    expanded = expand_newcommands(text)
+    if expanded != text:
+        text = expanded
+        repairs.append("expanded equation-local macros")
     for old, new in _ALIASES.items():
         pattern = re.compile(re.escape(old) + r"(?![A-Za-z])")
         replaced = pattern.sub(lambda _: new, text)

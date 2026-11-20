@@ -21,16 +21,22 @@ math-labelled fences produce a source-located `MATH101` warning.
 
 ## Conversion engines and failure policy
 
-When `latex2mathml` is installed, it is the primary LaTeX-to-MathML converter. Otherwise mddocx uses
-its deterministic, non-executing built-in subset parser. Both paths generate editable OMML rather
-than equation images.
+The compiler tries bundled MathJax first, then the Python `latex2mathml` converter, then its
+built-in subset parser. Every path generates editable OMML. The default install includes
+the Python converter and supplies a MathJax runtime on supported platforms. Run
+`mddocx doctor` to check which engines are available in your environment.
+
+Leading `\newcommand` declarations can provide positional arguments and a default for the
+first argument. Definitions apply within the equation that contains them. AMS `\genfrac`
+preserves the delimiters, numerator, denominator, and zero-width rule in editable Word math.
 
 Unsupported syntax produces a `MATH201` warning and is kept as editable source text by default.
 Use `--strict-math` to fail instead. Diagnostics identify the active conversion engine and the
 underlying conversion error.
 
 Use `mddocx math-check FILE.md` for a non-writing preflight. It reports the active engine, total
-equation count, native conversions, and required fallbacks. `--json` emits a machine-readable
+equation count, native conversions, and required fallbacks for the body and notes.
+`--json` emits a machine-readable
 equation-by-equation report plus delimiter syntax issues, and `--strict` returns exit code 3 if a
 fallback or explicit delimiter issue would be encountered.
 

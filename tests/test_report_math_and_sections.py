@@ -11,6 +11,97 @@ from mddocx.math.latex import UnsupportedLatexError
 from mddocx.math.mathml import MathMLToOMML
 from mddocx.math.sidecar import MathJaxSidecar
 from mddocx.ooxml import bangla
+from mddocx.ooxml.package import read_parts, write_parts
+from lxml import etree
+
+
+@pytest.mark.parametrize(
+    "source, normalized, expected",
+    [
+        (
+            r"\newcommand{\squareof}[1]{(#1)^2}\squareof{\frac{1}{2}}",
+            r"(\frac{1}{2})^2",
+            "m:f",
+        ),
+        (
+            r"\newcommand{\fn}[2][x]{#1^2+#2}\fn{3}+\fn[y]{4}",
+            r"x^2+3+y^2+4",
+            "m:sSup",
+        ),
+        (
+            r"\newcommand{\q}[2]{\frac{#2}{5}}\newcommand{\n}{8}\q{9}{\n}",
+            r"\frac{8}{5}",
+            "m:f",
+        ),
+        (r"\newcommand{\sym}{\alpha}\sym x_3", r"\alpha x_3", "m:sSub"),
+    ],
+)
+def test_equation_local_commands_render_with_python(source, normalized, expected):
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+    conversion = converter.convert(source, display=True)
+    assert conversion.normalized_text == normalized
+    assert conversion.semantic_valid
+    assert next(conversion.omml.iter(qn(expected)), None) is not None
+
+
+@pytest.mark.parametrize("use_sidecar", [False, True])
+def test_generalized_fraction_keeps_native_delimiters_and_rule(use_sidecar):
+    sidecar = MathJaxSidecar() if use_sidecar else SimpleNamespace(available=False)
+    if use_sidecar and not sidecar.available:
+        pytest.skip("MathJax runtime is unavailable")
+    converter = DefaultMathConverter(sidecar=sidecar)
+    result = converter.convert(r"\genfrac{[}{]}{0.0pt}{}{n+1}{k}", display=True)
+    fraction = next(result.omml.iter(qn("m:f")))
+    delimiter = next(result.omml.iter(qn("m:d")))
+    assert next(fraction.iter(qn("m:type"))).get(qn("m:val")) == "noBar"
+    assert next(delimiter.iter(qn("m:begChr"))).get(qn("m:val")) == "["
+    assert next(delimiter.iter(qn("m:endChr"))).get(qn("m:val")) == "]"
+    assert "".join(fraction.itertext()) == "n+1k"
+
+
+def test_generalized_fraction_rejects_invalid_delimiter_without_node():
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+
+    with pytest.raises(UnsupportedLatexError, match="Invalid delimiter"):
+        converter.convert(r"\genfrac{x}{]}{0pt}{}{n}{k}", display=True)
+
+
+def test_macro_expansion_and_offline_fidelity_in_strict_conversion(tmp_path, monkeypatch):
+    monkeypatch.setenv("MDDOCX_MATHJAX_SIDECAR", str(tmp_path / "no-sidecar"))
+    source = tmp_path / "macros.md"
+    source.write_text(
+        "Before.\n\n"
+        r"$\newcommand{\fn}[2][x]{#1^2+#2}\fn{3}$"
+        "\n\n$$\n"
+        r"\newcommand{\unused}{\sqrt{99}}"
+        r"\newcommand{\rate}[1]{\genfrac{[}{]}{0pt}{}{#1}{42}}\rate{y}"
+        "\n$$\n\nAfter.\n",
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.math_failure.mode = "error"
+    compiler = Compiler(config)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    main = etree.fromstring(parts["word/document.xml"])
+    fraction = next(main.iter(qn("m:f")))
+    denominator = fraction.find(qn("m:den"))
+    token = next(denominator.iter(qn("m:t")))
+    assert token.text == "42"
+    token.text = "43"
+    parts["word/document.xml"] = etree.tostring(main)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.line) == ("VERIFY303", 5)
+
+
+def test_recursive_macro_uses_normal_conversion_failure_policy():
+    compiler = Compiler()
+    result = compiler.compile_string(r"Before $\newcommand{\r}{\r}\r$ after.")
+    (finding,) = result.diagnostics
+    assert finding.code == "MATH201"
+    assert "macro expansion exceeded its step limit" in finding.message
+    assert Document(BytesIO(result.output_bytes)).paragraphs[0].text.endswith(" after.")
 
 
 @pytest.mark.parametrize(

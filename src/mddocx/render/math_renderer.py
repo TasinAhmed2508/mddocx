@@ -31,7 +31,7 @@ class NativeMathRenderer:
                 f"Unable to convert LaTeX equation with {self.context.math.engine_name}: {exc}",
                 getattr(source, "file", None),
                 getattr(source, "line", None),
-                "Run 'mddocx math-check' to locate unsupported TeX; simplify the expression or install the math extra.",
+                "Run 'mddocx math-check' to locate unsupported TeX and 'mddocx doctor' to check math runtime availability.",
             )
             if mode == "error":
                 raise MddocxError(diagnostic) from exc

@@ -131,3 +131,10 @@ def test_preflight_reports_normalization_engine_and_validation():
     assert equation.engine in {"mathjax-sidecar", "latex2mathml", "mddocx-basic"}
     assert equation.structural_valid
     assert equation.semantic_fingerprint
+
+
+def test_preflight_covers_equations_in_notes():
+    report = inspect_math("Body $x^2$.[^note]\n\n[^note]: Note with $y^3$.\n")
+
+    assert [equation.source_text for equation in report.equations] == ["x^2", "y^3"]
+    assert report.native == 2

@@ -10,6 +10,9 @@ _ALIGN_PAIRS = {"alignedat", "alignat", "alignat*"}
 _ALIGN_COLUMNS = _ALIGN_PAIRS | {"aligned", "align", "align*", "split"}
 _OPTIONAL_ALIGNMENT = {"alignedat", "aligned", "gathered", "array"}
 _TEXT_ESCAPE = re.compile(r"\\([&#%{}_$])")
+_RULE_THICKNESS = re.compile(
+    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*(?:pt|px|em|ex|mu|in|cm|mm|pc|bp|dd|cc|sp)?"
+)
 _MATRIX_DELIMITERS = {
     "pmatrix": ("(", ")"),
     "bmatrix": ("[", "]"),
@@ -164,6 +167,7 @@ DELIMS = {
     "vert": "|",
     "Vert": "‖",
 }
+_FRACTION_FENCES = {"", *DELIMS.values(), *"()[]{}<>|/\\∣‖↑↓↕⇑⇓⇕"}
 ACCENTS = {
     "hat": "̂",
     "widehat": "̂",
@@ -420,6 +424,8 @@ class _Parser:
                 linethickness="0",
             )
             return _e("mfenced", None, fraction, open="(", close=")")
+        if cmd == "genfrac":
+            return self._parse_generalized_fraction()
         if cmd == "sqrt":
             degree = self._read_bracket_raw()
             radicand = self.parse_required_arg()
@@ -505,6 +511,33 @@ class _Parser:
         if cmd == "limits" or cmd == "nolimits":
             return _e("mspace", None, width="0em")
         raise UnsupportedLatexError(cmd)
+
+    def _parse_generalized_fraction(self) -> ET.Element:
+        fences = []
+        for _ in range(2):
+            parser = _Parser(self._read_braced_raw())
+            fence = parser._read_delimiter() if parser.text else ""
+            if fence not in _FRACTION_FENCES or parser.i != len(parser.text):
+                raise ValueError("Invalid delimiter in LaTeX generalized fraction")
+            fences.append(fence)
+        thickness = self._read_braced_raw().strip()
+        style = self._read_braced_raw().strip()
+        if (thickness and not _RULE_THICKNESS.fullmatch(thickness)) or style not in {
+            "",
+            "0",
+            "1",
+            "2",
+            "3",
+        }:
+            raise ValueError("Invalid rule or style in LaTeX generalized fraction")
+        fraction = _e("mfrac", None, self.parse_required_arg(), self.parse_required_arg())
+        if thickness:
+            fraction.set("linethickness", thickness)
+        return (
+            _e("mfenced", None, fraction, open=fences[0], close=fences[1])
+            if any(fences)
+            else fraction
+        )
 
     def _parse_left_right(self) -> ET.Element:
         open_delim = self._read_delimiter()

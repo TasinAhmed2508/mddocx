@@ -12,6 +12,12 @@ The built-in engine preserves `alignedat` alignment pairs, simple `array` column
 alignment, and nested matrices when the MathJax runtime is unavailable. Explicit
 top and bottom alignment map to native Word matrix baseline properties.
 
+An equation may start with one or more `\newcommand` definitions. Positional arguments
+and an optional default for the first argument expand within that equation. The same
+bounded expansion supplies the source comparison for offline verification. AMS
+`\genfrac` preserves bracketed fractions and represents a zero-width rule as Word's
+native barless fraction.
+
 The bundled sidecar supports `\ce` for reactions and `\pu` for physical units.
 Standard reaction and equilibrium arrows use portable Unicode glyphs. Specialty
 bonds and unequal equilibrium arrows without a Word mapping use the math failure

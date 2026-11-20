@@ -118,3 +118,12 @@ joins 2,000 blocks of `f"## Checkpoint {i}\n\nOne short result."` with blank lin
 | 60 × 24 table | 0.807 s | 0.791 s | 40,982 |
 
 All ten DOCX files for each workload had the same SHA-256 hash.
+
+## Math preflight
+
+Five alternating pairs on Windows with Python 3.12.11 and bundled MathJax compared
+`inspect_math` against commit `fefb31a`. Each process inspected a Markdown document
+containing 80 distinct inline equations from `x^{0}+1` through `x^{79}+1`. The median
+time decreased from **5.672 s to 0.201 s**. The JSON report matched byte for byte.
+The 20-section mixed conversion measured **0.497 s to 0.491 s**, with identical
+DOCX bytes across the ten runs.

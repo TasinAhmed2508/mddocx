@@ -45,6 +45,7 @@ ALLOWED_MATHML = {
     "annotation",
 }
 _FORBIDDEN_ATTRIBUTES = {"href", "src", "actiontype"}
+_GENFRAC_CONTROLS = re.compile(r"(?<!\\)\\genfrac(?![A-Za-z])\s*(?:\{(?:\\.|[^{}\\])*\}\s*){4}")
 
 
 def validate_mathml(mathml: str):
@@ -144,11 +145,12 @@ def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
 
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
+    source = _GENFRAC_CONTROLS.sub("", latex)
     # mhchem expands scientific notation and converts a standalone v to a precipitate arrow.
     source = re.sub(
         r"(\\pu\s*\{\s*[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))[eE](?=[+-]?\d)",
         r"\g<1>10",
-        latex,
+        source,
     )
     source = re.sub(
         r"\\ce\s*\{[^{}]*\}",

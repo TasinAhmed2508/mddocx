@@ -291,6 +291,12 @@ bundled MathJax engine also supports `\ce` reactions and `\pu` units with common
 arrows. Math-like text inside code spans and ordinary code fences is preserved as code, and
 common currency forms are preserved as text.
 
+Declare local macros at the start of the equation that uses them, for example
+`\newcommand{\rate}[1]{\frac{#1}{60}}\rate{x}`. Leading `\newcommand` definitions
+with positional arguments and an optional first-argument default work with the Python
+math engine too. AMS `\genfrac` can produce editable fractions with custom delimiters
+and a hidden rule.
+
 When an equation uses syntax that the active math engine cannot convert, mddocx preserves its
 source as editable text and emits a `MATH201` warning. Use `--strict-math` when every equation must
 be native Word math and conversion should fail on the first unsupported expression. See

@@ -67,3 +67,8 @@ contains 160 distinct inline equations from `x^{0}+1` through `x^{159}+1`.
 Chunking the requests reduced median compilation time from **11.6446 s to
 0.5427 s**. The 20-section mixed report measured **0.5164 s and 0.5143 s**,
 respectively. Each workload produced byte-identical DOCX files across all runs.
+
+For 600 distinct fractions with `latex2mathml` on the same Python version,
+removing the redundant OMML cache reduced retained Python allocations from
+366,536 to 120,489 bytes under `tracemalloc`. The combined OMML SHA-256 matched
+commit `889a360`. This measurement covers Python allocations in the converter.

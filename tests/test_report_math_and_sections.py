@@ -59,6 +59,52 @@ def test_word_matrix_column_limit_is_reported_before_emission():
 
 
 @pytest.mark.parametrize(
+    "source, position, glyph, label",
+    [
+        (r"\overbrace{a+b+c}^{\text{total}}", "top", "⏞", "total"),
+        (r"\underbrace{x+y}_{n}", "bot", "⏟", "n"),
+    ],
+)
+def test_grouping_braces_and_their_labels_stay_editable(source, position, glyph, label):
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+    result = converter.convert(source, display=True).omml
+    properties = next(result.iter(qn("m:groupChrPr")))
+    assert properties.find(qn("m:chr")).get(qn("m:val")) == glyph
+    assert properties.find(qn("m:pos")).get(qn("m:val")) == position
+    limit = next(result.iter(qn("m:lim")))
+    assert "".join(limit.itertext()) == label
+
+
+def test_cancellation_strokes_survive_in_native_word_equations():
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+    result = converter.convert(r"\cancel{x}+\bcancel{y}+\xcancel{z}").omml
+    boxes = list(result.iter(qn("m:borderBoxPr")))
+    properties = [[child.tag.split("}")[-1] for child in box] for box in boxes]
+    edges = ["hideTop", "hideBot", "hideLeft", "hideRight"]
+    assert properties == [
+        edges + ["strikeBLTR"],
+        edges + ["strikeTLBR"],
+        edges + ["strikeBLTR", "strikeTLBR"],
+    ]
+    assert [node.text for node in result.iter(qn("m:t"))] == ["x", "+", "y", "+", "z"]
+
+
+def test_mathml_tex_annotations_do_not_count_as_unconverted_presentation_commands():
+    xml = (
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><!-- source follows -->'
+        "<mfrac><mi>a</mi><mi>b</mi></mfrac>"
+        r'<annotation encoding="application/x-tex">\frac{a}{b}</annotation></semantics></math>'
+    )
+    output = MathMLToOMML().convert(xml)
+    assert next(output.iter(qn("m:f")), None) is not None
+    assert "".join(output.itertext()) == "ab"
+    with pytest.raises(ValueError, match="left unconverted"):
+        MathMLToOMML().convert(xml.replace("<mi>a</mi>", r"<mi>\unknown</mi>"))
+    with pytest.raises(ValueError, match="left unconverted"):
+        MathMLToOMML().convert(xml.replace("</mfrac>", r"</mfrac>\unknown"))
+
+
+@pytest.mark.parametrize(
     "source, opening, closing",
     [
         (r"\begin{bmatrix}a&b\\c&d\end{bmatrix}", "[", "]"),

@@ -4,6 +4,7 @@ from io import BytesIO
 from zipfile import ZipFile
 
 from lxml import etree
+import pytest
 
 from mddocx import Compiler, MarkdownWord, RenderConfig, TableConfig, inspect_docx_bytes
 
@@ -41,6 +42,36 @@ Portrait content continues.
     assert inspection.sections == 3
     assert inspection.landscape_sections == 1
     assert [item.code for item in compiler.diagnostics] == ["TABLE301"]
+
+
+@pytest.mark.parametrize(
+    "before, after, expected, table_count",
+    [
+        ("", "", ["landscape"], 1),
+        ("Intro.\n\n", "", ["portrait", "landscape"], 1),
+        ("", "\n\n# After", ["landscape", "portrait"], 1),
+        (
+            "",
+            "\n\n<!-- sectionbreak orientation=portrait -->\n\n# After",
+            ["landscape", "portrait"],
+            1,
+        ),
+        ("", "\n\n{wide}", ["landscape", "landscape"], 2),
+        ("", "\n\n| Narrow |\n| --- |\n| A |", ["landscape", "portrait"], 2),
+    ],
+)
+def test_automatic_landscape_does_not_leave_empty_portrait_sections(
+    before, after, expected, table_count
+):
+    wide = "| A | B |\n| --- | --- |\n| first | second |"
+    config = RenderConfig(table=TableConfig(auto_landscape=True, landscape_min_columns=2))
+    root = _document_xml(
+        MarkdownWord(config).render_string(before + wide + after.format(wide=wide))
+    )
+    sections = root.xpath(".//w:sectPr/w:pgSz", namespaces=NS)
+    landscape_name = f"{{{NS['w']}}}orient"
+    assert [page.get(landscape_name, "portrait") for page in sections] == expected
+    assert len(root.findall(".//w:body/w:tbl", NS)) == table_count
 
 
 def test_layout_plan_exposes_the_reason_before_ooxml_rendering():

@@ -63,10 +63,13 @@ class DefaultMathConverter:
         return value
 
     def mathml_to_omml(self, mathml: str, display: bool, *, root=None):
+        if root is not None:
+            # The full conversion path already keeps a bounded cache of native equations.
+            return self._omml.convert_root(root)
         key = (mathml, display)
         if self._cache_enabled and key in self._omml_cache:
             return deepcopy(self._omml_cache[key])
-        value = self._omml.convert_root(root if root is not None else validate_mathml(mathml))
+        value = self._omml.convert(mathml)
         if self._cache_enabled:
             self._omml_cache[key] = deepcopy(value)
         return value

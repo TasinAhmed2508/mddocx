@@ -44,7 +44,12 @@ def render_table_with_layout(renderer: DocxRenderer, node: Table) -> None:
     use_landscape = table_should_landscape(renderer, node)
     restore_orientation = current_orientation(renderer)
     if use_landscape and restore_orientation != "landscape":
-        sec = renderer.document.add_section(WD_SECTION.NEW_PAGE)
+        body = renderer.document._element.body
+        sec = (
+            renderer.document.add_section(WD_SECTION.NEW_PAGE)
+            if len(body) > 1
+            else renderer.document.sections[-1]
+        )
         sections.configure_section(
             renderer,
             sec,
@@ -66,6 +71,7 @@ def render_table_with_layout(renderer: DocxRenderer, node: Table) -> None:
         and renderer.config.table.restore_portrait_after_landscape
     ):
         sec = renderer.document.add_section(WD_SECTION.NEW_PAGE)
+        renderer._table_section_restorations.append(renderer.document._element.body[-2])
         sections.configure_section(
             renderer,
             sec,
@@ -74,6 +80,24 @@ def render_table_with_layout(renderer: DocxRenderer, node: Table) -> None:
                 renderer.config.template and renderer.config.preserve_template_page_setup
             ),
         )
+
+
+def remove_empty_table_sections(renderer: DocxRenderer) -> None:
+    """Remove empty sections introduced by automatic portrait restoration."""
+    for marker in renderer._table_section_restorations:
+        following = marker.getnext()
+        if following is None:
+            continue
+        if following.tag == qn("w:sectPr"):
+            empty_section = following
+        elif following.tag == qn("w:p") and len(following) == 1 and following[0].tag == qn("w:pPr"):
+            empty_section = following[0].find(qn("w:sectPr"))
+        else:
+            continue
+        if empty_section is not None:
+            landscape = marker[0].find(qn("w:sectPr"))
+            empty_section.getparent().replace(empty_section, landscape)
+            marker.getparent().remove(marker)
 
 
 def current_orientation(renderer: DocxRenderer) -> str:

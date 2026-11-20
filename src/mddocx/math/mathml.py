@@ -6,6 +6,14 @@ from docx.oxml.ns import qn
 from .validation import validate_mathml
 
 NARY_CHARS = {"∑", "∏", "∫", "∬", "∭", "∮"}
+GROUP_CHARS = {"⏞", "⏟", "⏜", "⏝", "⎴", "⎵", "↔"}
+ENCLOSURE_EDGES = {"top": "hideTop", "bottom": "hideBot", "left": "hideLeft", "right": "hideRight"}
+ENCLOSURE_STRIKES = {
+    "horizontalstrike": "strikeH",
+    "verticalstrike": "strikeV",
+    "updiagonalstrike": "strikeBLTR",
+    "downdiagonalstrike": "strikeTLBR",
+}
 ACCENT_CHARS = {
     "^": "\u0302",
     "ˆ": "\u0302",
@@ -179,15 +187,27 @@ class MathMLToOMML:
         if tag == "mmultiscripts" and len(node):
             self._append_multiscripts(parent, node, variant)
             return
-        if tag in {"munder", "mover"} and len(node) == 2 and self._text(node[1]) == "―":
-            bar = OxmlElement("m:bar")
-            props = OxmlElement("m:barPr")
-            position = OxmlElement("m:pos")
-            position.set(qn("m:val"), "bot" if tag == "munder" else "top")
-            props.append(position)
-            bar.extend([props, self._argument("m:e", node[0], variant)])
-            parent.append(bar)
-            return
+        if tag in {"munder", "mover"} and len(node) == 2 and self._local(node[1]) == "mo":
+            mark = self._text(node[1])
+            if mark == "―" or mark in GROUP_CHARS:
+                name = "bar" if mark == "―" else "groupChr"
+                wrapper = OxmlElement(f"m:{name}")
+                props = OxmlElement(f"m:{name}Pr")
+                above = tag == "mover"
+                if name == "groupChr":
+                    character = OxmlElement("m:chr")
+                    character.set(qn("m:val"), mark)
+                    props.append(character)
+                position = OxmlElement("m:pos")
+                position.set(qn("m:val"), "top" if above else "bot")
+                props.append(position)
+                if name == "groupChr":
+                    alignment = OxmlElement("m:vertJc")
+                    alignment.set(qn("m:val"), "bot" if above else "top")
+                    props.append(alignment)
+                wrapper.extend([props, self._argument("m:e", node[0], variant)])
+                parent.append(wrapper)
+                return
         if tag == "mover" and self._is_accent_mover(node):
             self._append_accent(parent, node, variant)
             return
@@ -205,19 +225,7 @@ class MathMLToOMML:
             )
             return
         if tag == "menclose":
-            notation = (node.get("notation") or "").split()
-            if not notation or "box" in notation:
-                box = OxmlElement("m:borderBox")
-                e = OxmlElement("m:e")
-                for child in node:
-                    self._append_children(e, child, variant)
-                if len(e) == 0:
-                    self._run(e, "\u200b", variant="normal")
-                box.append(e)
-                parent.append(box)
-            else:
-                for child in node:
-                    self._append_children(parent, child, variant)
+            self._append_enclosure(parent, node, variant)
             return
         if tag == "mtable":
             self._append_matrix(parent, node, variant)
@@ -228,6 +236,30 @@ class MathMLToOMML:
                 self._append_children(parent, child, variant)
         elif node.text:
             self._run(parent, node.text, variant=variant)
+
+    def _append_enclosure(self, parent, node, variant):
+        notations = set((node.get("notation") or "box").split())
+        unsupported = notations - ({"box"} | ENCLOSURE_EDGES.keys() | ENCLOSURE_STRIKES.keys())
+        if unsupported:
+            raise ValueError(
+                f"Word math enclosure is unsupported: {', '.join(sorted(unsupported))}"
+            )
+        box = OxmlElement("m:borderBox")
+        props = OxmlElement("m:borderBoxPr")
+        for direction, name in ENCLOSURE_EDGES.items():
+            if "box" not in notations and direction not in notations:
+                flag = OxmlElement(f"m:{name}")
+                flag.set(qn("m:val"), "1")
+                props.append(flag)
+        for notation, name in ENCLOSURE_STRIKES.items():
+            if notation in notations:
+                flag = OxmlElement(f"m:{name}")
+                flag.set(qn("m:val"), "1")
+                props.append(flag)
+        if len(props):
+            box.append(props)
+        box.append(self._argument("m:e", node, variant, contents=True))
+        parent.append(box)
 
     def _append_fenced_row(self, parent, children, variant):
         if len(children) < 2:

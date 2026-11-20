@@ -120,6 +120,7 @@ class DocxRenderer:
         self._comment_id = 0
         self._heading_num_id: int | None = None
         self._chart_entries: list[ChartEntry] = []
+        self._table_section_restorations = []
         self._layout_plan = LayoutPlan()
         self.context: RenderContext | None = None
         self._math_renderer: NativeMathRenderer | None = None
@@ -187,6 +188,7 @@ class DocxRenderer:
         self._comment_entries = {}
         self._comment_id = 0
         self._chart_entries = []
+        self._table_section_restorations.clear()
         self._heading_num_id = (
             self.numbering.create_heading_scheme(
                 self.config.heading_numbering.max_level,
@@ -212,6 +214,7 @@ class DocxRenderer:
                 and not self._bibliography_rendered
             ):
                 citations.render_bibliography(self)
+            tables.remove_empty_table_sections(self)
             document_setup.request_field_updates(self)
             stream = BytesIO()
             self.document.save(stream)

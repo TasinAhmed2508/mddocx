@@ -50,13 +50,21 @@ _FORBIDDEN_ATTRIBUTES = {"href", "src", "actiontype"}
 def validate_mathml(mathml: str):
     if "<!DOCTYPE" in mathml.upper() or "<!ENTITY" in mathml.upper():
         raise UnsupportedLatexError("MathML declarations and entities are not allowed")
-    parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False, recover=False)
+    parser = etree.XMLParser(
+        resolve_entities=False,
+        no_network=True,
+        load_dtd=False,
+        recover=False,
+        remove_comments=True,
+        remove_pis=True,
+    )
     try:
         root = etree.fromstring(mathml.encode("utf-8"), parser=parser)
     except etree.XMLSyntaxError as exc:
         raise UnsupportedLatexError(f"Math engine returned invalid MathML: {exc}") from exc
     if etree.QName(root).localname != "math" or etree.QName(root).namespace != MATHML_NS:
         raise UnsupportedLatexError("MathML root must use the MathML namespace")
+    has_annotation = False
     for node in root.iter():
         name = etree.QName(node).localname
         namespace = etree.QName(node).namespace
@@ -66,13 +74,20 @@ def validate_mathml(mathml: str):
             local = etree.QName(attribute).localname.lower()
             if local.startswith("on") or local in _FORBIDDEN_ATTRIBUTES:
                 raise UnsupportedLatexError(f"Unsafe MathML attribute: {local}")
-        if name == "annotation" and (node.get("encoding") or "").lower() not in {
-            "",
-            "application/x-tex",
-            "text/plain",
-        }:
-            raise UnsupportedLatexError("Unsupported MathML annotation encoding")
-    literal = re.search(r"\\([A-Za-z]+)", "".join(root.itertext()))
+        if name == "annotation":
+            has_annotation = True
+            if len(node) or (node.get("encoding") or "").lower() not in {
+                "",
+                "application/x-tex",
+                "text/plain",
+            }:
+                raise UnsupportedLatexError("Unsupported MathML annotation content")
+    presentation_text = (
+        root.xpath(".//text()[not(parent::m:annotation)]", namespaces={"m": MATHML_NS})
+        if has_annotation
+        else root.itertext()
+    )
+    literal = re.search(r"\\([A-Za-z]+)", "".join(presentation_text))
     if literal:
         raise UnsupportedLatexError(
             f"Unsupported LaTeX command left unconverted: \\{literal.group(1)}"

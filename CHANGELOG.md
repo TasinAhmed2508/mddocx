@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Avoid empty portrait pages next to automatically rotated wide tables.
+- Preserve equation grouping braces and cancellation strokes as native Word math.
+- Keep the normal equation render path within one bounded cache.
+
 - Add the `report` theme and explicit portrait or landscape section directives.
 - Embed direct, standalone image links through the existing resource policy. Keep adjacent
   inline figures and avoid repeated downloads of the same image during conversion.

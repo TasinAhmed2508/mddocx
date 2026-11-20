@@ -37,6 +37,18 @@ def test_large_equation_batches_run_lazily_and_with_bounded_chunks(monkeypatch):
     assert sizes == [128, 12]
 
 
+def test_full_math_conversion_does_not_keep_a_second_unbounded_cache(monkeypatch):
+    converter = DefaultMathConverter()
+    monkeypatch.setattr(type(converter._sidecar), "available", False)
+    for index in range(140):
+        converter.convert(f"x_{{{index}}}")
+    assert len(converter._conversions) == 128
+    assert not converter._omml_cache
+    first = converter.convert("x_{139}")
+    first.omml.clear()
+    assert len(converter.convert("x_{139}").omml)
+
+
 def test_normalization_is_conservative_and_records_repairs():
     result = normalize_equation(" $$\\dfrac{1}{2−x\u200b}$$ ")
 

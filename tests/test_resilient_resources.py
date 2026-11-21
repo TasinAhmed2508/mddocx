@@ -13,7 +13,7 @@ from docx.oxml.ns import qn
 from lxml import etree
 from PIL import Image
 
-from mddocx import Compiler, MarkdownWord, RenderConfig
+from mddocx import Compiler, MarkdownWord, NotesConfig, RenderConfig, audit_docx_accessibility_bytes
 from mddocx.config import ImageConfig, ResourcePolicy
 from mddocx.diagnostics import MddocxError
 from mddocx.ooxml.package import read_parts
@@ -250,6 +250,61 @@ def test_blocked_clickable_image_keeps_the_authored_destination(tmp_path):
     document = Document(BytesIO(result.output_bytes))
     (link,) = document.paragraphs[0].hyperlinks
     assert (link.text, link.address) == ("Diagram", f"{origin}/manual.html")
+
+
+@pytest.mark.parametrize("style", ["footnote", "endnote"])
+def test_note_pictures_share_the_image_resource_and_keep_their_own_links(tmp_path, style):
+    image = BytesIO()
+    Image.new("RGB", (80, 40), "#315c91").save(image, format="JPEG")
+    config = RenderConfig(
+        resources=ResourcePolicy(allow_private_hosts=True), notes=NotesConfig(style=style)
+    )
+    compiler = Compiler(config)
+    source = tmp_path / "report.md"
+    with _server({"/diagram.jpg": (200, "image/jpeg", image.getvalue())}) as (origin, requests):
+        manual = f"{origin}/manual.html"
+        asset = f"{origin}/diagram.jpg"
+        source.write_text(
+            "# Summary {#summary}\n\n"
+            f"![Overview]({asset})\n\n"
+            "Review.[^trace]\n\n"
+            f"[^trace]: [![Diagram]({asset})]({manual}) and [Summary](#summary).\n",
+            encoding="utf-8",
+        )
+        result = compiler.compile_file(source, source.with_suffix(".docx"))
+        assert compiler.verify(source, result.output_bytes).ok
+        assert requests == {"/diagram.jpg": 1}
+    parts = read_parts(result.output_bytes)
+    notes = etree.fromstring(parts[f"word/{style}s.xml"])
+    links = list(notes.iter(qn("w:hyperlink")))
+    (blip,) = links[0].iter(qn("a:blip"))
+    rid = blip.get(qn("r:embed"))
+    rels = etree.fromstring(parts[f"word/_rels/{style}s.xml.rels"])
+    by_id = {rel.get("Id"): rel.get("Target") for rel in rels}
+    assert by_id[links[0].get(qn("r:id"))] == manual
+    assert links[1].get(qn("w:anchor")) == "summary"
+    assert [name for name in parts if name.startswith("word/media/")] == [f"word/{by_id[rid]}"]
+    assert parts[f"word/{by_id[rid]}"] == image.getvalue()
+    audit = audit_docx_accessibility_bytes(result.output_bytes)
+    assert (audit.images, audit.images_missing_alt, audit.empty_hyperlinks) == (2, 0, 0)
+
+
+def test_blocked_note_image_has_the_definition_source_line(tmp_path):
+    compiler = Compiler(RenderConfig(resources=ResourcePolicy(allow_remote_resources=False)))
+    source = tmp_path / "report.md"
+    with _server({}) as (origin, requests):
+        source.write_text(
+            f"Review.[^trace]\n\n[^trace]: ![Diagram]({origin}/diagram.jpg)\n",
+            encoding="utf-8",
+        )
+        result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert not requests
+    (diagnostic,) = result.diagnostics
+    assert (diagnostic.code, diagnostic.line, diagnostic.source_file) == (
+        "RESOURCE201",
+        3,
+        str(source),
+    )
 
 
 @pytest.mark.parametrize(

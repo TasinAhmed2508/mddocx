@@ -64,10 +64,12 @@ from mddocx.ooxml.charts import ChartEntry, inject_charts
 from mddocx.ooxml.comments import append_comment_reference, inject_comments
 from mddocx.ooxml.fields import add_hyperlink, add_internal_hyperlink, append_hyperlink_text
 from mddocx.ooxml.notes import (
-    append_endnote_reference,
-    append_footnote_reference,
-    inject_endnotes,
-    inject_footnotes,
+    ENDNOTE,
+    FOOTNOTE,
+    append_note,
+    append_note_reference,
+    next_note_id,
+    open_note_part,
 )
 from mddocx.ooxml.numbering import NumberingEngine
 from mddocx.ooxml.text import clean_xml_text, configure_xml_run, set_xml_paragraph_rtl
@@ -113,6 +115,10 @@ class DocxRenderer:
         self._footnote_definitions: dict[str, list] = {}
         self._footnote_ids: dict[str, int] = {}
         self._footnote_entries: dict[int, list] = {}
+        self._note_part = None
+        self._note_spec = FOOTNOTE
+        self._next_note_id = 1
+        self._note_width = 0
         self._task_control_id = 1000
         self.references = None
         self.bibliography = BibliographyDatabase()
@@ -156,6 +162,8 @@ class DocxRenderer:
         self._footnote_definitions = dict(getattr(document, "footnotes", {}) or {})
         self._footnote_ids = {}
         self._footnote_entries = {}
+        self._note_part = None
+        self._note_spec = ENDNOTE if self.config.notes.style == "endnote" else FOOTNOTE
         self.references = ReferenceRegistry.from_document(
             document,
             self._plain_inline_text,
@@ -212,6 +220,8 @@ class DocxRenderer:
                 front_matter.render_toc(self)
             for node in document.children:
                 self._render_block(node)
+            if self._note_part is not None:
+                self._render_notes()
             if (
                 self.config.citations.auto_bibliography
                 and self._cited_keys
@@ -223,17 +233,6 @@ class DocxRenderer:
             stream = BytesIO()
             self.document.save(stream)
             blob = stream.getvalue()
-            if self._footnote_entries:
-                configure_run = self._configure_xml_run
-                configure_paragraph = self._apply_text_direction
-                if self.config.notes.style == "endnote":
-                    blob = inject_endnotes(
-                        blob, self._footnote_entries, self.math, configure_run, configure_paragraph
-                    )
-                else:
-                    blob = inject_footnotes(
-                        blob, self._footnote_entries, self.math, configure_run, configure_paragraph
-                    )
             if self._comment_entries and self.config.native_comments.enabled:
                 blob = inject_comments(
                     blob,
@@ -332,35 +331,75 @@ class DocxRenderer:
                 getattr(source, "line", None),
             )
 
+    def _render_notes(self) -> None:
+        self._note_width = min(
+            section.page_width - section.left_margin - section.right_margin
+            for section in self.document.sections
+        )
+        for note_id, nodes in self._footnote_entries.items():
+            paragraph = append_note(self._note_part, note_id, self._note_spec)
+            self._configure_run(paragraph.add_run(" "), " ")
+            self._render_inlines(paragraph, nodes, in_note=True)
+            self._apply_text_direction(paragraph._p, self._plain_inline_text(nodes))
+
     def _render_inlines(
-        self, paragraph, nodes, bold=False, italic=False, strike=False, *, inherit_style=False
+        self,
+        paragraph,
+        nodes,
+        bold=False,
+        italic=False,
+        strike=False,
+        *,
+        inherit_style=False,
+        in_note=False,
     ):
+        inherit_emphasis = inherit_style or in_note
         for node in nodes:
             state = {"bold": bold, "italic": italic, "strike": strike}
-            if render_custom_inline(self.config.extensions, self, paragraph, node, state):
+            if not in_note and render_custom_inline(
+                self.config.extensions, self, paragraph, node, state
+            ):
                 continue
             if isinstance(node, (Text, InlineCode)):
                 code = isinstance(node, InlineCode)
                 text = clean_xml_text(node.code if code else node.text)
                 r = paragraph.add_run(text)
-                if bold or not inherit_style:
+                if bold or not inherit_emphasis:
                     r.bold = bold
-                if italic or not inherit_style:
+                if italic or not inherit_emphasis:
                     r.italic = italic
-                if strike or not inherit_style:
+                if strike or not inherit_emphasis:
                     r.font.strike = strike
                 self._configure_run(r, text, code=code, inherit_style=inherit_style)
             elif isinstance(node, Strong):
                 self._render_inlines(
-                    paragraph, node.children, True, italic, strike, inherit_style=inherit_style
+                    paragraph,
+                    node.children,
+                    True,
+                    italic,
+                    strike,
+                    inherit_style=inherit_style,
+                    in_note=in_note,
                 )
             elif isinstance(node, Emphasis):
                 self._render_inlines(
-                    paragraph, node.children, bold, True, strike, inherit_style=inherit_style
+                    paragraph,
+                    node.children,
+                    bold,
+                    True,
+                    strike,
+                    inherit_style=inherit_style,
+                    in_note=in_note,
                 )
             elif isinstance(node, Strikethrough):
                 self._render_inlines(
-                    paragraph, node.children, bold, italic, True, inherit_style=inherit_style
+                    paragraph,
+                    node.children,
+                    bold,
+                    italic,
+                    True,
+                    inherit_style=inherit_style,
+                    in_note=in_note,
                 )
             elif isinstance(node, Link):
                 self._render_link(paragraph, node, bold, italic, strike, inherit_style)
@@ -394,6 +433,10 @@ class DocxRenderer:
             elif isinstance(node, InlineMath):
                 self._append_math(paragraph, node.source_text, False, node.source)
             elif isinstance(node, FootnoteReference):
+                if in_note:
+                    marker = f"[^{node.label}]"
+                    self._configure_run(paragraph.add_run(marker), marker)
+                    continue
                 definition = self._footnote_definitions.get(node.label)
                 if definition is None:
                     self.reporter.warn(
@@ -407,16 +450,16 @@ class DocxRenderer:
                 else:
                     footnote_id = self._footnote_ids.get(node.label)
                     if footnote_id is None:
-                        footnote_id = len(self._footnote_ids) + 1
+                        if self._note_part is None:
+                            self._note_part = open_note_part(self.document.part, self._note_spec)
+                            self._next_note_id = next_note_id(self._note_part, self._note_spec)
+                        footnote_id = self._next_note_id
+                        self._next_note_id += 1
                         self._footnote_ids[node.label] = footnote_id
                         self._footnote_entries[footnote_id] = definition
-                    (
-                        append_endnote_reference
-                        if self.config.notes.style == "endnote"
-                        else append_footnote_reference
-                    )(paragraph, footnote_id)
+                    append_note_reference(paragraph, footnote_id, self._note_spec)
             elif isinstance(node, Comment):
-                if self.config.native_comments.enabled:
+                if not in_note and self.config.native_comments.enabled:
                     self._comment_id += 1
                     self._comment_entries[self._comment_id] = node.text
                     append_comment_reference(paragraph, self._comment_id)

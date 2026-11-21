@@ -364,7 +364,7 @@ Append figure attributes to a standalone link to set its size or caption, for ex
 To make the picture clickable, wrap an explicit image in a Markdown link, as in
 `[![Chart description](chart.jpg)](https://example.org/report)`. mddocx embeds the picture
 and writes the click destination as a Word hyperlink. This form also works with
-document bookmarks and inside table cells.
+document bookmarks, inside table cells, and in footnote and endnote definitions.
 For files served from extensionless URLs, use the explicit image syntax. The resource
 resolver checks the downloaded content before embedding and uses the configured fallback
 if the image is unavailable. Images inside table cells fit within the cell padding.

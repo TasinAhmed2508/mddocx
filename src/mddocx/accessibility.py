@@ -112,6 +112,14 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
                 resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
             )
             document = etree.fromstring(zf.read("word/document.xml"), parser=parser)
+            stories = [
+                document,
+                *(
+                    etree.fromstring(zf.read(name), parser=parser)
+                    for name in ("word/footnotes.xml", "word/endnotes.xml")
+                    if name in zf.namelist()
+                ),
+            ]
             core = None
             if "docProps/core.xml" in zf.namelist():
                 try:
@@ -124,13 +132,12 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
         )
         return report
 
-    docprs = document.xpath(".//wp:docPr", namespaces=NS)
+    docprs = [item for root in stories for item in root.iterfind(".//wp:docPr", NS)]
     report.images = len(docprs)
-    missing_alt = document.xpath(
-        ".//wp:docPr[(not(@descr) or normalize-space(@descr)='') and not(.//adec:decorative[@val='1'])]",
-        namespaces=NS,
+    report.images_missing_alt = sum(
+        not item.get("descr", "").strip() and item.find(".//adec:decorative[@val='1']", NS) is None
+        for item in docprs
     )
-    report.images_missing_alt = len(missing_alt)
     if report.images_missing_alt:
         report.findings.append(
             AccessibilityFinding(
@@ -188,7 +195,7 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
         )
 
     empty_links = 0
-    for link in document.xpath(".//w:hyperlink", namespaces=NS):
+    for link in (node for root in stories for node in root.iterfind(".//w:hyperlink", NS)):
         text = "".join(link.itertext()).strip()
         if not text and not any(
             picture.get("descr", "").strip()

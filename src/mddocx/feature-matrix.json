@@ -109,7 +109,7 @@
         "tests/test_resilient_resources.py",
         "tests/test_release_contract.py"
       ],
-      "verify": "Native drawing presence, alternative text, embedded picture bindings, and click destinations in the main document"
+      "verify": "Native drawing presence, alternative text, embedded picture bindings, and click destinations in the body and notes"
     },
     {
       "id": "equation-figure-table-references",
@@ -144,9 +144,9 @@
       "id": "notes",
       "syntax": "[^id] references and definitions; footnote/endnote configuration",
       "ast": "FootnoteReference and document footnote definitions",
-      "ooxml": "native footnotes.xml or endnotes.xml parts and relationships",
-      "malformed_diagnostic": "NOTE201 for unresolved notes",
-      "word365": "implemented; structural regression tested",
+      "ooxml": "native footnotes.xml or endnotes.xml with their own image and hyperlink relationships",
+      "malformed_diagnostic": "FOOTNOTE201 for unresolved notes",
+      "word365": "native note pictures and hyperlinks checked in Word",
       "optional_renderer": "supported",
       "tests": [
         "tests/test_technical_report.py",
@@ -154,7 +154,7 @@
         "tests/test_fidelity_corpora.py",
         "tests/test_verification.py"
       ],
-      "verify": "Native note links, supported note body text, and native equations"
+      "verify": "Native note references, text, equations, pictures, and hyperlinks"
     },
     {
       "id": "charts-and-data",

@@ -103,13 +103,14 @@ WordprocessingML goes out.
 | Which font does each slot use? | [`styles/fonts.py`](../src/mddocx/styles/fonts.py) | `config`, `styles/themes.py` |
 | How is a run or paragraph written to Word XML? | [`ooxml/text.py`](../src/mddocx/ooxml/text.py) | `scripts`, `python-docx` XML helpers |
 | How is a package part registered? | [`ooxml/package.py`](../src/mddocx/ooxml/package.py) | `zipfile`, `lxml` |
-| How is a note part built? | [`ooxml/notes.py`](../src/mddocx/ooxml/notes.py) | `ooxml/package.py`, `ooxml/text.py`, inline AST |
+| How is a note part built? | [`ooxml/notes.py`](../src/mddocx/ooxml/notes.py) | Shared inline renderer, Word part relationships |
 | In what order may Word elements appear? | [`ooxml/sequence.py`](../src/mddocx/ooxml/sequence.py) | `lxml`, `python-docx` XML helpers |
 | Where does a document depart from that order? | [`schema_order.py`](../src/mddocx/schema_order.py) | `ooxml/sequence.py`, `lxml` |
 | Who decides direction and applies policy? | [`render/renderer.py`](../src/mddocx/render/renderer.py) | all of the above |
 
 Flow: `RenderConfig + ThemeSpec → FontSlots`; `text → scripts → (font slot, direction)`;
-`(font slot, direction) → ooxml/text.py → w:r / w:p`; `note AST → ooxml/notes.py → package part`.
+`(font slot, direction) → ooxml/text.py → w:r / w:p`. Notes use the shared inline renderer and
+attach their picture and hyperlink relationships before package serialization.
 
 Every element mddocx builds by hand is placed by `ooxml/sequence.py` — `insert_ordered()` for a
 new element, `get_or_add()` for the one child the schema allows — so no writer needs to know a

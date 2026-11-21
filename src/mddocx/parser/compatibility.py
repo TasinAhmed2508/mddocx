@@ -402,7 +402,7 @@ def _split_dollars(text: str) -> list[tuple[str, str]]:
 _FOOTNOTE_DEF_RE = re.compile(r"^ {0,3}\[\^([^\]]+)\]:[ \t]*(.*)$")
 
 
-def extract_footnote_definitions(markdown: str) -> tuple[str, dict[str, str]]:
+def extract_footnote_definitions(markdown: str) -> tuple[str, dict[str, tuple[str, int]]]:
     """Extract common Markdown footnote definitions without touching fenced code.
 
     Supports the widespread ``[^id]: text`` form plus indented continuation lines.
@@ -411,7 +411,7 @@ def extract_footnote_definitions(markdown: str) -> tuple[str, dict[str, str]]:
     """
     lines = markdown.split("\n")
     out: list[str] = []
-    notes: dict[str, str] = {}
+    notes: dict[str, tuple[str, int]] = {}
     i = 0
     fence: tuple[str, int] | None = None
     while i < len(lines):
@@ -458,7 +458,7 @@ def extract_footnote_definitions(markdown: str) -> tuple[str, dict[str, str]]:
                 i += 1
                 continue
             break
-        notes[label] = "\n".join(body).strip()
+        notes[label] = ("\n".join(body).strip(), definition_start + 1)
         out.extend([""] * (i - definition_start))
     return "\n".join(out), notes
 

@@ -1,9 +1,8 @@
 """Shared OOXML package surgery for parts added after python-docx saves.
 
-python-docx only writes the parts it models. Footnotes, endnotes, and comments
-are injected by reading the saved package, adding the part, and updating the
-content-type and relationship registries. Those mechanics live here so each
-part module only declares what is specific to it.
+Comments and charts are injected by reading the saved package, adding parts, and
+updating content types and relationships. Those mechanics live here so each part
+module only declares what is specific to it.
 """
 
 from __future__ import annotations

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Embed pictures and retain hyperlinks in footnotes and endnotes. Preserve notes already
+  present in a Word template, verify note relationships, and report failures at the note
+  definition. Notes now use the same strict math policy as the body.
 - Embed clickable pictures in Word hyperlinks from Markdown and HTML, including table
   cells. Verify the click destination and embedded picture offline and use the picture's
   alternative text when auditing its link label.

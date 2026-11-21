@@ -137,8 +137,11 @@ def add_image_path(
 ):
     run = paragraph.add_run()
     shape = run.add_picture(str(path))
-    sec = renderer.document.sections[-1]
-    usable = sec.page_width - sec.left_margin - sec.right_margin
+    if paragraph.part is renderer._note_part:
+        usable = renderer._note_width
+    else:
+        sec = renderer.document.sections[-1]
+        usable = sec.page_width - sec.left_margin - sec.right_margin
     cell = paragraph._parent
     if isinstance(cell, _Cell) and cell.width is not None:
         padding = Twips(2 * renderer.config.table.cell_padding_twips)

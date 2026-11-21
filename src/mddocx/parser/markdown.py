@@ -204,10 +204,13 @@ class MarkdownParser:
         children, _ = self._parse_blocks(tokens, 0, None)
         children = self._postprocess_blocks(children)
         footnotes: dict[str, list] = {}
-        for label, note_source in footnote_sources.items():
+        for label, (note_source, line) in footnote_sources.items():
             inline_tokens = self.md.parseInline(protect_escaped_footnote_references(note_source))
             inline = inline_tokens[0] if inline_tokens else None
-            footnotes[label] = self._inline(inline.children or []) if inline is not None else []
+            position = SourcePosition(source_file, line + self._line_offset, 1)
+            footnotes[label] = (
+                self._inline(inline.children or [], position) if inline is not None else []
+            )
         return Document(
             children=children,
             metadata=metadata,

@@ -32,7 +32,6 @@ from .references import ReferenceRegistry
 from .table_grid import repeatable_header_rows, table_grid
 
 BODY = "word/document.xml"
-_RELS = "word/_rels/document.xml.rels"
 _HEADING = re.compile(r"(?:MD)?Heading[ ]?([1-6])", re.I)
 _TEX_COMMAND = re.compile(r"\\([A-Za-z]+|.)")
 _NATIVE_MATH = {
@@ -123,7 +122,7 @@ def compare_document(
         else:
             sections.append(start)
 
-    def expected_inlines(nodes) -> tuple:
+    def expected_inlines(nodes, *, in_note: bool = False) -> tuple:
         tokens = []
         for node in nodes:
             if isinstance(node, inline.Text):
@@ -131,7 +130,7 @@ def compare_document(
             elif isinstance(node, inline.InlineCode):
                 tokens.append(clean_xml_text(node.code))
             elif isinstance(node, (inline.Strong, inline.Emphasis, inline.Strikethrough)):
-                tokens.extend(expected_inlines(node.children))
+                tokens.extend(expected_inlines(node.children, in_note=in_note))
             elif isinstance(node, inline.SoftBreak):
                 tokens.append(" ")
             elif isinstance(node, inline.HardBreak):
@@ -158,7 +157,7 @@ def compare_document(
                     href = "#" + target.bookmark
                 tokens.append(("link", href, content))
             elif isinstance(node, inline.FootnoteReference):
-                if node.label in document.footnotes:
+                if node.label in document.footnotes and not in_note:
                     number = notes.setdefault(node.label, len(notes) + 1)
                     tokens.append(("note", note_kind, str(number)))
                 else:
@@ -398,17 +397,22 @@ def compare_document(
     body_math = expected_math
     expected_notes: dict[str, tuple] = {}
     note_math: dict[str, list[tuple[str, Node]]] = {}
+    note_sources: dict[str, Node] = {}
     for label, number in list(notes.items()):
         ident = str(number)
         expected_math = []
-        expected_notes[ident] = expected_inlines(document.footnotes[label])
+        content = document.footnotes[label]
+        if content:
+            note_sources[ident] = content[0]
+        expected_notes[ident] = expected_inlines(content, in_note=True)
         note_math[ident] = expected_math
     actual_notes = {}
     if note_part in roots:
+        note_links = _hyperlink_targets(roots, note_part)
         for item in roots[note_part]:
             ident = item.get(f"{{{W}}}id")
             if item.tag == f"{{{W}}}{note_kind}" and ident and not item.get(f"{{{W}}}type"):
-                tokens = _read_inlines(item, {})
+                tokens = _read_inlines(item, note_links)
                 if tokens and isinstance(tokens[0], str):
                     tokens = _merge_text((tokens[0].removeprefix(" "), *tokens[1:]))
                 actual_notes[ident] = tokens
@@ -417,8 +421,11 @@ def compare_document(
     for ident in sorted(set(expected_notes) | set(actual_notes)):
         if expected_notes.get(ident) != actual_notes.get(ident):
             findings.append(
-                VerificationFinding(
-                    "VERIFY303", f"Changed or missing {note_kind} {ident}.", note_part
+                _finding(
+                    "VERIFY303",
+                    f"Changed or missing {note_kind} {ident}.",
+                    note_sources.get(ident),
+                    part=note_part,
                 )
             )
     main = roots[BODY].find("w:body", NS)
@@ -426,7 +433,9 @@ def compare_document(
         findings.extend(_equation_findings(body_math, main, BODY))
     actual, section_ends = _read_body(roots)
     findings.extend(_chart_findings(roots))
-    findings.extend(_image_findings(roots))
+    for part in (BODY, note_part):
+        if part in roots:
+            findings.extend(_image_findings(roots, part))
     expected_keys = [unit.key for unit in expected]
     actual_keys = [unit.key for unit in actual]
     if expected_keys == actual_keys:
@@ -544,16 +553,11 @@ def _describe(units: list[_Unit]) -> str:
 
 def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFinding]:
     charts = roots[BODY].xpath(".//c:chart", namespaces={"c": C})
-    relationships = roots.get(_RELS)
-    chart_targets = (
-        {
-            relation.get("Id"): relation.get("Target", "")
-            for relation in relationships
-            if relation.get("Type") == CHART_REL
-        }
-        if relationships is not None
-        else {}
-    )
+    chart_targets = {
+        relation.get("Id"): relation.get("Target", "")
+        for relation in _part_relationships(roots, BODY)
+        if relation.get("Type") == CHART_REL
+    }
     findings = []
     for chart in charts:
         rid = chart.get(f"{{{R}}}id")
@@ -584,26 +588,37 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
     return findings
 
 
-def _image_findings(roots: dict[str, etree._Element]) -> Iterator[VerificationFinding]:
-    relationships = roots.get(_RELS)
-    embedded_ids = (
-        {
-            relation.get("Id")
-            for relation in relationships
-            if (
-                relation.get("Id")
-                and relation.get("Type") == RELATIONSHIP_TYPE.IMAGE
-                and relation.get("Target")
-                and (relation.get("TargetMode") or "").lower() != "external"
-            )
-        }
-        if relationships is not None
-        else set()
-    )
-    for picture in roots[BODY].iter(qn("pic:pic")):
+def _part_relationships(roots: dict[str, etree._Element], part: str) -> Iterator[etree._Element]:
+    path = PurePosixPath(part)
+    relationships = roots.get(str(path.parent / "_rels" / (path.name + ".rels")))
+    if relationships is not None:
+        yield from relationships
+
+
+def _hyperlink_targets(roots: dict[str, etree._Element], part: str) -> dict:
+    return {
+        rel.get("Id"): rel.get("Target")
+        for rel in _part_relationships(roots, part)
+        if rel.get("Type") == RELATIONSHIP_TYPE.HYPERLINK
+        and (rel.get("TargetMode") or "").lower() == "external"
+    }
+
+
+def _image_findings(roots: dict[str, etree._Element], part: str) -> Iterator[VerificationFinding]:
+    embedded_ids = {
+        relation.get("Id")
+        for relation in _part_relationships(roots, part)
+        if relation.get("Id")
+        and relation.get("Type") == RELATIONSHIP_TYPE.IMAGE
+        and relation.get("Target")
+        and (relation.get("TargetMode") or "").lower() != "external"
+    }
+    for picture in roots[part].iter(qn("pic:pic")):
         blip = picture.find(f"./{qn('pic:blipFill')}/{qn('a:blip')}")
         if blip is None or blip.get(qn("r:embed")) not in embedded_ids:
-            yield VerificationFinding("VERIFY303", "Picture is missing an embedded image binding.")
+            yield VerificationFinding(
+                "VERIFY303", "Picture is missing an embedded image binding.", part
+            )
 
 
 def _merge_text(tokens) -> tuple:
@@ -681,17 +696,7 @@ def _section_end(offset: int, properties: etree._Element) -> tuple[int, str, str
 def _read_body(
     roots: dict[str, etree._Element],
 ) -> tuple[list[_Unit], list[tuple[int, str, str]]]:
-    relationships = roots.get(_RELS)
-    links = (
-        {
-            rel.get("Id"): rel.get("Target")
-            for rel in relationships
-            if rel.get("Type") == RELATIONSHIP_TYPE.HYPERLINK
-            and (rel.get("TargetMode") or "").lower() == "external"
-        }
-        if relationships is not None
-        else {}
-    )
+    links = _hyperlink_targets(roots, BODY)
     body = roots[BODY].find(f"{{{W}}}body")
     if body is None:
         return [], []

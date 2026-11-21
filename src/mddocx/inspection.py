@@ -252,15 +252,23 @@ def _inspect_parts(
     report.hyperlinks = sum(
         len(root.xpath(".//w:hyperlink", namespaces=NS)) for root in content_roots
     )
-    report.internal_hyperlinks = len(document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS))
-    bookmark_nodes = document.xpath(".//w:bookmarkStart", namespaces=NS)
+    note_stories = [
+        roots[name] for name in ("word/footnotes.xml", "word/endnotes.xml") if name in roots
+    ]
+    anchor_stories = [document, *note_stories]
+    anchors = [
+        node.get(f"{{{W}}}anchor")
+        for story in anchor_stories
+        for node in story.iterfind(".//w:hyperlink[@w:anchor]", NS)
+    ]
+    report.internal_hyperlinks = len(anchors)
+    bookmark_nodes = [
+        node for story in anchor_stories for node in story.iterfind(".//w:bookmarkStart", NS)
+    ]
     report.bookmarks = len(bookmark_nodes)
     bookmark_names = [n.get(f"{{{W}}}name") for n in bookmark_nodes if n.get(f"{{{W}}}name")]
     bookmark_targets = set(bookmark_names)
     report.duplicate_bookmark_names = len(bookmark_names) - len(bookmark_targets)
-    anchors = [
-        n.get(f"{{{W}}}anchor") for n in document.xpath(".//w:hyperlink[@w:anchor]", namespaces=NS)
-    ]
     report.dangling_internal_hyperlinks = sum(1 for a in anchors if a and a not in bookmark_targets)
     report.comment_references = len(document.xpath(".//w:commentReference", namespaces=NS))
     field_nodes = [n for root in content_roots for n in root.xpath(".//w:instrText", namespaces=NS)]
@@ -275,11 +283,10 @@ def _inspect_parts(
             if len(parts) >= 2:
                 ref_targets.append(parts[1])
     report.dangling_ref_fields = sum(1 for name in ref_targets if name not in bookmark_targets)
-    report.images_missing_alt = len(
-        document.xpath(
-            ".//wp:docPr[(not(@descr) or normalize-space(@descr)='') and not(.//adec:decorative[@val='1'])]",
-            namespaces=NS,
-        )
+    report.images_missing_alt = sum(
+        not item.get("descr", "").strip() and item.find(".//adec:decorative[@val='1']", NS) is None
+        for story in anchor_stories
+        for item in story.iterfind(".//wp:docPr", NS)
     )
     report.sections = len(document.xpath(".//w:sectPr", namespaces=NS))
     report.landscape_sections = _count_landscape_sections(document)

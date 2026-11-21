@@ -127,3 +127,16 @@ containing 80 distinct inline equations from `x^{0}+1` through `x^{79}+1`. The m
 time decreased from **5.672 s to 0.201 s**. The JSON report matched byte for byte.
 The 20-section mixed conversion measured **0.497 s to 0.491 s**, with identical
 DOCX bytes across the ten runs.
+
+## Native note parts
+
+Five alternating pairs on Windows with Python 3.12.11 compared compilation against
+commit `1f49ec1`. The report contains eight text footnotes and eight body images. The
+images are 1200 × 800 JPEGs generated from `Random(417).randbytes(1200 * 800 * 3)`
+in sequence and encoded at quality 88.
+
+Loading notes into the Word package before serialization reduced median time from
+**1.059 s to 0.847 s**. Both versions produced 6,420,007-byte DOCX files, and the notes
+and embedded image bytes matched. Relationship IDs and content-type declaration order
+account for the different archive hashes. Both documents verified.
+The 20-section mixed workload measured **0.513 s to 0.520 s** with identical DOCX bytes.

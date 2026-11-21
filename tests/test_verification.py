@@ -6,7 +6,7 @@ from lxml import etree
 from PIL import Image
 import pytest
 
-from mddocx import Compiler, RenderConfig, audit_docx_accessibility_bytes
+from mddocx import Compiler, NotesConfig, RenderConfig, audit_docx_accessibility_bytes
 from mddocx.cli import main
 from mddocx.inspection import NS
 from mddocx.ooxml import bangla
@@ -97,6 +97,66 @@ def test_linked_picture_targets_a_native_bookmark_from_table(tmp_path):
     next(main.iter(qn("wp:docPr"))).attrib.pop("descr")
     parts["word/document.xml"] = etree.tostring(main)
     assert audit_docx_accessibility_bytes(write_parts(parts)).empty_hyperlinks == 1
+
+
+@pytest.mark.parametrize("style", ["footnote", "endnote"])
+def test_verify_resolves_note_relationships_from_the_owning_part(tmp_path, style):
+    Image.new("RGB", (30, 20), "white").save(tmp_path / "tile.png")
+    config = RenderConfig(notes=NotesConfig(style=style))
+    compiler = Compiler(config)
+    source = tmp_path / "notes.md"
+    source.write_text(
+        "Review.[^tile]\n\n[^tile]: [![Tile](tile.png)](https://example.org/manual)\n",
+        encoding="utf-8",
+    )
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    note_part = f"word/{style}s.xml"
+    rels_part = f"word/_rels/{style}s.xml.rels"
+    notes = etree.fromstring(parts[note_part])
+    link = next(notes.iter(qn("w:hyperlink")))
+    target_id = link.get(qn("r:id"))
+    rels = etree.fromstring(parts[rels_part])
+    next(item for item in rels if item.get("Id") == target_id).set(
+        "Target", "https://example.org/other"
+    )
+    parts[rels_part] = etree.tostring(rels)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part, finding.line) == ("VERIFY303", note_part, 3)
+
+    parts = read_parts(result.output_bytes)
+    next(notes.iter(qn("a:blip"))).set(qn("r:embed"), "rIdMissing")
+    parts[note_part] = etree.tostring(notes)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part) == ("VERIFY303", note_part)
+    assert "embedded image binding" in finding.message
+
+
+@pytest.mark.parametrize("style", ["footnote", "endnote"])
+def test_append_preserves_template_notes_and_media_relationships(tmp_path, style):
+    Image.new("RGB", (30, 20), "white").save(tmp_path / "tile.png")
+    config = RenderConfig(notes=NotesConfig(style=style))
+    first = Compiler(config).compile_string(
+        "Original.[^original]\n\n[^original]: [![Original](tile.png)](https://example.org/manual)",
+        base_dir=tmp_path,
+    )
+    config.template = tmp_path / "template.docx"
+    config.template.write_bytes(first.output_bytes)
+    second = Compiler(config).compile_string(
+        "Added.[^new]\n\n[^new]: New note text.", base_dir=tmp_path
+    )
+    before = read_parts(first.output_bytes)
+    after = read_parts(second.output_bytes)
+    rels_part = f"word/_rels/{style}s.xml.rels"
+    assert before[rels_part] == after[rels_part]
+    notes = etree.fromstring(after[f"word/{style}s.xml"])
+    real_notes = [item for item in notes if item.get(qn("w:type")) is None]
+    assert [item.get(qn("w:id")) for item in real_notes] == ["1", "2"]
+    assert next(real_notes[0].iter(qn("wp:docPr"))).get("descr") == "Original"
+    assert "".join(real_notes[1].itertext()).strip() == "New note text."
+    main = etree.fromstring(after["word/document.xml"])
+    assert [ref.get(qn("w:id")) for ref in main.iter(qn(f"w:{style}Reference"))] == ["1", "2"]
 
 
 @pytest.mark.parametrize("change", ["rotate", "remove", "move", "continuous"])

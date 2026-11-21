@@ -6,7 +6,7 @@ from pathlib import Path
 from docx import Document
 import pytest
 
-from mddocx import MarkdownWord, RenderConfig, build_project, render_many
+from mddocx import Compiler, MarkdownWord, RenderConfig, build_project, render_many
 from mddocx.cli import main
 from mddocx.diagnostics import MddocxError
 from mddocx.interactive import history
@@ -252,3 +252,22 @@ def test_failed_write_preserves_existing_output(tmp_path: Path, monkeypatch):
 
     assert target.read_bytes() == b"previous document"
     assert sorted(path.name for path in tmp_path.iterdir()) == ["output.docx"]
+
+
+def test_strict_note_math_preserves_existing_output(tmp_path):
+    source = tmp_path / "report.md"
+    source.write_text(
+        "Review.[^note]\n\n[^note]: An unknown command $\\missingnotecommand{x}$.\n",
+        encoding="utf-8",
+    )
+    target = source.with_suffix(".docx")
+    target.write_bytes(b"previous document")
+    config = RenderConfig()
+    config.math_failure.mode = "error"
+
+    with pytest.raises(MddocxError) as caught:
+        Compiler(config).compile_file(source, target)
+
+    diagnostic = caught.value.diagnostic
+    assert (diagnostic.code, diagnostic.line, diagnostic.source_file) == ("MATH201", 3, str(source))
+    assert target.read_bytes() == b"previous document"

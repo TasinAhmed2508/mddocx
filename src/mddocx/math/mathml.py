@@ -416,14 +416,22 @@ class MathMLToOMML:
                 continue
             cells = [cell for cell in row if self._local(cell) == "mtd"]
             rows.append(cells[1:] + cells[:1] if tag == "mlabeledtr" else cells)
+        if any(cell.get("rowspan", "1") != "1" for row in rows for cell in row):
+            raise ValueError("Native Word equations do not support cells spanning multiple rows.")
+        spanning = any("columnspan" in cell.attrib for row in rows for cell in row)
         width = max(map(len, rows), default=0)
+        if spanning:
+            counts = [[cell.get("columnspan", "1") for cell in row] for row in rows]
+            if any(not re.fullmatch(r"[1-9][0-9]?", count) for row in counts for count in row):
+                raise ValueError("An equation cell span must be a positive column count.")
+            width = max(sum(map(int, row)) for row in counts)
         if not width:
             return
         if width > 64:
             # Word limits native matrices to 64 columns (MS-OI29500 §22.1.2.67).
             raise ValueError("Word supports up to 64 columns in a native equation matrix.")
         alignments = node.get("columnalign", "").split()
-        if not alignments:
+        if not alignments and not spanning:
             alignments = [cell.get("columnalign", "center") for cell in rows[0]]
         alignments = (alignments + [alignments[-1] if alignments else "center"] * width)[:width]
         baseline = {"baseline 1": "top", "baseline -1": "bot", "top": "top", "bottom": "bot"}.get(
@@ -449,13 +457,19 @@ class MathMLToOMML:
             and bool(gaps)
             and any(_ZERO_RULE.fullmatch(gap) for gap in gaps)
         )
-        arguments = [
-            [
-                self._argument("m:e", row[index] if index < len(row) else None, variant)
-                for index in range(width)
+        if spanning:
+            if column_breaks or compact:
+                raise ValueError("Spanning equation cells do not support column rules or inserts.")
+            arguments, alignments = self._spanning_matrix_arguments(rows, alignments, variant)
+            width = len(alignments)
+        else:
+            arguments = [
+                [
+                    self._argument("m:e", row[index] if index < len(row) else None, variant)
+                    for index in range(width)
+                ]
+                for row in rows
             ]
-            for row in rows
-        ]
         if row_breaks or column_breaks:
             copies = sum(1 for row in arguments for cell in row for _ in cell.iter())
             copies *= (len(row_breaks) + 1) * (len(column_breaks) + 1) - 1
@@ -476,6 +490,112 @@ class MathMLToOMML:
             self._append_matrix_columns(target, arguments, alignments, baseline, compact, groups)
         if frame == "solid":
             parent.append(self._enclosure(target, {"box"}))
+
+    def _spanning_matrix_arguments(self, rows, alignments, variant):
+        root = (0, len(alignments))
+        intervals = {root, *((index, index + 1) for index in range(root[1]))}
+        entries = []
+        for row in rows:
+            start = 0
+            cells = {}
+            for cell in row:
+                end = start + int(cell.get("columnspan", "1"))
+                alignment = (
+                    cell.get("columnalign", "center") if "columnspan" in cell.attrib else None
+                )
+                if alignment not in {None, "left", "center", "right"}:
+                    raise ValueError("A spanning equation cell must align left, center, or right.")
+                cells[start, end] = (self._argument("m:e", cell, variant), alignment)
+                start = end
+            for index in range(start, root[1]):
+                cells[index, index + 1] = (self._argument("m:e", None, variant), None)
+            intervals.update(cells)
+            entries.append(cells)
+
+        branches = {interval: [] for interval in intervals}
+        stack = []
+        # Nested or disjoint spans can share a tree of column widths across all rows.
+        for interval in sorted(intervals, key=lambda item: (item[0], -item[1])):
+            while stack and stack[-1][1] <= interval[0]:
+                stack.pop()
+            if stack:
+                if interval[1] > stack[-1][1]:
+                    raise ValueError(
+                        "Overlapping equation column spans cannot share Word column boundaries."
+                    )
+                branches[stack[-1]].append(interval)
+            stack.append(interval)
+
+        copied_nodes = 0
+
+        def reserve(amount):
+            nonlocal copied_nodes
+            copied_nodes += amount
+            if copied_nodes > 100_000:
+                raise ValueError(
+                    "Spanning equation layout exceeds the native Word equation size limit."
+                )
+
+        def matrix_cell(row, alignment="center"):
+            argument = OxmlElement("m:e")
+            argument.append(
+                self._matrix(row, [alignment] * len(row[0]), "top", False, tight_rows=True)
+            )
+            return argument
+
+        def boxed_cell(argument):
+            box = OxmlElement("m:box")
+            box.append(argument)
+            cell = OxmlElement("m:e")
+            cell.append(box)
+            return cell
+
+        def assemble(interval):
+            children = [assemble(child) for child in branches[interval]]
+            direct = [row.get(interval) for row in entries]
+            candidates = []
+            for entry in direct:
+                if entry is not None:
+                    reserve(sum(1 for _ in entry[0].iter()))
+                    candidates.append([boxed_cell(deepcopy(entry[0]))])
+            if children:
+                candidates.append([matrix_cell([[width for width, _ in children]])])
+            if not candidates:
+                candidates.append([self._argument("m:e", None, variant)])
+            measurement = matrix_cell(candidates)
+            measurement_size = sum(1 for _ in measurement.iter())
+            rendered = []
+            for index, entry in enumerate(direct):
+                if entry is not None:
+                    argument, alignment = entry
+                    if alignment is not None:
+                        argument = boxed_cell(argument)
+                else:
+                    parts = [cells[index] for _, cells in children]
+                    if not parts or parts[0] is None:
+                        rendered.append(None)  # An ancestor span occupies this row.
+                        continue
+                    argument = matrix_cell([parts])
+                    alignment = "center"
+                reserve(measurement_size)
+                # Word aligns the visible cell against the same hidden width in every row.
+                width_anchor = OxmlElement("m:e")
+                width_anchor.append(self._matrix_measurement(measurement, ("zeroAsc", "zeroDesc")))
+                rendered.append(
+                    matrix_cell([[argument], [width_anchor]], alignment or alignments[interval[0]])
+                )
+            return measurement, rendered
+
+        columns, effective_alignments = [], []
+        top_level = [root] if any(root in row for row in entries) else branches[root]
+        for interval in top_level:
+            if not branches[interval] and all(row[interval][1] is None for row in entries):
+                columns.append([row[interval][0] for row in entries])
+                effective_alignments.append(alignments[interval[0]])
+            else:
+                columns.append(assemble(interval)[1])
+                effective_alignments.append("center")
+        return [list(row) for row in zip(*columns, strict=True)], effective_alignments
 
     def _matrix_with_row_rules(self, rows, alignments, baseline, compact, groups, breaks):
         originals = [[tuple(cell) for cell in row] for row in rows]

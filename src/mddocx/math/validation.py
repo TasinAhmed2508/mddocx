@@ -14,6 +14,7 @@ from .latex import (
     _Parser,
     array_preambles,
     array_row_rules,
+    array_span_preambles,
 )
 
 MATHML_NS = "http://www.w3.org/1998/Math/MathML"
@@ -151,9 +152,21 @@ def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
     visible = list(visible_omml(omml))
     dividers = {}
     for node in visible:
-        separator = node.find(f"./{_M}dPr/{_M}sepChr") if node.tag == _M + "d" else None
+        if node.tag != _M + "d":
+            continue
+        props = node.find(_M + "dPr")
+        if props is None:
+            continue
+        separator = props.find(_M + "sepChr")
         if separator is not None and separator.get(_M + "val") == "|":
             dividers[node] = node.findall(_M + "e")
+        elif separator is None:
+            # Bracketless groups use the default vertical separator after a Word save.
+            begin, end = props.find(_M + "begChr"), props.find(_M + "endChr")
+            if all(edge is not None and edge.get(_M + "val", "") == "" for edge in (begin, end)):
+                groups = node.findall(_M + "e")
+                if len(groups) > 1 and all(group.find(_M + "m") is not None for group in groups):
+                    dividers[node] = groups
     positions, row_groups = _row_rule_positions(visible) if r"\hline" in latex else ({}, {})
     fragments = {
         matrix
@@ -161,6 +174,15 @@ def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
         for section in sections
         for matrix in (section.findall(f"./{_M}e/{_M}m") if section.tag == _M + "d" else [section])
     }
+    if r"\multicolumn" in latex:
+        try:
+            spans = Counter((count, align) for _, _, count, align in array_span_preambles(latex))
+        except ValueError:
+            return False
+        retained, span_fragments = _spanning_layout(visible)
+        if not spans <= retained:
+            return False
+        fragments.update(span_fragments)
     native_arrays = 0
     for node in visible:
         if node.tag in {_M + "m", _M + "eqArr"} and node not in fragments:
@@ -195,6 +217,48 @@ def visible_omml(root: etree._Element):
 def _math_flag(props, name, *, default=False):
     flag = props.find(_M + name)
     return default if flag is None else flag.get(_M + "val", "1") in {"1", "true", "on"}
+
+
+def _spanning_layout(visible):
+    retained: Counter[tuple[int, str]] = Counter()
+    fragments = set()
+    for matrix in visible:
+        if matrix.tag != _M + "m":
+            continue
+        rows = matrix.findall(_M + "mr")
+        if len(rows) != 2 or any(len(row) != 1 for row in rows) or len(rows[1][0]) != 1:
+            continue
+        width = rows[1][0][0]
+        props = width.find(_M + "phantPr") if width.tag == _M + "phant" else None
+        if props is None or _math_flag(props, "show", default=True):
+            continue
+        if not (_math_flag(props, "zeroAsc") and _math_flag(props, "zeroDesc")):
+            continue
+        measurement = width.find(f"./{_M}e/{_M}m")
+        if measurement is None:
+            continue
+        fragments.add(matrix)
+        columns = _measured_columns(measurement)
+        contents = rows[0][0]
+        if len(contents) == 1 and contents[0].tag == _M + "box":
+            justification = matrix.find(f"./{_M}mPr/{_M}mcs/{_M}mc/{_M}mcPr/{_M}mcJc")
+            align = "center" if justification is None else justification.get(_M + "val", "center")
+            retained[columns, align] += 1
+        elif columns > 1 and len(contents) == 1 and contents[0].tag == _M + "m":
+            fragments.add(contents[0])
+    return retained, fragments
+
+
+def _measured_columns(measurement):
+    rows = measurement.findall(_M + "mr")
+    if not rows:
+        return 0
+    # The final row of a group measures its partition. Other rows measure individual cells.
+    partition = rows[-1].find(f"./{_M}e/{_M}m")
+    if partition is None:
+        return 1
+    children = partition.findall(f"./{_M}mr/{_M}e/{_M}m")
+    return sum(_measured_columns(child) for child in children)
 
 
 def _array_layout_preserved(latex, visible, dividers, positions, row_groups):
@@ -297,7 +361,8 @@ def _row_rule_positions(visible):
         ):
             continue
         position = bar.find(f"./{_M}barPr/{_M}pos")
-        if position is None or position.get(_M + "val") != "bot":
+        # Word omits the default bottom position when saving a document.
+        if position is not None and position.get(_M + "val") != "bot":
             continue
         body = bar.find(_M + "e")
         if body is None or len(body) != 1:
@@ -318,26 +383,30 @@ def _row_rule_positions(visible):
             continue
         positions[content_rows[-1]] += 1
         groups.add(bar.getparent().getparent().getparent())
-    return positions, {
-        group: [
-            root[1][0] if root.tag == _M + "bar" and len(root) == 2 and len(root[1]) == 1 else root
-            for root in group.findall(f"./{_M}mr/{_M}e/*")
-        ]
-        for group in groups
-    }
+    sections = {}
+    for group in groups:
+        arguments = []
+        for item in group.findall(f"./{_M}mr/{_M}e/*"):
+            section = item.find(f"./{_M}e/*") if item.tag == _M + "bar" else item
+            if section is not None:
+                arguments.append(section)
+        sections[group] = arguments
+    return positions, sections
 
 
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
     source = _GENFRAC_CONTROLS.sub("", latex.strip())
     try:
-        arrays = list(array_preambles(source))
+        declarations = [
+            (start, end, "".join(text for kind, text in columns if kind == "@"))
+            for start, end, columns in array_preambles(source)
+        ]
+        declarations.extend((start, end, "") for start, end, _, _ in array_span_preambles(source))
     except ValueError:
         return False
-    for start, end, columns in reversed(arrays):
-        source = (
-            source[:start] + "".join(text for kind, text in columns if kind == "@") + source[end:]
-        )
+    for start, end, retained in sorted(declarations, reverse=True):
+        source = source[:start] + retained + source[end:]
     # mhchem expands scientific notation and converts a standalone v to a precipitate arrow.
     source = re.sub(
         r"(\\pu\s*\{\s*[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))[eE](?=[+-]?\d)",

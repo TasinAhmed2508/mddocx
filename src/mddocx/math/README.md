@@ -13,6 +13,8 @@ alignment, and nested matrices when the MathJax runtime is unavailable. Explicit
 top and bottom alignment map to native Word matrix baseline properties.
 Ruled arrays use native Word delimiters and bars between matrix groups. Invisible
 height and width measurements align the groups and are excluded from content verification.
+For `\multicolumn`, nested matrix groups share width measurements across the rows,
+and offline verification checks the explicit span widths and alignment.
 
 An equation may start with one or more `\newcommand` definitions. Positional arguments
 and an optional default for the first argument expand within that equation. The same

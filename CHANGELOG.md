@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+- Render LaTeX `\multicolumn` as editable Word math for nested and disjoint spans.
+  Offline verification checks span widths and alignment and accepts the default math
+  properties Word omits when saving a document.
 - Preserve vertical rules, full-width solid `\hline` rules, frames, repeated column
   declarations, and decimal separators in editable LaTeX arrays. Verification detects
-  removed rules and frame edges. Dashed, partial, and repeated horizontal rules and
-  spanning cells use the math failure policy.
+  removed rules and frame edges. Dashed, partial, and repeated horizontal rules use
+  the math failure policy.
 - Embed pictures and retain hyperlinks in footnotes and endnotes. Preserve notes already
   present in a Word template, verify note relationships, and report failures at the note
   definition. Notes now use the same strict math policy as the body.

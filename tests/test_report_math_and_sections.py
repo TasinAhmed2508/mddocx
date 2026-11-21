@@ -89,16 +89,92 @@ def test_unsupported_array_rules_are_reported(directive):
     assert finding.code == "MATH201"
 
 
+def test_nested_column_spans_remain_editable_with_native_math_and_row_rules():
+    converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
+    expression = (
+        r"\begin{array}{lrrr}\multicolumn{4}{l}{\text{All values}}\\\hline"
+        r"\multicolumn{2}{c}{x^2}&\multicolumn{2}{r}{\frac{1}{2}}\\a&2&b&3\end{array}"
+    )
+    equation = converter.convert(expression, display=True)
+    assert equation.engine == "mddocx-basic" and equation.semantic_valid
+    visible = list(visible_omml(equation.omml))
+    assert sum(node.tag == qn("m:bar") for node in visible) == 1
+    assert sum(node.tag == qn("m:f") for node in visible) == 1
+    assert sum(node.tag == qn("m:sSup") for node in visible) == 1
+    assert sum(node.tag == qn("m:box") for node in visible) == 3
+    assert (
+        "".join(node.text or "" for node in visible if node.tag == qn("m:t"))
+        == "All valuesx212a2b3"
+    )
+
+
 @pytest.mark.parametrize(
-    "change", ["vertical", "row_group_vertical", "horizontal", "frame", "decimal", "spacing"]
+    "expression, message",
+    [
+        (
+            r"\begin{array}{ccc}\multicolumn{2}{c}{a}&b\\c&\multicolumn{2}{c}{d}\end{array}",
+            "Overlapping",
+        ),
+        (r"\begin{array}{cc}\multicolumn{3}{c}{x}\end{array}", "exceeds the declared array width"),
+        (r"\begin{array}{c|c}\multicolumn{2}{c}{x}\end{array}", "column rules or inserts"),
+    ],
 )
-def test_verify_detects_removed_array_notation(tmp_path, change):
+def test_unsupported_column_spans_report_why_they_could_not_render(expression, message):
+    result = Compiler().compile_string(f"$$\n{expression}\n$$")
+    (finding,) = result.diagnostics
+    assert finding.code == "MATH201"
+    assert message in finding.message
+
+
+@pytest.mark.parametrize("change", ["alignment", "span_width", "ordinary_matrix"])
+def test_verify_detects_altered_column_span_layout(tmp_path, change):
+    source = tmp_path / "span.md"
+    tex = (
+        r"\begin{array}{lr}\multicolumn{2}{r}{\text{Title}}\\a&b\end{array}"
+        r"+\begin{bmatrix}c&d\\e&f\end{bmatrix}"
+    )
+    source.write_text(f"$$\n{tex}\n$$\n", encoding="utf-8")
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    root = etree.fromstring(parts["word/document.xml"])
+    box = next(root.iter(qn("m:box")))
+    anchor = next(box.iterancestors(qn("m:m")))
+    ns = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+    if change == "alignment":
+        anchor.find("./m:mPr/m:mcs/m:mc/m:mcPr/m:mcJc", ns).set(qn("m:val"), "left")
+    elif change == "span_width":
+        partition = anchor.findall(qn("m:mr"))[1].find("./m:e/m:phant/m:e/m:m", ns)
+        columns = partition.findall(qn("m:mr"))[-1].find("./m:e/m:m/m:mr", ns)
+        columns.remove(columns[0])
+    else:
+        ordinary = root.find(".//m:d/m:e/m:m", ns)
+        body = ordinary.getparent()
+        for run in list(ordinary.iter(qn("m:r"))):
+            body.append(run)
+        body.remove(ordinary)
+    parts["word/document.xml"] = etree.tostring(root)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.line) == ("VERIFY303", 1)
+    assert "matrix layout" in finding.message
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["vertical", "row_group_vertical", "horizontal", "frame", "decimal", "spacing", "word_saved"],
+)
+def test_verify_reads_array_geometry_in_edited_packages(tmp_path, change):
     source = tmp_path / "array.md"
     tex = {
         "vertical": r"\begin{array}{r|l}a&b\\c&d\end{array}",
         "row_group_vertical": r"\begin{array}{r|l}a&b\\\hline c&d\end{array}",
         "horizontal": r"\begin{array}{r|l}a&b\\\hline c&d\end{array}",
         "frame": r"\begin{array}{|rl|}\hline a&b\\c&d\\\hline\end{array}",
+        "word_saved": (
+            r"\begin{array}{rl}\multicolumn{2}{c}{A}\\\hline c&d\end{array}"
+            r"+\begin{array}{r|l}a&b\\\hline c&d\end{array}"
+        ),
     }.get(change, r"\begin{array}{r@{.}l}12&34\\5&6\end{array}")
     source.write_text(f"$$\n{tex}\n$$\n", encoding="utf-8")
     compiler = Compiler()
@@ -116,12 +192,24 @@ def test_verify_detects_removed_array_notation(tmp_path, change):
         props = etree.Element(qn("m:borderBoxPr"))
         etree.SubElement(props, qn("m:hideTop")).set(qn("m:val"), "1")
         frame.insert(0, props)
+    elif change == "word_saved":
+        for tag in ("m:pos", "m:sepChr"):
+            for default in list(root.iter(qn(tag))):
+                default.getparent().remove(default)
+        box = next(root.iter(qn("m:box")))
+        props = etree.Element(qn("m:boxPr"))
+        etree.SubElement(props, qn("m:ctrlPr"))
+        box.insert(0, props)
     elif change == "spacing":
         next(root.iter(qn("m:cGp"))).set(qn("m:val"), "40")
     else:
         next(node for node in root.iter(qn("m:t")) if node.text == ".").text = ","
     parts["word/document.xml"] = etree.tostring(root)
-    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    report = compiler.verify(source, write_parts(parts))
+    if change == "word_saved":
+        assert report.ok
+        return
+    (finding,) = report.findings
     assert (finding.code, finding.line) == ("VERIFY303", 1)
     assert "matrix layout" in finding.message
 

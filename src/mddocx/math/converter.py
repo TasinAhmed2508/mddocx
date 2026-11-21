@@ -8,7 +8,7 @@ from typing import Protocol
 from lxml import etree
 
 from .chemistry import attach_chemistry_scripts
-from .latex import BasicLatexToMathML, UnsupportedLatexError, array_preambles
+from .latex import BasicLatexToMathML, UnsupportedLatexError, array_preambles, array_span_preambles
 from .mathml import MathMLToOMML
 from .models import MathConversion
 from .normalize import normalize_equation
@@ -142,13 +142,11 @@ class DefaultMathConverter:
             return deepcopy(self._conversions[key])
         normalized = normalize_equation(latex)
         try:
+            spanning = next(array_span_preambles(normalized.text), None) is not None
             decorated_array = any(
                 any(kind in {"@", "|"} for kind, _ in columns)
                 or "*" in normalized.text[start:end]
-                or any(
-                    tag in normalized.text
-                    for tag in (r"\hline", r"\hdashline", r"\cline", r"\multicolumn")
-                )
+                or any(tag in normalized.text for tag in (r"\hline", r"\hdashline", r"\cline"))
                 for start, end, columns in array_preambles(normalized.text)
             )
         except ValueError as exc:
@@ -156,9 +154,10 @@ class DefaultMathConverter:
         failures: list[str] = []
         engines = []
         sidecar_ready = self._sidecar.available
-        if sidecar_ready:
+        # The bundled MathJax engine does not recognize LaTeX's multicolumn command.
+        if sidecar_ready and not spanning:
             engines.append(("mathjax-sidecar", lambda: self._convert_sidecar(key, normalized.text)))
-        if self._external is not None and not decorated_array:
+        if self._external is not None and not (decorated_array or spanning):
             engines.append(("latex2mathml", lambda: self._external(normalized.text)))
         engines.append(("mddocx-basic", lambda: self._fallback.convert(normalized.text)))
         for engine, operation in engines:

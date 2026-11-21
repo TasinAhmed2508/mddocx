@@ -36,7 +36,15 @@ decimal points. Vertical rules stay aligned across tall cells such as fractions.
 intercolumn spacing uses Word's native zero-gap columns with an em space at ordinary
 column boundaries. A single `\hline` at any row boundary keeps a full-width solid
 rule. Outer horizontal and vertical rules form an editable Word math frame. Dashed,
-partial, or repeated horizontal rules and `\multicolumn` use the math failure policy.
+partial, or repeated horizontal rules use the math failure policy.
+
+`\multicolumn{2}{c}{...}` centers an editable cell across two columns. Use `l` or `r`
+to set its alignment to the left or right. Disjoint spans and nested spans across
+different rows share column measurements. Spans work with solid `\hline` rules and
+use the built-in Python engine. Shared widths reflect the cells as converted, so
+edits that make a cell wider in Word can shift that row's alignment. Crossing
+spans, spans combined with column rules or inserts, and row spans use the math
+failure policy.
 
 Unsupported syntax produces a `MATH201` warning and is kept as editable source text by default.
 Use `--strict-math` to fail instead. Diagnostics identify the active conversion engine and the

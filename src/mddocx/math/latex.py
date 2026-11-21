@@ -12,6 +12,7 @@ _ALIGN_COLUMNS = _ALIGN_PAIRS | {"aligned", "align", "align*", "split"}
 _OPTIONAL_ALIGNMENT = {"alignedat", "aligned", "gathered", "array"}
 _COLUMN_ALIGN = {"l": "left", "c": "center", "r": "right"}
 _ROW_RULE = re.compile(r"\s*\\hline(?![A-Za-z])\s*")
+_COLUMN_SPAN = re.compile(r"\\multicolumn(?![A-Za-z])")
 _TEXT_ESCAPE = re.compile(r"\\([&#%{}_$])")
 _RULE_THICKNESS = re.compile(
     r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*(?:pt|px|em|ex|mu|in|cm|mm|pc|bp|dd|cc|sp)?"
@@ -230,6 +231,17 @@ def array_row_rules(rows: list[list[str]]) -> tuple[list[list[str]], list[int], 
                 breaks.append(index)
         data.append([first, *remaining])
     return data, breaks, edges
+
+
+def array_span_preambles(latex: str) -> Iterator[tuple[int, int, int, str]]:
+    if r"\multicolumn" not in latex:
+        return
+    parser = _Parser(latex)
+    for match in _ENVIRONMENT_TOKEN.finditer(parser.text):
+        if match[0] == r"\multicolumn":
+            parser.i = match.end()
+            count, alignment = parser._column_span()
+            yield match.start(), parser.i, count, alignment
 
 
 class BasicLatexToMathML:
@@ -704,9 +716,30 @@ class _Parser:
 
     @staticmethod
     def _array_cell(source: str) -> ET.Element:
-        items = _Parser(source).parse_sequence()
+        parser = _Parser(source)
+        attributes = {}
+        if match := _COLUMN_SPAN.match(parser.text):
+            parser.i = match.end()
+            count, align = parser._column_span()
+            payload = parser._read_braced_raw()
+            if parser.text[parser.i :].strip():
+                raise ValueError(
+                    "A LaTeX multicolumn declaration must occupy its entire array cell."
+                )
+            attributes = {"columnspan": str(count), "columnalign": align}
+            parser = _Parser(payload)
+        items = parser.parse_sequence()
         cell = items[0] if len(items) == 1 else _e("mrow", None, *items)
-        return _e("mtd", None, cell)
+        return _e("mtd", None, cell, **attributes)
+
+    def _column_span(self) -> tuple[int, str]:
+        count = self._read_braced_raw().strip()
+        alignment = self._read_braced_raw().strip()
+        if not re.fullmatch(r"[1-9][0-9]?", count) or int(count) > 64:
+            raise ValueError("LaTeX multicolumn requires a count from 1 to 64.")
+        if alignment not in _COLUMN_ALIGN:
+            raise ValueError("LaTeX multicolumn supports l, c, or r alignment.")
+        return int(count), _COLUMN_ALIGN[alignment]
 
     def _array_table(self, rows, layout, logical_width, baseline):
         rows, breaks, edges = array_row_rules(rows)
@@ -733,8 +766,25 @@ class _Parser:
         if len(specs) > 64:
             raise ValueError("Word supports up to 64 columns in a native equation matrix.")
         mrows = []
+        column_decorations = (
+            len(specs) != logical_width
+            or "solid" in lines
+            or bool({"left", "right"}.intersection(edges))
+        )
         for cells in rows:
-            data = iter(cells + [""] * (logical_width - len(cells)))
+            entries = [self._array_cell(cell) for cell in cells]
+            span_width = sum(int(cell.get("columnspan", "1")) for cell in entries)
+            if span_width > logical_width:
+                raise ValueError("A LaTeX multicolumn row exceeds the declared array width.")
+            if any("columnspan" in cell.attrib for cell in entries):
+                if column_decorations:
+                    raise ValueError("LaTeX multicolumn does not support column rules or inserts.")
+                entries.extend(self._array_cell("") for _ in range(logical_width - span_width))
+                mrows.append(_e("mtr", None, *entries))
+                continue
+            data = iter(
+                entries + [self._array_cell("") for _ in range(logical_width - len(entries))]
+            )
             mrows.append(
                 _e(
                     "mtr",
@@ -742,7 +792,9 @@ class _Parser:
                     *(
                         _e("mtd", None, _e("mtext", "\u2009"))
                         if kind == "|"
-                        else self._array_cell(value if kind == "@" else next(data))
+                        else self._array_cell(value)
+                        if kind == "@"
+                        else next(data)
                         for kind, value in specs
                     ),
                 )

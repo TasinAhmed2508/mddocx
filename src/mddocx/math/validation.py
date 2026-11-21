@@ -7,10 +7,17 @@ from unicodedata import normalize
 
 from lxml import etree
 
-from .latex import UnsupportedLatexError, _ENVIRONMENT_TOKEN, _MATRIX_ENVIRONMENTS
+from .latex import (
+    UnsupportedLatexError,
+    _ENVIRONMENT_TOKEN,
+    _MATRIX_ENVIRONMENTS,
+    _Parser,
+    array_preambles,
+)
 
 MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+_M = f"{{{OMML_NS}}}"
 ALLOWED_MATHML = {
     "math",
     "mrow",
@@ -140,12 +147,122 @@ def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
     )
     if not expected:
         return True
-    return sum(1 for _ in omml.iter(f"{{{OMML_NS}}}m", f"{{{OMML_NS}}}eqArr")) >= expected
+    visible = list(visible_omml(omml))
+    dividers = {}
+    for node in visible:
+        separator = node.find(f"./{_M}dPr/{_M}sepChr") if node.tag == _M + "d" else None
+        if separator is not None and separator.get(_M + "val") == "|":
+            dividers[node] = node.findall(_M + "e")
+    native_arrays = 0
+    for node in visible:
+        if node.tag in {_M + "m", _M + "eqArr"}:
+            argument = node.getparent()
+            group = dividers.get(argument.getparent()) if argument is not None else None
+            if not group or argument is group[0]:
+                native_arrays += 1
+    return native_arrays >= expected and _array_layout_preserved(latex, visible, dividers)
+
+
+def visible_omml(root: etree._Element):
+    """Skip the hidden, zero-width row measurements added by the ruled array layout."""
+    walker = etree.iterwalk(root, events=("start",))
+    for _, node in walker:
+        if node.tag == _M + "phant":
+            props = node.find(_M + "phantPr")
+            if (
+                props is not None
+                and not _math_flag(props, "show", default=True)
+                and _math_flag(props, "zeroWid")
+            ):
+                walker.skip_subtree()
+                continue
+        yield node
+
+
+def _math_flag(props, name, *, default=False):
+    flag = props.find(_M + name)
+    return default if flag is None else flag.get(_M + "val", "1") in {"1", "true", "on"}
+
+
+def _array_layout_preserved(latex, visible, dividers):
+    expected_rules = 0
+    expected_edges: Counter[str] = Counter()
+    insertions: Counter[str] = Counter()
+    try:
+        for _, end, columns in array_preambles(latex):
+            if columns and columns[0][0] == "|":
+                expected_edges["left"] += 1
+                columns = columns[1:]
+            if columns and columns[-1][0] == "|":
+                expected_edges["right"] += 1
+                columns = columns[:-1]
+            expected_rules += sum(kind == "|" for kind, _ in columns)
+            literals = [
+                text.strip() for kind, text in columns if kind == "@" and len(text.strip()) == 1
+            ]
+            if literals:
+                parser = _Parser(latex)
+                parser.i = end
+                row_count = len(parser._environment_rows("array", grid=True))
+                for literal in literals:
+                    insertions[literal] += row_count
+    except ValueError:
+        return False
+    if expected_rules > sum(
+        max(0, len(group) - 1)
+        for node, group in dividers.items()
+        if _math_flag(node.find(_M + "dPr"), "grow", default=True)
+    ):
+        return False
+    if expected_edges:
+        edges: Counter[str] = Counter()
+        for node in visible:
+            if (
+                node.tag == _M + "borderBoxPr"
+                and _math_flag(node, "hideTop")
+                and _math_flag(node, "hideBot")
+            ):
+                if not _math_flag(node, "hideLeft"):
+                    edges["left"] += 1
+                if not _math_flag(node, "hideRight"):
+                    edges["right"] += 1
+        if not expected_edges <= edges:
+            return False
+    if insertions:
+        compact_matrices = {
+            node
+            for node in visible
+            if node.tag == _M + "m"
+            and node.find(f"./{_M}mPr/{_M}cGpRule[@{_M}val='3']") is not None
+            and (
+                (gap := node.find(f"./{_M}mPr/{_M}cGp")) is None or gap.get(_M + "val", "0") == "0"
+            )
+        }
+        cells = Counter(
+            "".join(item.text or "" for item in visible_omml(node) if item.tag == _M + "t")
+            .replace("\u200b", "")
+            .strip()
+            for node in visible
+            if node.tag == _M + "e"
+            and node.getparent().tag == _M + "mr"
+            and node.getparent().getparent() in compact_matrices
+        )
+        if not insertions <= cells:
+            return False
+    return True
 
 
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
-    source = _GENFRAC_CONTROLS.sub("", latex)
+    source = _GENFRAC_CONTROLS.sub("", latex.strip())
+    try:
+        arrays = list(array_preambles(source))
+    except ValueError:
+        return False
+    for start, end, columns in reversed(arrays):
+        source = (
+            source[:start] + "".join(text for kind, text in columns if kind == "@") + source[end:]
+        )
     # mhchem expands scientific notation and converts a standalone v to a precipitate arrow.
     source = re.sub(
         r"(\\pu\s*\{\s*[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))[eE](?=[+-]?\d)",
@@ -158,7 +275,7 @@ def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
         source,
     )
     source = re.sub(
-        r"\\begin\s*\{(?:array|alignedat|alignat\*?)\}\s*(?:\[\s*[tcb]\s*\]\s*)?\{[^{}]*\}",
+        r"\\begin\s*\{(?:alignedat|alignat\*?)\}\s*(?:\[\s*[tcb]\s*\]\s*)?\{[^{}]*\}",
         "",
         source,
     )
@@ -185,7 +302,8 @@ def _tokens(text: str) -> list[str]:
 
 def _node_tokens(root: object) -> list[str]:
     tokens: list[str] = []
-    for node in root.iter():
+    nodes = visible_omml(root) if root.tag.startswith(_M) else root.iter()
+    for node in nodes:
         if (
             isinstance(node.tag, str)
             and node.text

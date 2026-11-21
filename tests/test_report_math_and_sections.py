@@ -10,9 +10,88 @@ from mddocx.math.converter import DefaultMathConverter
 from mddocx.math.latex import UnsupportedLatexError
 from mddocx.math.mathml import MathMLToOMML
 from mddocx.math.sidecar import MathJaxSidecar
+from mddocx.math.validation import visible_omml
 from mddocx.ooxml import bangla
 from mddocx.ooxml.package import read_parts, write_parts
 from lxml import etree
+
+
+@pytest.mark.parametrize("use_sidecar", [False, True])
+def test_styled_array_preserves_rules_repeated_columns_and_cell_content(use_sidecar):
+    sidecar = MathJaxSidecar() if use_sidecar else SimpleNamespace(available=False)
+    if use_sidecar and not sidecar.available:
+        pytest.skip("MathJax runtime is unavailable")
+    converter = DefaultMathConverter(sidecar=sidecar)
+    expression = r"\left[\begin{array}{*{2}{r}|l}a&b&c\\\frac{1}{2}&y&z\end{array}\right]"
+    equation = converter.convert(expression, display=True)
+    assert equation.engine == ("mathjax-sidecar" if use_sidecar else "mddocx-basic")
+    visible = list(visible_omml(equation.omml))
+    (divider,) = (node for node in visible if node.tag == qn("m:sepChr"))
+    assert divider.get(qn("m:val")) == "|"
+    matrices = [node for node in visible if node.tag == qn("m:m")]
+    assert [[len(row) for row in matrix.findall(qn("m:mr"))] for matrix in matrices] == [
+        [2, 2],
+        [1, 1],
+    ]
+    assert [node.get(qn("m:val")) for node in visible if node.tag == qn("m:mcJc")] == [
+        "right",
+        "right",
+        "left",
+    ]
+    assert sum(node.tag == qn("m:f") for node in visible) == 1
+    assert len(list(equation.omml.iter(qn("m:f")))) > 1
+
+
+@pytest.mark.parametrize("use_sidecar", [False, True])
+def test_decimal_array_preserves_separators_in_native_zero_gap_columns(use_sidecar):
+    sidecar = MathJaxSidecar() if use_sidecar else SimpleNamespace(available=False)
+    if use_sidecar and not sidecar.available:
+        pytest.skip("MathJax runtime is unavailable")
+    equation = DefaultMathConverter(sidecar=sidecar).convert(
+        r"\begin{array}{r@{.}l}12&34\\5&6\end{array}", display=True
+    )
+    assert equation.engine == ("mathjax-sidecar" if use_sidecar else "mddocx-basic")
+    matrix = next(equation.omml.iter(qn("m:m")))
+    assert next(matrix.iter(qn("m:cGpRule"))).get(qn("m:val")) == "3"
+    assert next(matrix.iter(qn("m:cGp"))).get(qn("m:val")) == "0"
+    assert [["".join(cell.itertext()) for cell in row] for row in matrix.iter(qn("m:mr"))] == [
+        ["12", ".", "34"],
+        ["5", ".", "6"],
+    ]
+
+
+def test_unsupported_horizontal_array_rule_is_reported():
+    expression = r"\begin{array}{r|r}a&b\\\hline c&d\end{array}"
+    result = Compiler().compile_string(f"$$\n{expression}\n$$")
+    (finding,) = result.diagnostics
+    assert finding.code == "MATH201"
+    assert "hline" in finding.message
+
+
+@pytest.mark.parametrize("change", ["vertical", "decimal", "spacing"])
+def test_verify_detects_removed_array_notation(tmp_path, change):
+    source = tmp_path / "array.md"
+    tex = (
+        r"\begin{array}{r|l}a&b\\c&d\end{array}"
+        if change == "vertical"
+        else r"\begin{array}{r@{.}l}12&34\\5&6\end{array}"
+    )
+    source.write_text(f"$$\n{tex}\n$$\n", encoding="utf-8")
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    root = etree.fromstring(parts["word/document.xml"])
+    if change == "vertical":
+        next(root.iter(qn("m:sepChr"))).set(qn("m:val"), "")
+    elif change == "spacing":
+        next(root.iter(qn("m:cGp"))).set(qn("m:val"), "40")
+    else:
+        next(node for node in root.iter(qn("m:t")) if node.text == ".").text = ","
+    parts["word/document.xml"] = etree.tostring(root)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.line) == ("VERIFY303", 1)
+    assert "matrix layout" in finding.message
 
 
 @pytest.mark.parametrize(

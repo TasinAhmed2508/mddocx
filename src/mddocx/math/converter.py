@@ -8,7 +8,7 @@ from typing import Protocol
 from lxml import etree
 
 from .chemistry import attach_chemistry_scripts
-from .latex import BasicLatexToMathML, UnsupportedLatexError
+from .latex import BasicLatexToMathML, UnsupportedLatexError, array_preambles
 from .mathml import MathMLToOMML
 from .models import MathConversion
 from .normalize import normalize_equation
@@ -141,12 +141,21 @@ class DefaultMathConverter:
         if key in self._conversions:
             return deepcopy(self._conversions[key])
         normalized = normalize_equation(latex)
+        try:
+            decorated_array = any(
+                any(kind in {"@", "|"} for kind, _ in columns)
+                or "*" in normalized.text[start:end]
+                or any(tag in normalized.text for tag in (r"\hline", r"\cline", r"\multicolumn"))
+                for start, end, columns in array_preambles(normalized.text)
+            )
+        except ValueError as exc:
+            raise UnsupportedLatexError(f"array ({exc})") from exc
         failures: list[str] = []
         engines = []
         sidecar_ready = self._sidecar.available
         if sidecar_ready:
             engines.append(("mathjax-sidecar", lambda: self._convert_sidecar(key, normalized.text)))
-        if self._external is not None:
+        if self._external is not None and not decorated_array:
             engines.append(("latex2mathml", lambda: self._external(normalized.text)))
         engines.append(("mddocx-basic", lambda: self._fallback.convert(normalized.text)))
         for engine, operation in engines:
@@ -171,7 +180,9 @@ class DefaultMathConverter:
                 omml = self.mathml_to_omml(mathml, display, root=root)
                 validate_omml(omml)
                 if not source_matrices_preserved(normalized.text, omml):
-                    raise UnsupportedLatexError(f"{engine} output lost an alignment or matrix")
+                    raise UnsupportedLatexError(
+                        f"{engine} output lost an alignment or matrix layout"
+                    )
                 fingerprint = semantic_fingerprint(root)
                 semantic_valid = semantic_tokens_preserved(root, omml)
                 if not semantic_valid and engine != "mddocx-basic":

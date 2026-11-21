@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve vertical rules, repeated column declarations, and decimal separators in
+  editable LaTeX arrays. Report unsupported horizontal rules, frames, and cell spans.
 - Embed pictures and retain hyperlinks in footnotes and endnotes. Preserve notes already
   present in a Word template, verify note relationships, and report failures at the note
   definition. Notes now use the same strict math policy as the body.

@@ -24,7 +24,12 @@ from .inspection import M, NS, R, W
 from .layout import LayoutPlanner
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
-from .math.validation import source_matrices_preserved, source_tokens_preserved, validate_omml
+from .math.validation import (
+    source_matrices_preserved,
+    source_tokens_preserved,
+    validate_omml,
+    visible_omml,
+)
 from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import clean_xml_text
@@ -517,11 +522,13 @@ def _equation_findings(
             elif not source_matrices_preserved(normalized, equation):
                 yield _finding(
                     "VERIFY303",
-                    "Native equation lost an alignment array or matrix.",
+                    "Native equation lost an alignment array or matrix layout.",
                     node,
                     part=part,
                 )
-            elif any(next(equation.iter(f"{{{M}}}{tag}"), None) is None for tag in required):
+            elif required and not required.issubset(
+                etree.QName(element).localname for element in visible_omml(equation)
+            ):
                 yield _finding(
                     "VERIFY303",
                     "Native equation lost a fraction or radical structure.",

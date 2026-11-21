@@ -11,6 +11,8 @@ renderer, which applies the configured editable-text fallback or strict policy.
 The built-in engine preserves `alignedat` alignment pairs, simple `array` column
 alignment, and nested matrices when the MathJax runtime is unavailable. Explicit
 top and bottom alignment map to native Word matrix baseline properties.
+Ruled arrays use native Word delimiters between matrix groups. Invisible row-height
+measurements keep the groups aligned without contributing source tokens during verification.
 
 An equation may start with one or more `\newcommand` definitions. Positional arguments
 and an optional default for the first argument expand within that equation. The same

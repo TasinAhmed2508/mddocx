@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 import re
 from xml.etree import ElementTree as ET
 
@@ -9,6 +10,7 @@ _ENVIRONMENT_TOKEN = re.compile(r"\\(?:(begin|end)\s*\{([^{}]+)\}|[A-Za-z]+|.)|[
 _ALIGN_PAIRS = {"alignedat", "alignat", "alignat*"}
 _ALIGN_COLUMNS = _ALIGN_PAIRS | {"aligned", "align", "align*", "split"}
 _OPTIONAL_ALIGNMENT = {"alignedat", "aligned", "gathered", "array"}
+_COLUMN_ALIGN = {"l": "left", "c": "center", "r": "right"}
 _TEXT_ESCAPE = re.compile(r"\\([&#%{}_$])")
 _RULE_THICKNESS = re.compile(
     r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*(?:pt|px|em|ex|mu|in|cm|mm|pc|bp|dd|cc|sp)?"
@@ -196,6 +198,18 @@ def _e(tag: str, text: str | None = None, *children: ET.Element, **attrs: str) -
     for child in children:
         el.append(child)
     return el
+
+
+def array_preambles(latex: str) -> Iterator[tuple[int, int, list[tuple[str, str]]]]:
+    if r"\begin" not in latex or "array" not in latex:
+        return
+    parser = _Parser(latex)
+    for match in _ENVIRONMENT_TOKEN.finditer(parser.text):
+        if match.start() >= parser.i and match[1] == "begin" and match[2].strip() == "array":
+            parser.i = match.end()
+            parser._read_bracket_raw()
+            columns = _Parser(parser._read_braced_raw())._array_columns()
+            yield match.start(), parser.i, columns
 
 
 class BasicLatexToMathML:
@@ -594,16 +608,17 @@ class _Parser:
         if align is None:
             raise ValueError(f"Invalid vertical alignment for LaTeX environment: {env}")
         alignments: list[str] = []
+        layout: list[tuple[str, str]] = []
         if env in _ALIGN_PAIRS:
             pairs = self._read_braced_raw().strip()
             if not re.fullmatch(r"[1-9][0-9]?", pairs) or int(pairs) > 32:
                 raise ValueError("alignedat requires 1 to 32 alignment pairs for Word.")
             alignments = ["right", "left"] * int(pairs)
         if env == "array":
-            spec = "".join(self._read_braced_raw().split())
-            if not re.fullmatch(r"[lcr]{1,64}", spec):
-                raise ValueError("Word fallback supports up to 64 l/c/r array columns.")
-            alignments = [{"l": "left", "c": "center", "r": "right"}[column] for column in spec]
+            layout = _Parser(self._read_braced_raw())._array_columns()
+            alignments = [_COLUMN_ALIGN[kind] for kind, _ in layout if kind in _COLUMN_ALIGN]
+            if not alignments:
+                raise ValueError("LaTeX array needs at least one data column.")
 
         rows = self._environment_rows(env, grid=grid)
         if not grid:
@@ -619,16 +634,15 @@ class _Parser:
             alignments = ["right" if index % 2 == 0 else "left" for index in range(width)]
         if env == "cases":
             alignments = ["left"]
+        if layout:
+            return self._array_table(rows, layout, len(alignments), align)
         mrows: list[ET.Element] = []
         for cells in rows:
-            if env in _ALIGN_PAIRS or env == "array":
+            if env in _ALIGN_PAIRS:
                 cells.extend([""] * (len(alignments) - len(cells)))
             mtds = []
             for cell in cells:
-                parser = _Parser(cell.strip())
-                items = parser.parse_sequence()
-                cell_node = items[0] if len(items) == 1 else _e("mrow", None, *items)
-                mtds.append(_e("mtd", None, cell_node))
+                mtds.append(self._array_cell(cell))
             mrows.append(_e("mtr", None, *mtds))
         table = _e(
             "mtable",
@@ -641,6 +655,86 @@ class _Parser:
             return table
         opening, closing = _MATRIX_DELIMITERS[env]
         return _e("mfenced", None, table, open=opening, close=closing)
+
+    def _array_columns(self, depth: int = 0) -> list[tuple[str, str]]:
+        if depth > 8:
+            raise ValueError("LaTeX array column declarations are nested too deeply.")
+        columns: list[tuple[str, str]] = []
+        while self.i < len(self.text):
+            kind = self.text[self.i]
+            self.i += 1
+            if kind.isspace():
+                continue
+            if kind in _COLUMN_ALIGN or kind == "|":
+                columns.append((kind, ""))
+            elif kind == "@":
+                columns.append((kind, self._read_braced_raw()))
+            elif kind == "*":
+                count = self._read_braced_raw().strip()
+                if not re.fullmatch(r"[1-9][0-9]?", count) or int(count) > 64:
+                    raise ValueError("LaTeX array repetition requires a count from 1 to 64.")
+                columns.extend(
+                    _Parser(self._read_braced_raw())._array_columns(depth + 1) * int(count)
+                )
+            else:
+                raise ValueError(f"Unsupported LaTeX array column declaration: {kind}")
+            if len(columns) > 128:
+                raise ValueError("LaTeX array column declaration exceeds the Word layout limit.")
+        return columns
+
+    @staticmethod
+    def _array_cell(source: str) -> ET.Element:
+        items = _Parser(source).parse_sequence()
+        cell = items[0] if len(items) == 1 else _e("mrow", None, *items)
+        return _e("mtd", None, cell)
+
+    def _array_table(self, rows, layout, logical_width, baseline):
+        edges = []
+        for index, name in ((0, "left"), (-1, "right")):
+            if layout and layout[index][0] == "|":
+                edges.append(name)
+                layout.pop(index)
+                if layout and layout[index][0] == "|":
+                    raise ValueError("Repeated outer rules are unsupported in native Word arrays.")
+        specs, gaps, lines = [], [], []
+        ruled = False
+        for kind, value in layout:
+            if kind == "|" and not ruled:
+                ruled = True
+                continue
+            if specs:
+                lines.append("solid" if ruled else "none")
+                gaps.append("0" if specs[-1][0] in {"@", "|"} or kind in {"@", "|"} else "1em")
+            specs.append((kind, value))
+            ruled = kind == "|"
+        if len(specs) > 64:
+            raise ValueError("Word supports up to 64 columns in a native equation matrix.")
+        mrows = []
+        for cells in rows:
+            data = iter(cells + [""] * (logical_width - len(cells)))
+            mrows.append(
+                _e(
+                    "mtr",
+                    None,
+                    *(
+                        _e("mtd", None, _e("mtext", "\u2009"))
+                        if kind == "|"
+                        else self._array_cell(value if kind == "@" else next(data))
+                        for kind, value in specs
+                    ),
+                )
+            )
+        table = _e(
+            "mtable",
+            None,
+            *mrows,
+            columnalign=" ".join(_COLUMN_ALIGN.get(kind, "center") for kind, _ in specs),
+            columnspacing=" ".join(gaps),
+            columnlines=" ".join(lines),
+            align=baseline,
+            framespacing=".5em .125em",
+        )
+        return _e("menclose", None, table, notation=" ".join(edges)) if edges else table
 
     def _environment_rows(self, env: str, *, grid: bool) -> list[list[str]]:
         rows: list[list[str]] = []

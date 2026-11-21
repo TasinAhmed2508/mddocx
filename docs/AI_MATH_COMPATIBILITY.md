@@ -30,6 +30,13 @@ Leading `\newcommand` declarations can provide positional arguments and a defaul
 first argument. Definitions apply within the equation that contains them. AMS `\genfrac`
 preserves the delimiters, numerator, denominator, and zero-width rule in editable Word math.
 
+LaTeX arrays support `l`, `c`, and `r` columns, bounded repetition such as
+`*{2}{r}`, vertical rules, and intercolumn expressions such as `r@{.}l` for aligned
+decimal points. Vertical rules stay aligned across tall cells such as fractions. Mixed
+intercolumn spacing uses Word's native zero-gap columns with an em space at ordinary
+column boundaries. Horizontal rules, array frames, and `\multicolumn` use the math
+failure policy.
+
 Unsupported syntax produces a `MATH201` warning and is kept as editable source text by default.
 Use `--strict-math` to fail instead. Diagnostics identify the active conversion engine and the
 underlying conversion error.

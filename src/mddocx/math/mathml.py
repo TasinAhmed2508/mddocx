@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import re
 
 from lxml import etree
@@ -415,22 +416,61 @@ class MathMLToOMML:
         if width > 64:
             # Word limits native matrices to 64 columns (MS-OI29500 §22.1.2.67).
             raise ValueError("Word supports up to 64 columns in a native equation matrix.")
-        matrix = OxmlElement("m:m")
         alignments = node.get("columnalign", "").split()
         if not alignments:
             alignments = [cell.get("columnalign", "center") for cell in rows[0]]
+        alignments = (alignments + [alignments[-1] if alignments else "center"] * width)[:width]
         baseline = {"baseline 1": "top", "baseline -1": "bot", "top": "top", "bottom": "bot"}.get(
             node.get("align", "")
         )
+        rules = node.get("columnlines", "none").split() or ["none"]
+        if (
+            any(rule != "none" for rule in node.get("rowlines", "").split())
+            or node.get("frame", "none") != "none"
+        ):
+            raise ValueError(
+                "Horizontal rules or a frame on the MathML array are unsupported in Word."
+            )
+        if any(rule not in {"none", "solid"} for rule in rules):
+            raise ValueError("Word mathematical arrays require solid vertical rules.")
+        breaks = [
+            index + 1 for index in range(width - 1) if rules[min(index, len(rules) - 1)] == "solid"
+        ]
+        gaps = node.get("columnspacing", "").split()
+        compact = (
+            node.get("framespacing") is not None
+            and bool(gaps)
+            and any(_ZERO_RULE.fullmatch(gap) for gap in gaps)
+        )
+        arguments = [
+            [
+                self._argument("m:e", row[index] if index < len(row) else None, variant)
+                for index in range(width)
+            ]
+            for row in rows
+        ]
+        if not breaks:
+            self._array_gaps(arguments, gaps, compact, 0)
+            parent.append(self._matrix(arguments, alignments, baseline, compact))
+            return
+        groups = list(zip([0, *breaks], [*breaks, width], strict=True))
+        self._append_ruled_matrix(parent, arguments, alignments, baseline, compact, gaps, groups)
+
+    def _matrix(self, rows, alignments, baseline, compact):
+        matrix = OxmlElement("m:m")
         properties = OxmlElement("m:mPr")
         if baseline:
             base_jc = OxmlElement("m:baseJc")
             base_jc.set(qn("m:val"), baseline)
             properties.append(base_jc)
+        if compact:
+            for name, value in (("cGpRule", "3"), ("cGp", "0")):
+                flag = OxmlElement(f"m:{name}")
+                flag.set(qn("m:val"), value)
+                properties.append(flag)
         if any(alignment in {"left", "right"} for alignment in alignments):
             columns = OxmlElement("m:mcs")
-            for index in range(width):
-                alignment = alignments[min(index, len(alignments) - 1)]
+            for alignment in alignments:
                 column = OxmlElement("m:mc")
                 column_properties = OxmlElement("m:mcPr")
                 # Word can ignore justification when the column group omits its count.
@@ -448,10 +488,53 @@ class MathMLToOMML:
             matrix.append(properties)
         for row in rows:
             mr = OxmlElement("m:mr")
-            for index in range(width):
-                mr.append(self._argument("m:e", row[index] if index < len(row) else None, variant))
+            mr.extend(row)
             matrix.append(mr)
-        parent.append(matrix)
+        return matrix
+
+    def _array_gaps(self, rows, gaps, compact, start):
+        if not compact:
+            return
+        for index in range(len(rows[0]) - 1):
+            gap = gaps[min(start + index, len(gaps) - 1)]
+            if not _ZERO_RULE.fullmatch(gap):
+                for row in rows:
+                    self._run(row[index], "\u2003", variant="normal")
+
+    def _append_ruled_matrix(self, parent, rows, alignments, baseline, compact, gaps, groups):
+        originals = [[tuple(cell) for cell in row] for row in rows]
+        copies = sum(
+            sum(1 for _ in child.iter()) for row in originals for cell in row for child in cell
+        ) * (len(groups) - 1)
+        if copies > 100_000:
+            raise ValueError("Ruled array layout exceeds the native Word equation size limit.")
+        delimiter = OxmlElement("m:d")
+        properties = OxmlElement("m:dPr")
+        for name, value in (("begChr", ""), ("sepChr", "|"), ("endChr", ""), ("grow", "1")):
+            item = OxmlElement(f"m:{name}")
+            item.set(qn("m:val"), value)
+            properties.append(item)
+        delimiter.append(properties)
+        for start, end in groups:
+            section = [row[start:end] for row in rows]
+            for row, original in zip(section, originals, strict=True):
+                # Sharing the invisible height of the other cells keeps tall rows aligned.
+                phantom = OxmlElement("m:phant")
+                settings = OxmlElement("m:phantPr")
+                for name, value in (("show", "0"), ("zeroWid", "1")):
+                    flag = OxmlElement(f"m:{name}")
+                    flag.set(qn("m:val"), value)
+                    settings.append(flag)
+                heights = OxmlElement("m:e")
+                for cell in original[:start] + original[end:]:
+                    heights.extend(deepcopy(item) for item in cell)
+                phantom.extend((settings, heights))
+                row[0].append(phantom)
+            self._array_gaps(section, gaps, compact, start)
+            group = OxmlElement("m:e")
+            group.append(self._matrix(section, alignments[start:end], baseline, compact))
+            delimiter.append(group)
+        parent.append(delimiter)
 
     def _append_row(self, parent, children: list, variant: str | None) -> None:
         i = 0

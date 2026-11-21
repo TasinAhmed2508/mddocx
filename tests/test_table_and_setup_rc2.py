@@ -116,6 +116,74 @@ def test_native_html_spans_and_verify_drift(tmp_path):
     assert not compiler.verify(source, write_parts(parts)).ok
 
 
+@pytest.mark.parametrize("kind", ["html", "layout-table"])
+def test_vertical_merges_over_a_thousand_rows_render_and_verify(tmp_path, kind):
+    height = 1061
+    if kind == "html":
+        body = "<tr><td>Reading</td></tr>\n" * (height - 1)
+        text = (
+            '<table><tbody><tr><td rowspan="0">Station</td><td>First</td></tr>\n'
+            + body
+            + "</tbody></table>\n"
+        )
+    else:
+        rows = '  - ["", "Reading"]\n' * (height - 1)
+        text = (
+            '```layout-table\nrows:\n  - ["Station", "First\\nSample"]\n'
+            + rows
+            + f"merges: [{{from: [0, 0], to: [{height - 1}, 0]}}]\n```\n"
+        )
+    source = tmp_path / "long.md"
+    source.write_text(text, encoding="utf-8")
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    parts = read_parts(blob)
+    root = etree.fromstring(parts["word/document.xml"])
+    rows = list(root.iter(qn("w:tr")))
+    merges = list(root.iter(qn("w:vMerge")))
+    assert len(rows) == height
+    assert [merge.get(qn("w:val"), "continue") for merge in merges] == ["restart"] + [
+        "continue"
+    ] * (height - 1)
+    assert "".join(rows[-1].itertext()) == "Reading"
+    assert compiler.verify(source, blob).ok
+    body = root.find(qn("w:body"))
+    body.insert(len(body) - 1, etree.Element(qn("w:p")))
+    parts["word/document.xml"] = etree.tostring(root)
+    assert compiler.verify(source, write_parts(parts)).ok
+    merges[-1].getparent().remove(merges[-1])
+    parts["word/document.xml"] = etree.tostring(root)
+    assert any(
+        finding.code == "VERIFY303"
+        for finding in compiler.verify(source, write_parts(parts)).findings
+    )
+
+
+@pytest.mark.parametrize("custom_border", [False, True])
+def test_shaded_merged_header_boundaries_use_the_grid_style(tmp_path, custom_border):
+    config = RenderConfig(theme="report")
+    if custom_border:
+        template = Document()
+        style = template.styles["Table Grid"]._element
+        edge = style.find("./w:tblPr/w:tblBorders/w:insideH", style.nsmap)
+        edge.set(qn("w:val"), "nil")
+        config.template = tmp_path / "template.docx"
+        template.save(config.template)
+    source = (
+        '<table><thead><tr><th rowspan="2">Region</th><th colspan="2">Readings</th></tr>'
+        "<tr><th>Low</th><th>High</th></tr></thead>"
+        "<tbody><tr><td>A</td><td>1</td><td>2</td></tr></tbody></table>"
+    )
+    blob = Compiler(config).compile_string(source).output_bytes
+    root = etree.fromstring(read_parts(blob)["word/document.xml"])
+    borders = list(root.iter(qn("w:tcBorders")))
+    if custom_border:
+        assert not borders
+    else:
+        assert len(borders) == 2
+        assert [border.find(qn("w:bottom")).get(qn("w:sz")) for border in borders] == ["8", "8"]
+
+
 def test_html_row_groups_keep_merges_headers_and_footer_order(tmp_path):
     source = tmp_path / "groups.md"
     source.write_text(
@@ -224,11 +292,18 @@ def test_invalid_html_preserves_source_and_v2_ast_uses_unit_spans():
     assert restored.row_span == restored.column_span == 1
 
 
-def test_table_over_budget_keeps_previous_docx(tmp_path):
+@pytest.mark.parametrize(
+    "text",
+    [
+        '<table><tr><td colspan="4">Wide</td></tr></table>',
+        '```layout-table\nrows: [["Wide", "", "", ""]]\nmerges: [{from: [0,0], to: [0,3]}]\n```',
+    ],
+)
+def test_table_over_budget_keeps_previous_docx(tmp_path, text):
     source = tmp_path / "report.md"
     output = source.with_suffix(".docx")
     output.write_bytes(b"previous")
-    source.write_text("<table><tr><td colspan='4'>Wide</td></tr></table>", encoding="utf-8")
+    source.write_text(text, encoding="utf-8")
     config = RenderConfig()
     config.limits.max_table_cells = 3
     with pytest.raises(MddocxError, match="LIMIT404"):

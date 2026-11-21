@@ -96,6 +96,13 @@ Report-theme cells**, down from nine pages with body paragraph spacing. Both exp
 contain all 84 record IDs exactly once, with repeated table headers and portrait
 pages before and after the landscape section.
 
+Five alternating pairs on Windows with Python 3.12 compared direct grid emission
+against `c5f7070`. For a 160-row, ten-column HTML table with twenty merged
+eight-row by four-column groups, median conversion fell from **0.6186 s to 0.5458 s**
+(11.8%). A dense 60 × 24 table measured **0.7944 s and 0.8110 s**, and the
+25-section mixed report measured **0.4724 s and 0.4763 s**, respectively. Each
+workload produced byte-identical DOCX output across all ten runs.
+
 ## Markdown math scanning
 
 Five alternating pairs on Windows with Python 3.12 compared the shared delimiter

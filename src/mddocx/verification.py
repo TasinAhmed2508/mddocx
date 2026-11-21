@@ -22,6 +22,7 @@ from .data import load_data_table
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
 from .layout import LayoutPlanner
+from .layout_table import parse_layout_table
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
 from .math.validation import (
@@ -34,7 +35,7 @@ from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import clean_xml_text
 from .references import ReferenceRegistry
-from .table_grid import repeatable_header_rows, table_grid
+from .table_grid import iter_grid_rows, repeatable_header_rows, table_grid
 
 BODY = "word/document.xml"
 _HEADING = re.compile(r"(?:MD)?Heading[ ]?([1-6])", re.I)
@@ -273,35 +274,27 @@ def compare_document(
                 if rotate:
                     start_section("landscape", node, automatic=True)
                 repeat = repeatable_header_rows(node) if config.table.repeat_header else 0
-                active: dict[int, tuple[int, int]] = {}
-                expected_rows = []
-                for index, entries in enumerate(placements):
-                    row = {column: cell for column, cell in entries}
-                    cells = []
-                    column = 0
-                    while column < columns:
-                        if column in active and active[column][0] > index:
-                            span = active[column][1]
-                            cells.append((span, "continue", ()))
-                        elif column in row:
-                            cell = row[column]
-                            span = cell.column_span
-                            merge = "restart" if cell.row_span > 1 else None
-                            if merge:
-                                active[column] = (index + cell.row_span, span)
-                            cells.append((span, merge, expected_inlines(cell.children)))
-                        else:
-                            span = 1
-                            cells.append((span, None, ()))
-                        column += span
-                    expected_rows.append((index < repeat, tuple(cells)))
+                expected_rows = tuple(
+                    (
+                        index < repeat,
+                        tuple(
+                            (
+                                entry.span,
+                                entry.merge,
+                                expected_inlines(entry.cell.children) if entry.cell else (),
+                            )
+                            for entry in cells
+                        ),
+                    )
+                    for index, cells in enumerate(iter_grid_rows(columns, placements))
+                )
                 title = (
                     (node.caption or ("Table" if node.identifier else None))
                     if config.references.captions
                     else None
                 )
                 captioned(
-                    [_Unit("table", (columns, tuple(expected_rows)), node)] if columns else [],
+                    [_Unit("table", (columns, expected_rows), node)] if columns else [],
                     "Table",
                     title,
                     node,
@@ -347,13 +340,36 @@ def compare_document(
                     expected.append(
                         _Unit("caption", ("", clean_xml_text(node.caption), None), node)
                     )
+            elif (
+                isinstance(node, block.CodeBlock)
+                and (node.language or "").lower() == "layout-table"
+            ):
+                rows, weights, placements = parse_layout_table(node, config.limits.max_table_cells)
+                cells = tuple(
+                    (
+                        False,
+                        tuple(
+                            (
+                                entry.span,
+                                entry.merge,
+                                _layout_cell_tokens(row[entry.column])
+                                if entry.cell is not None
+                                else (),
+                            )
+                            for entry in grid
+                        ),
+                    )
+                    for row, grid in zip(
+                        rows, iter_grid_rows(len(weights), placements), strict=True
+                    )
+                )
+                expected.append(_Unit("table", (len(weights), cells), node))
             elif isinstance(node, block.CodeBlock) and (node.language or "").lower() not in {
                 "",
                 "text",
                 "plain",
                 "plaintext",
                 "form",
-                "layout-table",
                 "mermaid",
             }:
                 title = (
@@ -645,6 +661,13 @@ def _merge_text(tokens) -> tuple:
     return tuple(merged)
 
 
+def _layout_cell_tokens(text: str) -> tuple:
+    return _merge_text(
+        ("break",) if part in {"\n", "\r"} else part
+        for part in re.split(r"([\r\n])", clean_xml_text(text))
+    )
+
+
 def _plain_text(nodes) -> str:
     return clean_xml_text(
         "".join(
@@ -755,6 +778,15 @@ def _read_body(
             pending = child.find("w:pPr/w:sectPr", NS)
             tokens = _read_inlines(child, links)
             before, after = child.getprevious(), child.getnext()
+            if (
+                len(child) == 0
+                and before is not None
+                and before.tag == f"{{{W}}}tbl"
+                and after is not None
+                and after.tag == f"{{{W}}}sectPr"
+            ):
+                # Word adds an empty final paragraph when saving a document ending in a table.
+                continue
             if (
                 not tokens
                 and before is not None

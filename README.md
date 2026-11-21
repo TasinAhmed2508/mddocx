@@ -467,6 +467,7 @@ Rows must have equal numbers of string cells; widths are positive relative weigh
 Merge coordinates are zero-based `[row, column]` pairs with inclusive endpoints.
 Covered cells must be empty, and merge rectangles cannot overlap. This preserves
 content and makes scan-specific structure explicit rather than guessing from text.
+`mddocx verify` checks the grid, merged spans, and cell text in the resulting Word table.
 
 ````markdown
 ```layout-table

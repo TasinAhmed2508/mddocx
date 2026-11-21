@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Write merged Word cells directly so long HTML and `layout-table` spans convert
+  without recursive merging. Keep horizontal borders visible around shaded merged
+  headers. Offline verification now checks explicit `layout-table` cells and spans.
 - Keep TeX in HTML table cells as editable Word math while preserving code and link
   targets. Honor HTML footer order and resolve `rowspan="0"` within each row group.
 - Render LaTeX `\multicolumn` as editable Word math for nested and disjoint spans.

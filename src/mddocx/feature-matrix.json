@@ -52,7 +52,7 @@
     },
     {
       "id": "tables",
-      "syntax": "GFM pipe tables, aligned fixed-width tables, and HTML table row groups, spans, and TeX cell content",
+      "syntax": "GFM pipe tables, aligned fixed-width tables, HTML table row groups and spans, and explicit layout-table fences",
       "ast": "Table, TableRow and TableCell",
       "ooxml": "native w:tbl with fixed widths, alignment, repeated headers, gridSpan, and vMerge",
       "malformed_diagnostic": "TABLE201 for preserved extra cells, TABLE202 for literal HTML fallback, TABLE401–403 for invalid Word grids",
@@ -63,7 +63,7 @@
         "tests/test_technical_report.py",
         "tests/test_table_and_setup_rc2.py"
       ],
-      "verify": "Row order, repeated headers, cell spans and content, links, pictures, and native math"
+      "verify": "Row order, repeated headers, cell spans and content, links, pictures, native math, and explicit layout-table grids"
     },
     {
       "id": "word-sections",

@@ -1,12 +1,20 @@
 from __future__ import annotations
 
-from typing import NoReturn
+from collections.abc import Iterator
+from typing import Literal, NamedTuple, NoReturn
 
 from .ast.base import SourcePosition
 from .ast.block import Table, TableCell
 from .diagnostics import Diagnostic, MddocxError
 
 WORD_COLUMNS = 63
+
+
+class GridCell(NamedTuple):
+    column: int
+    span: int
+    cell: TableCell | None
+    merge: Literal["restart", "continue"] | None = None
 
 
 def check_grid_size(columns: int, rows: int, budget: int, source: SourcePosition | None) -> None:
@@ -58,6 +66,32 @@ def table_grid(
             column = right
         rows.append(placements)
     return width, rows
+
+
+def iter_grid_rows(
+    columns: int, placements: list[list[tuple[int, TableCell]]]
+) -> Iterator[list[GridCell]]:
+    """Expand validated placements to the physical cells of each Word row."""
+    active: dict[int, tuple[int, int]] = {}
+    for index, entries in enumerate(placements):
+        row = dict(entries)
+        cells = []
+        column = 0
+        while column < columns:
+            end, span = active.get(column, (0, 1))
+            if end > index:
+                cells.append(GridCell(column, span, None, "continue"))
+            elif (cell := row.get(column)) is not None:
+                span = cell.column_span
+                merge: Literal["restart"] | None = "restart" if cell.row_span > 1 else None
+                if merge:
+                    active[column] = (index + cell.row_span, span)
+                cells.append(GridCell(column, span, cell, merge))
+            else:
+                span = 1
+                cells.append(GridCell(column, span, None))
+            column += span
+        yield cells
 
 
 def repeatable_header_rows(table: Table) -> int:

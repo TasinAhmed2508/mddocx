@@ -210,8 +210,10 @@ Run mddocx --help for the complete command reference.
 
 GFM pipe tables, consistently aligned fixed-width tables, and complete HTML tables convert to
 editable Word tables. HTML table captions, header groups, alignment, line breaks, and merged
-cells are supported. Extra pipe cells widen the table and produce a diagnostic. Missing cells
-are padded. Unsupported HTML tables remain visible as source text with a diagnostic.
+cells are supported. HTML footers follow body rows, and `rowspan="0"` merges to the end of
+its own row group. TeX delimiters in HTML cell text produce editable equations. Code and link
+targets keep their literal text. Extra pipe cells widen the table and produce a diagnostic.
+Missing cells are padded. Unsupported HTML tables remain visible as source text with a diagnostic.
 
 ## Verify, recover, and watch
 

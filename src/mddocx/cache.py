@@ -8,7 +8,7 @@ from .ast.codec import AST_SCHEMA_NAME, AST_SCHEMA_VERSION, document_from_json, 
 from .config import CacheConfig
 from .output import atomic_write_bytes
 
-_AST_CACHE_SCHEMA = f"{AST_SCHEMA_NAME}-v{AST_SCHEMA_VERSION}-parser4"
+_AST_CACHE_SCHEMA = f"{AST_SCHEMA_NAME}-v{AST_SCHEMA_VERSION}-parser5"
 
 
 class AstCache:

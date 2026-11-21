@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep TeX in HTML table cells as editable Word math while preserving code and link
+  targets. Honor HTML footer order and resolve `rowspan="0"` within each row group.
 - Render LaTeX `\multicolumn` as editable Word math for nested and disjoint spans.
   Offline verification checks span widths and alignment and accepts the default math
   properties Word omits when saving a document.

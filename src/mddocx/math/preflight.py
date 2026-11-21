@@ -114,7 +114,10 @@ def inspect_math(
     report = MathPreflightReport(
         engine=converter.engine_name,
         source_file=source_file,
-        syntax_issues=find_math_syntax_issues(markdown),
+        syntax_issues=sorted(
+            [*find_math_syntax_issues(markdown), *parser.table_math_syntax_issues],
+            key=lambda issue: issue.line,
+        ),
     )
     equations = list(_equation_nodes(document))
     converter.prepare_batch([(node.source_text, isinstance(node, MathBlock)) for node in equations])

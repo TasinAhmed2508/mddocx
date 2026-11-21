@@ -48,6 +48,7 @@ from mddocx.ast.inline import (
     Comment,
 )
 from .compatibility import (
+    MathSyntaxIssue,
     normalize_export_citations,
     extract_footnote_definitions,
     normalize_math_syntax,
@@ -187,6 +188,7 @@ class MarkdownParser:
         sanitize_metadata: bool = True,
     ) -> Document:
         self.source_file = source_file
+        self.table_math_syntax_issues: list[MathSyntaxIssue] = []
         if sanitize_metadata:
             markdown = sanitize_markdown_metadata(markdown, self.metadata_config).markdown
         metadata, body, line_offset = split_front_matter(markdown, source_file=self.source_file)

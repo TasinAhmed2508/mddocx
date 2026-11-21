@@ -96,6 +96,15 @@ Report-theme cells**, down from nine pages with body paragraph spacing. Both exp
 contain all 84 record IDs exactly once, with repeated table headers and portrait
 pages before and after the landscape section.
 
+## Markdown math scanning
+
+Five alternating pairs on Windows with Python 3.12 compared the shared delimiter
+scanner with commit `7ffe9cf`. For `build_benchmark_markdown(500)`, median math
+normalization went from **20.11 ms to 10.83 ms**, averaging 12 normalizations per
+process after warming up. Whole-source parsing went from **250.18 ms to 226.75 ms**.
+The 50-section mixed report rendered in **822.68 ms and 823.46 ms**, respectively,
+and produced identical DOCX bytes across all ten runs.
+
 ## Repeated Python-only alignments
 
 On Windows with Python 3.12 and Node.js disabled, five alternating pairs of

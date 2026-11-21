@@ -8,11 +8,14 @@ from lxml import etree
 import pytest
 
 from mddocx import Compiler, RenderConfig
+from mddocx.ast.base import iter_nodes
 from mddocx.ast.block import CodeBlock, Heading, Table
 from mddocx.ast.codec import document_from_json
+from mddocx.ast.inline import InlineCode, InlineMath
 from mddocx.cli import main
 from mddocx.diagnostics import MddocxError
 from mddocx.interactive.shell import InteractiveConsole
+from mddocx.math.preflight import inspect_math
 from mddocx.ooxml.package import read_parts, write_parts
 
 
@@ -111,6 +114,94 @@ def test_native_html_spans_and_verify_drift(tmp_path):
     marker.getparent().remove(marker)
     parts["word/document.xml"] = etree.tostring(root)
     assert not compiler.verify(source, write_parts(parts)).ok
+
+
+def test_html_row_groups_keep_merges_headers_and_footer_order(tmp_path):
+    source = tmp_path / "groups.md"
+    source.write_text(
+        '<table><thead><tr><th rowspan="0">Station</th><th colspan="2">Readings</th></tr>\n'
+        "<tr><th>Minimum</th><th>Maximum</th></tr></thead>\n"
+        '<tfoot><tr><th colspan="2">Total</th><td>4</td></tr></tfoot>\n'
+        '<tbody><tr><td rowspan="0">A</td><td>1</td><td>2</td></tr>\n'
+        "<tr><td>2</td><td>3</td></tr></tbody>\n"
+        "<tbody><tr><td>B</td><td>3</td><td>4</td></tr></tbody></table>\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    output = source.with_suffix(".docx")
+    docx = Document(BytesIO(compiler.compile_file(source, output).output_bytes))
+    (table,) = docx.tables
+    assert [row.cells[0].text for row in table.rows] == [
+        "Station",
+        "Station",
+        "A",
+        "A",
+        "B",
+        "Total",
+    ]
+    assert table.cell(0, 1).text == table.cell(0, 2).text == "Readings"
+    assert all(
+        row._tr.find("./w:trPr/w:tblHeader", row._tr.nsmap) is not None for row in table.rows[:2]
+    )
+    assert table.rows[-1]._tr.find("./w:trPr/w:tblHeader", table._tbl.nsmap) is None
+    assert compiler.verify(source, output).ok
+
+
+def test_html_cell_math_leaves_markup_code_and_link_targets_intact(tmp_path):
+    source = tmp_path / "formulas.md"
+    markdown = (
+        "<table><tbody><tr><td><code>\\(literal $x$</code> and <strong>\\(\\frac{1}{2}\\)</strong>\n"
+        '<a href="https://example.com/?q=$x$">Review</a></td>\n'
+        "<td>\\[x&lt;y\\]<br>$z_2$<p>\n$$\n\\sqrt{x^2+1}\n$$\n</p></td></tr></tbody></table>\n"
+        "# Following\n"
+    )
+    source.write_text(markdown, encoding="utf-8")
+    preflight = inspect_math(markdown, source_file=str(source))
+    assert preflight.native == 4 and not preflight.syntax_issues
+    compiler = Compiler()
+    output = source.with_suffix(".docx")
+    blob = compiler.compile_file(source, output).output_bytes
+    parts = read_parts(blob)
+    root = etree.fromstring(parts["word/document.xml"])
+    assert len(list(root.iter(qn("m:oMath")))) == 4
+    assert r"\(literal $x$" in "".join(root.itertext())
+    assert b"MDDOCXMATH" not in parts["word/document.xml"]
+    relationships = etree.fromstring(parts["word/_rels/document.xml.rels"])
+    assert any(rel.get("Target") == "https://example.com/?q=$x$" for rel in relationships)
+    assert compiler.verify(source, blob).ok
+    math = next(root.iter(qn("m:oMath")))
+    math.getparent().remove(math)
+    parts["word/document.xml"] = etree.tostring(root)
+    assert any(
+        finding.code == "VERIFY303"
+        for finding in compiler.verify(source, write_parts(parts)).findings
+    )
+
+
+def test_math_preflight_counts_unclosed_cell_delimiters_but_ignores_literal_code():
+    report = inspect_math(
+        "<table><tr><td><code>\\(literal</code>\n<span>\\(unclosed</span>\n</td></tr></table>"
+    )
+    (issue,) = report.syntax_issues
+    assert issue.line == 2 and "Unterminated table math delimiter" in issue.message
+
+
+@pytest.mark.parametrize(
+    "source, literal",
+    [
+        (r"- > <table><tr><td><code>$value$</code> \(x\)</td></tr></table>", "$value$"),
+        (
+            "<table><tr><td><code>\n```\n$value$\n```\n</code> \\(x\\)</td></tr></table>\n# After",
+            "\n```\n$value$\n```\n",
+        ),
+    ],
+)
+def test_html_table_boundary_keeps_literal_code_and_cell_math(source, literal):
+    parsed = Compiler().parse_string(source)
+    nodes = list(iter_nodes(parsed.document))
+    assert not parsed.diagnostics
+    assert [node.code for node in nodes if isinstance(node, InlineCode)] == [literal]
+    assert [node.source_text for node in nodes if isinstance(node, InlineMath)] == ["x"]
 
 
 def test_invalid_html_preserves_source_and_v2_ast_uses_unit_spans():

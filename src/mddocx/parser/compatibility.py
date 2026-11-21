@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Iterator
 from dataclasses import dataclass
 import re
 
+from .tables import html_table_source_end
+
 INLINE_SENTINEL = "MDDOCXMATH"
+_MATH_MARK = re.compile(r"[`\\$]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +60,9 @@ def find_math_syntax_issues(markdown: str) -> list[MathSyntaxIssue]:
             i += 1
             continue
 
+        if (table_end := html_table_source_end(lines, i)) > i:
+            i = table_end
+            continue
         stripped = line.strip()
         if stripped in {"$$", r"\["}:
             close_re = (
@@ -180,6 +187,11 @@ def normalize_math_syntax(markdown: str) -> str:
             i += 1
             continue
 
+        if (table_end := html_table_source_end(lines, i)) > i:
+            out.extend(lines[i:table_end])
+            i = table_end
+            continue
+
         one = re.match(r"^\$\$(.+?)\$\$\s*(\{[^{}]+\})?$", stripped)
         if one:
             out.extend(["```mddocx-math", one.group(1).strip(), "```"])
@@ -227,58 +239,76 @@ def normalize_math_syntax(markdown: str) -> str:
 
 def _shield_inline_math(line: str) -> str:
     """Protect inline math on one Markdown line while respecting code spans."""
-    out: list[str] = []
-    i = 0
+    return "".join(
+        f"{INLINE_SENTINEL}{_enc(value)}ENDMATH" if kind == "math" else value
+        for kind, value in _inline_math_parts(line)
+    )
+
+
+def split_cell_math(
+    text: str, start_line: int, issues: list[MathSyntaxIssue]
+) -> Iterator[tuple[str, str]]:
+    """Read TeX delimiters from an HTML text node, leaving its markup untouched."""
+    yield from _inline_math_parts(
+        text, display_delimiters=True, start_line=start_line, issues=issues
+    )
+
+
+def _inline_math_parts(
+    text: str,
+    *,
+    display_delimiters: bool = False,
+    start_line: int = 1,
+    issues: list[MathSyntaxIssue] | None = None,
+) -> Iterator[tuple[str, str]]:
+    start = cursor = 0
     code_ticks = 0
-    while i < len(line):
-        if line[i] == "`":
-            end = i
-            while end < len(line) and line[end] == "`":
+    while mark := _MATH_MARK.search(text, cursor):
+        i = mark.start()
+        cursor = i + 1
+        if mark[0] == "`":
+            end = cursor
+            while end < len(text) and text[end] == "`":
                 end += 1
             run = end - i
             if code_ticks == 0:
                 code_ticks = run
             elif run == code_ticks:
                 code_ticks = 0
-            out.append(line[i:end])
-            i = end
+            cursor = end
             continue
         if code_ticks:
-            out.append(line[i])
-            i += 1
             continue
 
-        if line.startswith(r"\(", i) and not _is_escaped(line, i):
-            end = _find_unescaped(line, r"\)", i + 2)
-            if end >= 0:
-                source = line[i + 2 : end]
-                out.append(f"{INLINE_SENTINEL}{_enc(source)}ENDMATH")
-                i = end + 2
-                continue
-
-        if line[i] == "$" and not _is_escaped(line, i) and not line.startswith("$$", i):
-            end = _find_inline_dollar_close(line, i + 1)
-            if end >= 0:
-                source = line[i + 1 : end]
-                # Currency/range guard: never pair across a code span or across
-                # another "$" that _find skipped (e.g. "$5 to $10. ... `$x$`").
-                # Such a span is a false-positive range, not math.  Treating
-                # the opener as literal lets the later "$"s resolve (or stay
-                # literal) on their own.  A former digit-only guard ("$0$" ->
-                # literal) left its closer dangling, which then paired with the
-                # *next* opener and corrupted the line into invalid base64
-                # (UnicodeDecodeError 0xc0), so "$<digits>$" stays math.
-                if "`" in source or "$" in source:
-                    out.append("$")
-                    i += 1
-                    continue
-                out.append(f"{INLINE_SENTINEL}{_enc(source)}ENDMATH")
-                i = end + 1
-                continue
-
-        out.append(line[i])
-        i += 1
-    return "".join(out)
+        opener = text[i : i + 2]
+        closer = r"\)" if opener == r"\(" else None
+        if display_delimiters and closer is None:
+            closer = {r"\[": r"\]", "$$": "$$"}.get(opener)
+        if closer and not _is_escaped(text, i):
+            end = _find_unescaped(text, closer, i + 2)
+            if end < 0 and issues is not None:
+                line = start_line + text.count("\n", 0, i)
+                issues.append(
+                    MathSyntaxIssue(line, f"Unterminated table math delimiter {opener!r}.")
+                )
+            size = 2
+        elif mark[0] == "$" and opener != "$$" and not _is_escaped(text, i):
+            end = _find_inline_dollar_close(text, i + 1)
+            # Never pair a currency range across another dollar delimiter or a code span.
+            if end >= 0 and any(char in text[i + 1 : end] for char in "`$"):
+                end = -1
+            size = 1
+        else:
+            continue
+        if end < 0:
+            cursor = i + size
+            continue
+        if start < i:
+            yield "text", text[start:i]
+        yield "math", text[i + size : end]
+        cursor = start = end + size
+    if start < len(text):
+        yield "text", text[start:]
 
 
 def _is_escaped(text: str, offset: int) -> bool:
@@ -381,22 +411,10 @@ def _split_dollars(text: str) -> list[tuple[str, str]]:
     # content is also parsed independently for footnotes and extensions, and a
     # second permissive dollar parser here used to turn currency ranges into
     # enormous false-positive equations.
-    shielded = _shield_inline_math(text)
-    sentinel_re = re.compile(rf"{INLINE_SENTINEL}([A-Za-z0-9_-]+)ENDMATH")
-    result: list[tuple[str, str]] = []
-    pos = 0
-    for match in sentinel_re.finditer(shielded):
-        if match.start() > pos:
-            result.append(("text", shielded[pos : match.start()].replace(r"\$", "$")))
-        decoded = _try_decode_inline_math(match.group(1))
-        if decoded is None:
-            result.append(("text", match.group(0)))
-        else:
-            result.append(("math", decoded))
-        pos = match.end()
-    if pos < len(shielded):
-        result.append(("text", shielded[pos:].replace(r"\$", "$")))
-    return result
+    return [
+        (kind, value.replace(r"\$", "$") if kind == "text" else value)
+        for kind, value in _inline_math_parts(text)
+    ]
 
 
 _FOOTNOTE_DEF_RE = re.compile(r"^ {0,3}\[\^([^\]]+)\]:[ \t]*(.*)$")

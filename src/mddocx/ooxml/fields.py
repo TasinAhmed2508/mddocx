@@ -41,7 +41,7 @@ def field_instruction_issue(instruction: str) -> str | None:
 
 def add_hyperlink(
     paragraph,
-    text: str,
+    text: str | None,
     url: str,
     bold: bool = False,
     italic: bool = False,
@@ -53,6 +53,17 @@ def add_hyperlink(
     r_id = part.relate_to(url, RT.HYPERLINK, is_external=True)
     hyperlink = OxmlElement("w:hyperlink")
     hyperlink.set(qn("r:id"), r_id)
+    if text is not None:
+        append_hyperlink_text(
+            hyperlink, text, bold=bold, italic=italic, strike=strike, font_name=font_name, rtl=rtl
+        )
+    paragraph._p.append(hyperlink)
+    return hyperlink
+
+
+def append_hyperlink_text(
+    hyperlink, text: str, *, bold=False, italic=False, strike=False, font_name=None, rtl=False
+):
     run = OxmlElement("w:r")
     r_pr = OxmlElement("w:rPr")
     insert_ordered(run, r_pr)
@@ -84,8 +95,7 @@ def add_hyperlink(
     t.text = text
     run.append(t)
     hyperlink.append(run)
-    paragraph._p.append(hyperlink)
-    return hyperlink
+    return run
 
 
 def add_field(
@@ -156,23 +166,11 @@ def add_bookmark(paragraph, name: str, bookmark_id: int) -> None:
     paragraph._p.append(end)
 
 
-def add_internal_hyperlink(paragraph, text: str, anchor: str):
+def add_internal_hyperlink(paragraph, text: str | None, anchor: str):
     hyperlink = OxmlElement("w:hyperlink")
     hyperlink.set(qn("w:anchor"), anchor)
-    run = OxmlElement("w:r")
-    r_pr = OxmlElement("w:rPr")
-    insert_ordered(run, r_pr)
-    color = OxmlElement("w:color")
-    color.set(qn("w:val"), "0563C1")
-    insert_ordered(r_pr, color)
-    underline = OxmlElement("w:u")
-    underline.set(qn("w:val"), "single")
-    insert_ordered(r_pr, underline)
-    t = OxmlElement("w:t")
-    t.set(qn("xml:space"), "preserve")
-    t.text = text
-    run.append(t)
-    hyperlink.append(run)
+    if text is not None:
+        append_hyperlink_text(hyperlink, text)
     paragraph._p.append(hyperlink)
     return hyperlink
 

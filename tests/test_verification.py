@@ -6,7 +6,7 @@ from lxml import etree
 from PIL import Image
 import pytest
 
-from mddocx import Compiler, RenderConfig
+from mddocx import Compiler, RenderConfig, audit_docx_accessibility_bytes
 from mddocx.cli import main
 from mddocx.inspection import NS
 from mddocx.ooxml import bangla
@@ -41,6 +41,62 @@ def test_verify_detects_picture_without_embedded_binding(tmp_path, change):
     (finding,) = compiler.verify(source, write_parts(parts)).findings
     assert (finding.code, finding.part) == ("VERIFY303", "word/document.xml")
     assert "embedded image binding" in finding.message
+
+
+@pytest.mark.parametrize("change", ["destination", "picture", "click"])
+def test_verify_detects_changes_to_linked_picture(tmp_path, change):
+    Image.new("RGB", (30, 20), "white").save(tmp_path / "tile.png")
+    source = tmp_path / "linked-image.md"
+    source.write_text(
+        "Intro.\n\n[![Tile alt](tile.png)](https://example.com/manual)\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    main = etree.fromstring(parts["word/document.xml"])
+    link = next(main.iter(qn("w:hyperlink")))
+    if change == "destination":
+        name = "word/_rels/document.xml.rels"
+        rels = etree.fromstring(parts[name])
+        rid = link.get(qn("r:id"))
+        next(item for item in rels if item.get("Id") == rid).set(
+            "Target", "https://example.com/other"
+        )
+        parts[name] = etree.tostring(rels)
+    elif change == "picture":
+        drawing = next(link.iter(qn("w:drawing")))
+        drawing.getparent().remove(drawing)
+    else:
+        link.getparent().replace(link, link[0])
+    parts["word/document.xml"] = etree.tostring(main)
+
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.line, finding.part) == ("VERIFY303", 3, "word/document.xml")
+
+
+def test_linked_picture_targets_a_native_bookmark_from_table(tmp_path):
+    Image.new("RGB", (300, 200), "white").save(tmp_path / "tile.png")
+    source = tmp_path / "bookmark.md"
+    source.write_text(
+        "# Details {#details}\n\n| Figure |\n| --- |\n| [![Tile alt](tile.png)](#details) |\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    word = Document(source.with_suffix(".docx"))
+    (link,) = word.tables[0].cell(1, 0).paragraphs[0].hyperlinks
+    assert link.fragment == "details"
+    assert next(link._element.iter(qn("a:blip"))).get(qn("r:embed"))
+    assert audit_docx_accessibility_bytes(result.output_bytes).empty_hyperlinks == 0
+
+    parts = read_parts(result.output_bytes)
+    main = etree.fromstring(parts["word/document.xml"])
+    next(main.iter(qn("wp:docPr"))).attrib.pop("descr")
+    parts["word/document.xml"] = etree.tostring(main)
+    assert audit_docx_accessibility_bytes(write_parts(parts)).empty_hyperlinks == 1
 
 
 @pytest.mark.parametrize("change", ["rotate", "remove", "move", "continuous"])

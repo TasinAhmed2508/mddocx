@@ -190,7 +190,10 @@ def audit_docx_accessibility_bytes(blob: bytes) -> AccessibilityReport:
     empty_links = 0
     for link in document.xpath(".//w:hyperlink", namespaces=NS):
         text = "".join(link.itertext()).strip()
-        if not text:
+        if not text and not any(
+            picture.get("descr", "").strip()
+            for picture in link.iterfind(".//wp:docPr", namespaces=NS)
+        ):
             empty_links += 1
     report.empty_hyperlinks = empty_links
     if empty_links:

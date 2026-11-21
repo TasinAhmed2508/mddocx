@@ -51,6 +51,7 @@ from mddocx.ast.inline import (
     Strikethrough,
     Strong,
     Text,
+    link_content,
 )
 from mddocx.bibliography import BibliographyDatabase
 from mddocx.config import RenderConfig
@@ -61,7 +62,7 @@ from mddocx.math import DefaultMathConverter
 from mddocx.math.preflight import iter_equations
 from mddocx.ooxml.charts import ChartEntry, inject_charts
 from mddocx.ooxml.comments import append_comment_reference, inject_comments
-from mddocx.ooxml.fields import add_hyperlink, add_internal_hyperlink
+from mddocx.ooxml.fields import add_hyperlink, add_internal_hyperlink, append_hyperlink_text
 from mddocx.ooxml.notes import (
     append_endnote_reference,
     append_footnote_reference,
@@ -362,35 +363,7 @@ class DocxRenderer:
                     paragraph, node.children, bold, italic, True, inherit_style=inherit_style
                 )
             elif isinstance(node, Link):
-                text = clean_xml_text(self._plain_inline_text(node.children))
-                link = None
-                if node.href.startswith("#") and self.references:
-                    target = self.references.get(node.href[1:])
-                    if target:
-                        link = add_internal_hyperlink(paragraph, text, target.bookmark)
-                    else:
-                        r = paragraph.add_run(text)
-                        self._configure_run(r, text, inherit_style=inherit_style)
-                        self.reporter.warn(
-                            "REF201",
-                            f"Unresolved internal link: {node.href}",
-                            getattr(node.source, "file", None),
-                            getattr(node.source, "line", None),
-                        )
-                else:
-                    rtl = self._rtl_for_text(text)
-                    link = add_hyperlink(
-                        paragraph,
-                        text,
-                        node.href,
-                        bold,
-                        italic,
-                        strike,
-                        font_name=None if inherit_style else self.fonts.for_text(rtl=rtl),
-                        rtl=rtl,
-                    )
-                if inherit_style and link is not None:
-                    self._configure_xml_run(link[0], text, inherit_style=True)
+                self._render_link(paragraph, node, bold, italic, strike, inherit_style)
             elif isinstance(node, CrossReference):
                 citations.render_cross_reference(self, paragraph, node)
             elif isinstance(node, Citation):
@@ -455,6 +428,68 @@ class DocxRenderer:
                 figures.add_image(
                     self, paragraph, node.src, node.alt, title=node.title, source=node.source
                 )
+
+    def _render_link(self, paragraph, node: Link, bold, italic, strike, inherit_style) -> None:
+        content = list(link_content(node.children))
+        has_images = any(isinstance(item, Image) for item in content)
+        text = None if has_images else clean_xml_text("".join(content))
+        internal = node.href.startswith("#") and self.references is not None
+        link = None
+        if internal:
+            target = self.references.get(node.href[1:])
+            if target is not None:
+                link = add_internal_hyperlink(paragraph, text, target.bookmark)
+            else:
+                self.reporter.warn(
+                    "REF201",
+                    f"Unresolved internal link: {node.href}",
+                    getattr(node.source, "file", None),
+                    getattr(node.source, "line", None),
+                )
+        else:
+            rtl = self._rtl_for_text(text or "")
+            link = add_hyperlink(
+                paragraph,
+                text,
+                node.href,
+                bold,
+                italic,
+                strike,
+                font_name=None if inherit_style else self.fonts.for_text(rtl=rtl),
+                rtl=rtl,
+            )
+        if text is not None:
+            if link is None:
+                self._configure_run(paragraph.add_run(text), text, inherit_style=inherit_style)
+            elif inherit_style:
+                self._configure_xml_run(link[0], text, inherit_style=True)
+            return
+        if link is not None and node.title:
+            link.set(qn("w:tooltip"), clean_xml_text(node.title))
+        for item in content:
+            if isinstance(item, Image):
+                offset = len(paragraph._p)
+                figures.add_image(
+                    self,
+                    paragraph,
+                    item.src,
+                    item.alt,
+                    title=item.title,
+                    source=item.source,
+                    link_fallback=link is None,
+                )
+                if link is not None:
+                    link.extend(paragraph._p[offset:])
+            elif item:
+                text = clean_xml_text(item)
+                if link is None:
+                    self._configure_run(paragraph.add_run(text), text, inherit_style=inherit_style)
+                else:
+                    rtl = self._rtl_for_text(text)
+                    run = append_hyperlink_text(
+                        link, text, bold=bold, italic=italic, strike=strike, rtl=rtl
+                    )
+                    self._configure_xml_run(run, text, inherit_style=inherit_style)
 
     def _plain_inline_text(self, nodes) -> str:
         out = []

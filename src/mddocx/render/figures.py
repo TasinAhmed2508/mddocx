@@ -69,6 +69,8 @@ def add_image(
     width_percent: float | None = None,
     decorative: bool = False,
     source=None,
+    *,
+    link_fallback: bool = True,
 ):
     result = renderer.resolver.resolve_image(
         ResourceRequest(
@@ -97,7 +99,11 @@ def add_image(
             public_url = urlparse(src).scheme.lower() in {"http", "https"}
         except ValueError:
             public_url = False
-        if public_url and renderer.config.resources.image_failure == "clickable_fallback":
+        if (
+            link_fallback
+            and public_url
+            and renderer.config.resources.image_failure == "clickable_fallback"
+        ):
             add_hyperlink(paragraph, clean_xml_text(label), src)
         else:
             paragraph.add_run(clean_xml_text(label))

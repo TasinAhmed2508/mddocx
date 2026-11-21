@@ -361,6 +361,10 @@ HTTP(S) image URL on its own line or a standalone link such as
 `[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.
 Append figure attributes to a standalone link to set its size or caption, for example
 `[Chart description](https://example.org/chart.jpg) {width=70% caption="Quarterly output"}`.
+To make the picture clickable, wrap an explicit image in a Markdown link, as in
+`[![Chart description](chart.jpg)](https://example.org/report)`. mddocx embeds the picture
+and writes the click destination as a Word hyperlink. This form also works with
+document bookmarks and inside table cells.
 For files served from extensionless URLs, use the explicit image syntax. The resource
 resolver checks the downloaded content before embedding and uses the configured fallback
 if the image is unavailable. Images inside table cells fit within the cell padding.

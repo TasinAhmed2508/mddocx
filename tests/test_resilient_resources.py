@@ -9,11 +9,14 @@ from zipfile import ZipFile
 
 import pytest
 from docx import Document
+from docx.oxml.ns import qn
+from lxml import etree
 from PIL import Image
 
 from mddocx import Compiler, MarkdownWord, RenderConfig
 from mddocx.config import ImageConfig, ResourcePolicy
 from mddocx.diagnostics import MddocxError
+from mddocx.ooxml.package import read_parts
 from mddocx.resources import ResourceFallback, ResourceRequest, ResourceResolver, ResolvedImage
 
 
@@ -184,6 +187,69 @@ def test_direct_image_links_obey_block_remote_flag(tmp_path):
     assert [diagnostic.code for diagnostic in result.diagnostics] == ["RESOURCE201"]
     with ZipFile(BytesIO(result.output_bytes)) as package:
         assert b"/plate.jpg" in package.read("word/_rels/document.xml.rels")
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        '[See ![Diagram]({image}) for details]({target} "Open manual")',
+        '<a href="{target}" title="Open manual">See <img src="{image}" alt="Diagram"> for details</a>',
+        '<a href="{target}">\nSee <img src="{image}" alt="Diagram"> for details\n</a>',
+        '<table><tr><td><a href="{target}">See <img src="{image}" alt="Diagram"> for details</a></td></tr></table>',
+    ],
+)
+def test_clickable_images_are_embedded_and_only_the_image_is_fetched(tmp_path, template):
+    image = BytesIO()
+    Image.new("RGB", (80, 40), "#315c91").save(image, format="JPEG")
+    config = RenderConfig(resources=ResourcePolicy(allow_private_hosts=True))
+    compiler = Compiler(config)
+    source = tmp_path / "report.md"
+    with _server({"/diagram.jpg": (200, "image/jpeg", image.getvalue())}) as (origin, requests):
+        target = f"{origin}/manual.html"
+        source.write_text(
+            template.format(image=f"{origin}/diagram.jpg", target=target), encoding="utf-8"
+        )
+        result = compiler.compile_file(source, source.with_suffix(".docx"))
+        assert not result.diagnostics
+        assert compiler.verify(source, result.output_bytes).ok
+        assert requests == {"/diagram.jpg": 1}
+
+    parts = read_parts(result.output_bytes)
+    main = etree.fromstring(parts["word/document.xml"])
+    (link,) = main.iter(qn("w:hyperlink"))
+    (drawing,) = link.iter(qn("w:drawing"))
+    runs = list(link)
+    picture_run = drawing.getparent()
+    before = runs[: runs.index(picture_run)]
+    after = runs[runs.index(picture_run) + 1 :]
+    assert (
+        "".join(text.text or "" for run in before for text in run.iter(qn("w:t"))).strip() == "See"
+    )
+    assert (
+        "".join(text.text or "" for run in after for text in run.iter(qn("w:t"))).strip()
+        == "for details"
+    )
+    assert next(drawing.iter(qn("wp:docPr"))).get("descr") == "Diagram"
+    rels = etree.fromstring(parts["word/_rels/document.xml.rels"])
+    link_id = link.get(qn("r:id"))
+    embed_id = next(drawing.iter(qn("a:blip"))).get(qn("r:embed"))
+    destinations = {item.get("Id"): item.get("Target") for item in rels}
+    assert destinations[link_id] == target
+    assert parts[f"word/{destinations[embed_id]}"] == image.getvalue()
+
+
+def test_blocked_clickable_image_keeps_the_authored_destination(tmp_path):
+    config = RenderConfig(resources=ResourcePolicy(allow_remote_resources=False))
+    compiler = Compiler(config)
+    with _server({}) as (origin, requests):
+        result = compiler.compile_string(
+            f"[![Diagram]({origin}/missing.png)]({origin}/manual.html)", base_dir=tmp_path
+        )
+    assert requests == {}
+    assert [item.code for item in result.diagnostics] == ["RESOURCE201"]
+    document = Document(BytesIO(result.output_bytes))
+    (link,) = document.paragraphs[0].hyperlinks
+    assert (link.text, link.address) == ("Diagram", f"{origin}/manual.html")
 
 
 @pytest.mark.parametrize(

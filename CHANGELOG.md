@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Embed clickable pictures in Word hyperlinks from Markdown and HTML, including table
+  cells. Verify the click destination and embedded picture offline and use the picture's
+  alternative text when auditing its link label.
 - Expand leading equation-local `\newcommand` definitions with bounded substitution and
   verify the resulting native equation, including default arguments.
 - Retain native delimiters and invisible fraction rules in AMS `\genfrac` expressions.

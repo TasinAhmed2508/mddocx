@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from .base import Node
 
@@ -80,3 +81,20 @@ class Image(Node):
 @dataclass(slots=True)
 class FootnoteReference(Node):
     label: str = ""
+
+
+def link_content(nodes: list[Node]) -> Iterator[str | Image]:
+    """Yield the text and native pictures that make up a hyperlink."""
+    for node in nodes:
+        if isinstance(node, Text):
+            yield node.text
+        elif isinstance(node, InlineCode):
+            yield node.code
+        elif isinstance(node, InlineMath):
+            yield node.source_text
+        elif isinstance(node, (SoftBreak, HardBreak)):
+            yield " "
+        elif isinstance(node, Image):
+            yield node
+        elif hasattr(node, "children"):
+            yield from link_content(node.children)

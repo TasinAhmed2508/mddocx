@@ -73,6 +73,7 @@ _IMAGE_LINK_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"
 class MarkdownParser:
     _HTML_IMG_RE = re.compile(r"^\s*<img\b(?P<attrs>[^>]*)/?>\s*$", re.I | re.S)
     _HTML_IMG_FIND_RE = re.compile(r"<img\b[^>]*?/?>", re.I | re.S)
+    _HTML_ANCHOR_RE = re.compile(r"^<a\b(?P<attrs>[^>]*)>$", re.I | re.S)
     _HTML_ATTR_RE = re.compile(
         r"(?P<name>[A-Za-z_:][\w:.-]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)",
         re.S,
@@ -90,14 +91,59 @@ class MarkdownParser:
         match = cls._HTML_IMG_RE.match(value)
         if not match:
             return None
-        attrs = {
-            item.group("name").lower(): unescape(item.group("value"))
-            for item in cls._HTML_ATTR_RE.finditer(match.group("attrs"))
-        }
+        attrs = cls._html_attributes(match.group("attrs"))
         src = attrs.get("src", "").strip()
         if not src:
             return None
         return Image(src=src, alt=attrs.get("alt", ""), title=attrs.get("title"))
+
+    @classmethod
+    def _html_attributes(cls, value: str) -> dict[str, str]:
+        return {
+            item.group("name").lower(): unescape(item.group("value"))
+            for item in cls._HTML_ATTR_RE.finditer(value)
+        }
+
+    def _html_image_link(self, tokens: list[Token], start: int) -> tuple[Link, int] | None:
+        match = self._HTML_ANCHOR_RE.fullmatch(tokens[start].content)
+        if match is None:
+            return None
+        attributes = self._html_attributes(match.group("attrs"))
+        href = self.md.normalizeLink(attributes.get("href", "").strip())
+        if not href or not self.md.validateLink(href):
+            return None
+        has_image = False
+        for end in range(start + 1, len(tokens)):
+            token = tokens[end]
+            if token.type in {"link_open", "link_close"}:
+                break
+            if token.type != "html_inline":
+                continue
+            if re.fullmatch(r"</a\s*>", token.content, re.I):
+                if has_image:
+                    children, _ = self._inline_range(tokens[start + 1 : end], 0, None)
+                    return Link(
+                        href=href, title=attributes.get("title"), children=children
+                    ), end + 1
+                break
+            if self._html_image(token.content) is None:
+                break
+            has_image = True
+        return None
+
+    def _html_image_link_block(self, token: Token) -> Paragraph | None:
+        text = token.content.strip()
+        if not re.match(r"<a\b", text, re.I):
+            return None
+        children: list[Token] = []
+        self.md.inline.parse(text, self.md, self._parse_env, children)
+        linked = self._html_image_link(children, 0) if children else None
+        if linked is None or linked[1] != len(children):
+            return None
+        source = self._pos(token)
+        link = linked[0]
+        self._attach_inline_source([link], source)
+        return Paragraph(children=[link], source=source)
 
     @classmethod
     def _html_images(cls, value: str) -> list[Image]:
@@ -330,6 +376,8 @@ class MarkdownParser:
                     r"<!--\s*sectionbreak(?:\s+orientation=(portrait|landscape))?\s*-->", directive
                 ):
                     nodes.append(SectionBreak(orientation=section[1], source=self._pos(t)))
+                elif t.type == "html_block" and (linked := self._html_image_link_block(t)):
+                    nodes.append(linked)
                 elif images := self._html_images(t.content):
                     nodes.extend(
                         ImageBlock(
@@ -937,6 +985,10 @@ class MarkdownParser:
                 nodes.append(Image(src=t.attrGet("src") or "", alt=alt, title=t.attrGet("title")))
                 i += 1
             elif t.type == "html_inline":
+                if linked := self._html_image_link(tokens, i):
+                    link, i = linked
+                    nodes.append(link)
+                    continue
                 if re.fullmatch(r"<br\s*/?>", t.content, flags=re.I):
                     nodes.append(HardBreak())
                 else:

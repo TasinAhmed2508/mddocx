@@ -140,17 +140,23 @@ def compare_document(
                 tokens.append(("math",))
                 expected_math.append((node.source_text, node))
             elif isinstance(node, inline.Image):
-                tokens.append(("image", node.alt))
+                tokens.append(("image", clean_xml_text(node.alt)))
             elif isinstance(node, inline.Link):
                 href = node.href
-                if href.startswith("#") and config.references.enabled:
+                content = _merge_text(
+                    ("image", clean_xml_text(item.alt))
+                    if isinstance(item, inline.Image)
+                    else clean_xml_text(item)
+                    for item in inline.link_content(node.children)
+                )
+                if href.startswith("#"):
                     target = references.get(href[1:])
                     if target is None:
                         incomplete("Unresolved internal hyperlink.", node)
-                        tokens.append(_plain_text(node.children))
+                        tokens.extend(content)
                         continue
                     href = "#" + target.bookmark
-                tokens.append(("link", href, _plain_text(node.children)))
+                tokens.append(("link", href, content))
             elif isinstance(node, inline.FootnoteReference):
                 if node.label in document.footnotes:
                     number = notes.setdefault(node.label, len(notes) + 1)
@@ -618,21 +624,12 @@ def _merge_text(tokens) -> tuple:
 
 
 def _plain_text(nodes) -> str:
-    pieces = []
-    for node in nodes:
-        if isinstance(node, inline.Text):
-            pieces.append(node.text)
-        elif isinstance(node, inline.InlineCode):
-            pieces.append(node.code)
-        elif isinstance(node, (inline.HardBreak, inline.SoftBreak)):
-            pieces.append(" ")
-        elif isinstance(node, inline.InlineMath):
-            pieces.append(node.source_text)
-        elif isinstance(node, inline.Image):
-            pieces.append(node.alt)
-        elif hasattr(node, "children"):
-            pieces.append(_plain_text(node.children))
-    return clean_xml_text("".join(pieces))
+    return clean_xml_text(
+        "".join(
+            item.alt if isinstance(item, inline.Image) else item
+            for item in inline.link_content(nodes)
+        )
+    )
 
 
 def _section_finding(
@@ -686,7 +683,12 @@ def _read_body(
 ) -> tuple[list[_Unit], list[tuple[int, str, str]]]:
     relationships = roots.get(_RELS)
     links = (
-        {rel.get("Id"): rel.get("Target") for rel in relationships}
+        {
+            rel.get("Id"): rel.get("Target")
+            for rel in relationships
+            if rel.get("Type") == RELATIONSHIP_TYPE.HYPERLINK
+            and (rel.get("TargetMode") or "").lower() == "external"
+        }
         if relationships is not None
         else {}
     )
@@ -823,7 +825,7 @@ def _read_inlines(parent: etree._Element, links: dict) -> tuple:
         elif node.tag == f"{{{W}}}hyperlink":
             anchor = node.get(f"{{{W}}}anchor")
             href = "#" + anchor if anchor else links.get(node.get(f"{{{R}}}id"))
-            tokens.append(("link", href, "".join(str(t) for t in _read_inlines(node, links))))
+            tokens.append(("link", href, _read_inlines(node, links)))
         elif node.tag == f"{{{W}}}drawing":
             if node.find(f".//{{{C}}}chart") is not None:
                 tokens.append(("chart",))

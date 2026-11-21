@@ -64,8 +64,6 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
                 href = child.get("href", "")
                 if not href or not parser.md.validateLink(href):
                     raise ValueError("Unsupported hyperlink destination.")
-                if child.find(".//img") is not None:
-                    raise ValueError("Unsupported linked image inside a table cell.")
                 nodes.append(
                     Link(href=parser.md.normalizeLink(href), children=inlines(child), source=pos)
                 )

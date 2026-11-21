@@ -13,6 +13,7 @@ from .latex import (
     _MATRIX_ENVIRONMENTS,
     _Parser,
     array_preambles,
+    array_row_rules,
 )
 
 MATHML_NS = "http://www.w3.org/1998/Math/MathML"
@@ -153,18 +154,27 @@ def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
         separator = node.find(f"./{_M}dPr/{_M}sepChr") if node.tag == _M + "d" else None
         if separator is not None and separator.get(_M + "val") == "|":
             dividers[node] = node.findall(_M + "e")
+    positions, row_groups = _row_rule_positions(visible) if r"\hline" in latex else ({}, {})
+    fragments = {
+        matrix
+        for sections in row_groups.values()
+        for section in sections
+        for matrix in (section.findall(f"./{_M}e/{_M}m") if section.tag == _M + "d" else [section])
+    }
     native_arrays = 0
     for node in visible:
-        if node.tag in {_M + "m", _M + "eqArr"}:
+        if node.tag in {_M + "m", _M + "eqArr"} and node not in fragments:
             argument = node.getparent()
             group = dividers.get(argument.getparent()) if argument is not None else None
             if not group or argument is group[0]:
                 native_arrays += 1
-    return native_arrays >= expected and _array_layout_preserved(latex, visible, dividers)
+    return native_arrays >= expected and _array_layout_preserved(
+        latex, visible, dividers, positions, row_groups
+    )
 
 
 def visible_omml(root: etree._Element):
-    """Skip the hidden, zero-width row measurements added by the ruled array layout."""
+    """Skip hidden measurements added to align ruled arrays."""
     walker = etree.iterwalk(root, events=("start",))
     for _, node in walker:
         if node.tag == _M + "phant":
@@ -172,7 +182,10 @@ def visible_omml(root: etree._Element):
             if (
                 props is not None
                 and not _math_flag(props, "show", default=True)
-                and _math_flag(props, "zeroWid")
+                and (
+                    _math_flag(props, "zeroWid")
+                    or (_math_flag(props, "zeroAsc") and _math_flag(props, "zeroDesc"))
+                )
             ):
                 walker.skip_subtree()
                 continue
@@ -184,8 +197,9 @@ def _math_flag(props, name, *, default=False):
     return default if flag is None else flag.get(_M + "val", "1") in {"1", "true", "on"}
 
 
-def _array_layout_preserved(latex, visible, dividers):
+def _array_layout_preserved(latex, visible, dividers, positions, row_groups):
     expected_rules = 0
+    expected_row_rules: Counter[int] = Counter()
     expected_edges: Counter[str] = Counter()
     insertions: Counter[str] = Counter()
     try:
@@ -200,32 +214,51 @@ def _array_layout_preserved(latex, visible, dividers):
             literals = [
                 text.strip() for kind, text in columns if kind == "@" and len(text.strip()) == 1
             ]
-            if literals:
+            if literals or r"\hline" in latex:
                 parser = _Parser(latex)
                 parser.i = end
-                row_count = len(parser._environment_rows("array", grid=True))
+                rows, row_breaks, edges = array_row_rules(
+                    parser._environment_rows("array", grid=True)
+                )
+                expected_edges.update(edges)
+                expected_row_rules.update(row_breaks)
                 for literal in literals:
-                    insertions[literal] += row_count
+                    insertions[literal] += len(rows)
     except ValueError:
         return False
-    if expected_rules > sum(
-        max(0, len(group) - 1)
+    vertical_rules = {
+        node: max(0, len(group) - 1)
         for node, group in dividers.items()
         if _math_flag(node.find(_M + "dPr"), "grow", default=True)
-    ):
+    }
+    if expected_row_rules and not expected_row_rules <= positions:
+        return False
+    # Every horizontal section must retain the shared vertical divisions.
+    grouped_vertical_rules = sum(
+        min((vertical_rules.pop(section, 0) for section in sections), default=0)
+        for sections in row_groups.values()
+    )
+    if expected_rules > grouped_vertical_rules + sum(vertical_rules.values()):
         return False
     if expected_edges:
         edges: Counter[str] = Counter()
         for node in visible:
-            if (
-                node.tag == _M + "borderBoxPr"
-                and _math_flag(node, "hideTop")
-                and _math_flag(node, "hideBot")
+            if node.tag != _M + "borderBox":
+                continue
+            argument = node.find(_M + "e")
+            if argument is None or not any(
+                child.tag == _M + "m" or child in dividers for child in argument
             ):
-                if not _math_flag(node, "hideLeft"):
-                    edges["left"] += 1
-                if not _math_flag(node, "hideRight"):
-                    edges["right"] += 1
+                continue
+            props = node.find(_M + "borderBoxPr")
+            for edge, flag in (
+                ("left", "hideLeft"),
+                ("right", "hideRight"),
+                ("top", "hideTop"),
+                ("bottom", "hideBot"),
+            ):
+                if props is None or not _math_flag(props, flag):
+                    edges[edge] += 1
         if not expected_edges <= edges:
             return False
     if insertions:
@@ -250,6 +283,48 @@ def _array_layout_preserved(latex, visible, dividers):
         if not insertions <= cells:
             return False
     return True
+
+
+def _row_rule_positions(visible):
+    positions: Counter[int] = Counter()
+    groups = set()
+    visible_set = set(visible)
+    for bar in visible:
+        if (
+            bar.tag != _M + "bar"
+            or bar.getparent().tag != _M + "e"
+            or bar.getparent().getparent().tag != _M + "mr"
+        ):
+            continue
+        position = bar.find(f"./{_M}barPr/{_M}pos")
+        if position is None or position.get(_M + "val") != "bot":
+            continue
+        body = bar.find(_M + "e")
+        if body is None or len(body) != 1:
+            continue
+        section = body[0]
+        matrix = section.find(f"./{_M}e/{_M}m") if section.tag == _M + "d" else section
+        if matrix is None or matrix.tag != _M + "m":
+            continue
+        if matrix.find(f"./{_M}mPr/{_M}rSpRule[@{_M}val='3']") is None:
+            continue
+        rows = matrix.findall(_M + "mr")
+        content_rows = [
+            index
+            for index, row in enumerate(rows, 1)
+            if any(child in visible_set for cell in row for child in cell)
+        ]
+        if not content_rows or len(content_rows) == len(rows):
+            continue
+        positions[content_rows[-1]] += 1
+        groups.add(bar.getparent().getparent().getparent())
+    return positions, {
+        group: [
+            root[1][0] if root.tag == _M + "bar" and len(root) == 2 and len(root[1]) == 1 else root
+            for root in group.findall(f"./{_M}mr/{_M}e/*")
+        ]
+        for group in groups
+    }
 
 
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:

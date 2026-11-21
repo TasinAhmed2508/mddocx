@@ -11,6 +11,7 @@ _ALIGN_PAIRS = {"alignedat", "alignat", "alignat*"}
 _ALIGN_COLUMNS = _ALIGN_PAIRS | {"aligned", "align", "align*", "split"}
 _OPTIONAL_ALIGNMENT = {"alignedat", "aligned", "gathered", "array"}
 _COLUMN_ALIGN = {"l": "left", "c": "center", "r": "right"}
+_ROW_RULE = re.compile(r"\s*\\hline(?![A-Za-z])\s*")
 _TEXT_ESCAPE = re.compile(r"\\([&#%{}_$])")
 _RULE_THICKNESS = re.compile(
     r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*(?:pt|px|em|ex|mu|in|cm|mm|pc|bp|dd|cc|sp)?"
@@ -210,6 +211,25 @@ def array_preambles(latex: str) -> Iterator[tuple[int, int, list[tuple[str, str]
             parser._read_bracket_raw()
             columns = _Parser(parser._read_braced_raw())._array_columns()
             yield match.start(), parser.i, columns
+
+
+def array_row_rules(rows: list[list[str]]) -> tuple[list[list[str]], list[int], list[str]]:
+    """Separate top-level solid rules from the data rows of a LaTeX array."""
+    data, breaks, edges = [], [], []
+    for index, (first, *remaining) in enumerate(rows):
+        if match := _ROW_RULE.match(first):
+            first = first[match.end() :]
+            if _ROW_RULE.match(first):
+                raise ValueError("Repeated horizontal rules are unsupported in native Word arrays.")
+            if index == 0:
+                edges.append("top")
+            elif index == len(rows) - 1 and not first and not remaining:
+                edges.append("bottom")
+                break
+            else:
+                breaks.append(index)
+        data.append([first, *remaining])
+    return data, breaks, edges
 
 
 class BasicLatexToMathML:
@@ -624,6 +644,8 @@ class _Parser:
         if not grid:
             items = _Parser(rows[0][0]).parse_sequence()
             return items[0] if len(items) == 1 else _e("mrow", None, *items)
+        if layout:
+            return self._array_table(rows, layout, len(alignments), align)
 
         width = max(map(len, rows), default=0)
         if width > 64:
@@ -634,8 +656,6 @@ class _Parser:
             alignments = ["right" if index % 2 == 0 else "left" for index in range(width)]
         if env == "cases":
             alignments = ["left"]
-        if layout:
-            return self._array_table(rows, layout, len(alignments), align)
         mrows: list[ET.Element] = []
         for cells in rows:
             if env in _ALIGN_PAIRS:
@@ -689,7 +709,10 @@ class _Parser:
         return _e("mtd", None, cell)
 
     def _array_table(self, rows, layout, logical_width, baseline):
-        edges = []
+        rows, breaks, edges = array_row_rules(rows)
+        row_rules = set(breaks)
+        if max(map(len, rows), default=0) > logical_width:
+            raise ValueError("Too many alignment columns for array.")
         for index, name in ((0, "left"), (-1, "right")):
             if layout and layout[index][0] == "|":
                 edges.append(name)
@@ -731,6 +754,9 @@ class _Parser:
             columnalign=" ".join(_COLUMN_ALIGN.get(kind, "center") for kind, _ in specs),
             columnspacing=" ".join(gaps),
             columnlines=" ".join(lines),
+            rowlines=" ".join(
+                "solid" if index in row_rules else "none" for index in range(1, len(rows))
+            ),
             align=baseline,
             framespacing=".5em .125em",
         )

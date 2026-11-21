@@ -257,6 +257,12 @@ class MathMLToOMML:
             raise ValueError(
                 f"Word math enclosure is unsupported: {', '.join(sorted(unsupported))}"
             )
+        parent.append(
+            self._enclosure(self._argument("m:e", node, variant, contents=True), notations)
+        )
+
+    @staticmethod
+    def _enclosure(argument, notations):
         box = OxmlElement("m:borderBox")
         props = OxmlElement("m:borderBoxPr")
         for direction, name in ENCLOSURE_EDGES.items():
@@ -271,8 +277,8 @@ class MathMLToOMML:
                 props.append(flag)
         if len(props):
             box.append(props)
-        box.append(self._argument("m:e", node, variant, contents=True))
-        parent.append(box)
+        box.append(argument)
+        return box
 
     def _append_fenced_row(self, parent, children, variant):
         if len(children) < 2:
@@ -424,17 +430,18 @@ class MathMLToOMML:
             node.get("align", "")
         )
         rules = node.get("columnlines", "none").split() or ["none"]
-        if (
-            any(rule != "none" for rule in node.get("rowlines", "").split())
-            or node.get("frame", "none") != "none"
-        ):
-            raise ValueError(
-                "Horizontal rules or a frame on the MathML array are unsupported in Word."
-            )
-        if any(rule not in {"none", "solid"} for rule in rules):
-            raise ValueError("Word mathematical arrays require solid vertical rules.")
-        breaks = [
+        row_rules = node.get("rowlines", "none").split() or ["none"]
+        frame = node.get("frame", "none")
+        frame_styles = node.get("data-frame-styles", "").split()
+        if set([*rules, *row_rules, *frame_styles, frame]) - {"none", "solid"}:
+            raise ValueError("Word mathematical arrays require solid rules.")
+        column_breaks = [
             index + 1 for index in range(width - 1) if rules[min(index, len(rules) - 1)] == "solid"
+        ]
+        row_breaks = [
+            index + 1
+            for index in range(len(rows) - 1)
+            if row_rules[min(index, len(row_rules) - 1)] == "solid"
         ]
         gaps = node.get("columnspacing", "").split()
         compact = (
@@ -449,22 +456,74 @@ class MathMLToOMML:
             ]
             for row in rows
         ]
-        if not breaks:
-            self._array_gaps(arguments, gaps, compact, 0)
-            parent.append(self._matrix(arguments, alignments, baseline, compact))
-            return
-        groups = list(zip([0, *breaks], [*breaks, width], strict=True))
-        self._append_ruled_matrix(parent, arguments, alignments, baseline, compact, gaps, groups)
+        if row_breaks or column_breaks:
+            copies = sum(1 for row in arguments for cell in row for _ in cell.iter())
+            copies *= (len(row_breaks) + 1) * (len(column_breaks) + 1) - 1
+            if copies > 100_000:
+                raise ValueError("Ruled array layout exceeds the native Word equation size limit.")
+        groups = list(zip([0, *column_breaks], [*column_breaks, width], strict=True))
+        if compact:
+            for start, end in groups:
+                self._array_gaps(arguments, gaps, start, end)
+        target = OxmlElement("m:e") if frame == "solid" else parent
+        if row_breaks:
+            target.append(
+                self._matrix_with_row_rules(
+                    arguments, alignments, baseline, compact, groups, row_breaks
+                )
+            )
+        else:
+            self._append_matrix_columns(target, arguments, alignments, baseline, compact, groups)
+        if frame == "solid":
+            parent.append(self._enclosure(target, {"box"}))
 
-    def _matrix(self, rows, alignments, baseline, compact):
+    def _matrix_with_row_rules(self, rows, alignments, baseline, compact, groups, breaks):
+        originals = [[tuple(cell) for cell in row] for row in rows]
+        sections = []
+        for start, end in zip([0, *breaks], [*breaks, len(rows)], strict=True):
+            section = []
+            for index, row in enumerate(rows):
+                if start <= index < end:
+                    section.append(row)
+                    continue
+                # Hidden rows preserve column widths without padding the visible section.
+                measured = []
+                for items in originals[index]:
+                    cell = OxmlElement("m:e")
+                    cell.append(self._matrix_measurement(items, ("zeroAsc", "zeroDesc")))
+                    measured.append(cell)
+                section.append(measured)
+            body = OxmlElement("m:e")
+            self._append_matrix_columns(
+                body, section, alignments, None, compact, groups, tight_rows=True
+            )
+            if end != len(rows):
+                # Word draws the bar to the width of the entire measured group.
+                bar = OxmlElement("m:bar")
+                properties = OxmlElement("m:barPr")
+                position = OxmlElement("m:pos")
+                position.set(qn("m:val"), "bot")
+                properties.append(position)
+                bar.extend((properties, body))
+                body = OxmlElement("m:e")
+                body.append(bar)
+            sections.append([body])
+        return self._matrix(sections, ["center"], baseline, False, tight_rows=True)
+
+    def _matrix(self, rows, alignments, baseline, compact, *, tight_rows=False):
         matrix = OxmlElement("m:m")
         properties = OxmlElement("m:mPr")
         if baseline:
             base_jc = OxmlElement("m:baseJc")
             base_jc.set(qn("m:val"), baseline)
             properties.append(base_jc)
-        if compact:
-            for name, value in (("cGpRule", "3"), ("cGp", "0")):
+        for name, value, enabled in (
+            ("rSpRule", "3", tight_rows),
+            ("cGpRule", "3", compact),
+            ("rSp", "0", tight_rows),
+            ("cGp", "0", compact),
+        ):
+            if enabled:
                 flag = OxmlElement(f"m:{name}")
                 flag.set(qn("m:val"), value)
                 properties.append(flag)
@@ -492,22 +551,33 @@ class MathMLToOMML:
             matrix.append(mr)
         return matrix
 
-    def _array_gaps(self, rows, gaps, compact, start):
-        if not compact:
-            return
-        for index in range(len(rows[0]) - 1):
-            gap = gaps[min(start + index, len(gaps) - 1)]
+    def _array_gaps(self, rows, gaps, start, end):
+        for index in range(start, end - 1):
+            gap = gaps[min(index, len(gaps) - 1)]
             if not _ZERO_RULE.fullmatch(gap):
                 for row in rows:
                     self._run(row[index], "\u2003", variant="normal")
 
-    def _append_ruled_matrix(self, parent, rows, alignments, baseline, compact, gaps, groups):
+    @staticmethod
+    def _matrix_measurement(items, collapsed):
+        phantom = OxmlElement("m:phant")
+        settings = OxmlElement("m:phantPr")
+        for name in ("show", *collapsed):
+            flag = OxmlElement(f"m:{name}")
+            flag.set(qn("m:val"), "0" if name == "show" else "1")
+            settings.append(flag)
+        body = OxmlElement("m:e")
+        body.extend(deepcopy(item) for item in items)
+        phantom.extend((settings, body))
+        return phantom
+
+    def _append_matrix_columns(
+        self, parent, rows, alignments, baseline, compact, groups, *, tight_rows=False
+    ):
+        if len(groups) == 1:
+            parent.append(self._matrix(rows, alignments, baseline, compact, tight_rows=tight_rows))
+            return
         originals = [[tuple(cell) for cell in row] for row in rows]
-        copies = sum(
-            sum(1 for _ in child.iter()) for row in originals for cell in row for child in cell
-        ) * (len(groups) - 1)
-        if copies > 100_000:
-            raise ValueError("Ruled array layout exceeds the native Word equation size limit.")
         delimiter = OxmlElement("m:d")
         properties = OxmlElement("m:dPr")
         for name, value in (("begChr", ""), ("sepChr", "|"), ("endChr", ""), ("grow", "1")):
@@ -519,20 +589,14 @@ class MathMLToOMML:
             section = [row[start:end] for row in rows]
             for row, original in zip(section, originals, strict=True):
                 # Sharing the invisible height of the other cells keeps tall rows aligned.
-                phantom = OxmlElement("m:phant")
-                settings = OxmlElement("m:phantPr")
-                for name, value in (("show", "0"), ("zeroWid", "1")):
-                    flag = OxmlElement(f"m:{name}")
-                    flag.set(qn("m:val"), value)
-                    settings.append(flag)
-                heights = OxmlElement("m:e")
-                for cell in original[:start] + original[end:]:
-                    heights.extend(deepcopy(item) for item in cell)
-                phantom.extend((settings, heights))
-                row[0].append(phantom)
-            self._array_gaps(section, gaps, compact, start)
+                others = (item for cell in original[:start] + original[end:] for item in cell)
+                row[0].append(self._matrix_measurement(others, ("zeroWid",)))
             group = OxmlElement("m:e")
-            group.append(self._matrix(section, alignments[start:end], baseline, compact))
+            group.append(
+                self._matrix(
+                    section, alignments[start:end], baseline, compact, tight_rows=tight_rows
+                )
+            )
             delimiter.append(group)
         parent.append(delimiter)
 

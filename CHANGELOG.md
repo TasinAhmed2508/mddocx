@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-- Preserve vertical rules, repeated column declarations, and decimal separators in
-  editable LaTeX arrays. Report unsupported horizontal rules, frames, and cell spans.
+- Preserve vertical rules, full-width solid `\hline` rules, frames, repeated column
+  declarations, and decimal separators in editable LaTeX arrays. Verification detects
+  removed rules and frame edges. Dashed, partial, and repeated horizontal rules and
+  spanning cells use the math failure policy.
 - Embed pictures and retain hyperlinks in footnotes and endnotes. Preserve notes already
   present in a Word template, verify note relationships, and report failures at the note
   definition. Notes now use the same strict math policy as the body.

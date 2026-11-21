@@ -60,30 +60,62 @@ def test_decimal_array_preserves_separators_in_native_zero_gap_columns(use_sidec
     ]
 
 
-def test_unsupported_horizontal_array_rule_is_reported():
-    expression = r"\begin{array}{r|r}a&b\\\hline c&d\end{array}"
+@pytest.mark.parametrize("use_sidecar", [False, True])
+def test_array_horizontal_rules_and_frame_remain_editable(use_sidecar):
+    sidecar = MathJaxSidecar() if use_sidecar else SimpleNamespace(available=False)
+    if use_sidecar and not sidecar.available:
+        pytest.skip("MathJax runtime is unavailable")
+    converter = DefaultMathConverter(sidecar=sidecar)
+    equation = converter.convert(
+        r"\begin{array}{|l|r|}\hline a&\frac{2}{3}\\\hline b&18\\\hline co&5\\\hline\end{array}",
+        display=True,
+    )
+    assert equation.engine == ("mathjax-sidecar" if use_sidecar else "mddocx-basic")
+    assert equation.semantic_valid
+    box = equation.omml.find(qn("m:borderBox"))
+    assert box is not None and box.find(qn("m:borderBoxPr")) is None
+    assert len(list(box.iter(qn("m:bar")))) == 2
+    assert len(list(box.iter(qn("m:sepChr")))) == 3
+    visible = list(visible_omml(box))
+    assert sum(node.tag == qn("m:f") for node in visible) == 1
+    assert "".join(node.text or "" for node in visible if node.tag == qn("m:t")) == "a23b18co5"
+
+
+@pytest.mark.parametrize("directive", [r"\hdashline", r"\hline\hline", r"\cline{1-2}"])
+def test_unsupported_array_rules_are_reported(directive):
+    expression = rf"\begin{{array}}{{rr}}{directive}a&b\\c&d\end{{array}}"
     result = Compiler().compile_string(f"$$\n{expression}\n$$")
     (finding,) = result.diagnostics
     assert finding.code == "MATH201"
-    assert "hline" in finding.message
 
 
-@pytest.mark.parametrize("change", ["vertical", "decimal", "spacing"])
+@pytest.mark.parametrize(
+    "change", ["vertical", "row_group_vertical", "horizontal", "frame", "decimal", "spacing"]
+)
 def test_verify_detects_removed_array_notation(tmp_path, change):
     source = tmp_path / "array.md"
-    tex = (
-        r"\begin{array}{r|l}a&b\\c&d\end{array}"
-        if change == "vertical"
-        else r"\begin{array}{r@{.}l}12&34\\5&6\end{array}"
-    )
+    tex = {
+        "vertical": r"\begin{array}{r|l}a&b\\c&d\end{array}",
+        "row_group_vertical": r"\begin{array}{r|l}a&b\\\hline c&d\end{array}",
+        "horizontal": r"\begin{array}{r|l}a&b\\\hline c&d\end{array}",
+        "frame": r"\begin{array}{|rl|}\hline a&b\\c&d\\\hline\end{array}",
+    }.get(change, r"\begin{array}{r@{.}l}12&34\\5&6\end{array}")
     source.write_text(f"$$\n{tex}\n$$\n", encoding="utf-8")
     compiler = Compiler()
     result = compiler.compile_file(source, source.with_suffix(".docx"))
     assert compiler.verify(source, result.output_bytes).ok
     parts = read_parts(result.output_bytes)
     root = etree.fromstring(parts["word/document.xml"])
-    if change == "vertical":
+    if change in {"vertical", "row_group_vertical"}:
         next(root.iter(qn("m:sepChr"))).set(qn("m:val"), "")
+    elif change == "horizontal":
+        bar = next(root.iter(qn("m:bar")))
+        bar.getparent().replace(bar, bar.find(qn("m:e"))[0])
+    elif change == "frame":
+        frame = next(root.iter(qn("m:borderBox")))
+        props = etree.Element(qn("m:borderBoxPr"))
+        etree.SubElement(props, qn("m:hideTop")).set(qn("m:val"), "1")
+        frame.insert(0, props)
     elif change == "spacing":
         next(root.iter(qn("m:cGp"))).set(qn("m:val"), "40")
     else:

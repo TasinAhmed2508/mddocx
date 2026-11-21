@@ -145,7 +145,10 @@ class DefaultMathConverter:
             decorated_array = any(
                 any(kind in {"@", "|"} for kind, _ in columns)
                 or "*" in normalized.text[start:end]
-                or any(tag in normalized.text for tag in (r"\hline", r"\cline", r"\multicolumn"))
+                or any(
+                    tag in normalized.text
+                    for tag in (r"\hline", r"\hdashline", r"\cline", r"\multicolumn")
+                )
                 for start, end, columns in array_preambles(normalized.text)
             )
         except ValueError as exc:

@@ -178,6 +178,36 @@ def test_direct_image_links_embed_and_other_links_do_not_fetch(tmp_path):
         assert f"{origin}/guide".encode() in package.read("word/_rels/document.xml.rels")
 
 
+def test_literal_math_characters_in_image_links_survive_conversion(tmp_path):
+    jpg = BytesIO()
+    Image.new("RGB", (12, 8), "navy").save(jpg, format="JPEG")
+    path = "/plate.JPG?raw=$version$"
+    config = RenderConfig(resources=ResourcePolicy(allow_private_hosts=True))
+    compiler = Compiler(config)
+    source = tmp_path / "assets.md"
+    (tmp_path / "$local$.jpg").write_bytes(jpg.getvalue())
+    with _server({path: (200, "image/jpeg", jpg.getvalue())}) as (origin, counts):
+        url = origin + path
+        other = f"{origin}/documentation?topic=$topic$"
+        currency_link = f"{origin}/documentation?format=$"
+        source.write_text(
+            f'![Direct](<{url}> "$caption$")\n\n{url}\n\n'
+            f'![Reference][plate]\n\n<img src="{url}" alt="HTML plate">\n\n'
+            f"[Read the guide]({other}). Budget $5. [See the price]({currency_link}) with $x^2$.\n\n"
+            f"![Local]($local$.jpg)\n\n[plate]: {url}\n",
+            encoding="utf-8",
+        )
+        output = compiler.compile_file(source, source.with_suffix(".docx"))
+        assert compiler.verify(source, output.output_bytes).ok
+    assert counts == {path: 1}
+    parts = read_parts(output.output_bytes)
+    root = etree.fromstring(parts["word/document.xml"])
+    assert len(list(root.iter(qn("w:drawing")))) == 5
+    assert len(list(root.iter(qn("m:oMath")))) == 1
+    assert other.encode() in parts["word/_rels/document.xml.rels"]
+    assert currency_link.encode() in parts["word/_rels/document.xml.rels"]
+
+
 def test_direct_image_links_obey_block_remote_flag(tmp_path):
     cfg = RenderConfig(resources=ResourcePolicy(allow_remote_resources=False))
     compiler = Compiler(cfg)

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve literal math delimiters inside image paths, link destinations, and HTML image attributes.
 - Write merged Word cells directly so long HTML and `layout-table` spans convert
   without recursive merging. Keep horizontal borders visible around shaded merged
   headers. Offline verification now checks explicit `layout-table` cells and spans.

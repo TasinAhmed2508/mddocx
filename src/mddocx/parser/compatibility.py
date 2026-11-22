@@ -6,10 +6,16 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 import re
 
+from markdown_it.common.html_re import HTML_TAG_RE
+from markdown_it.helpers import parseLinkDestination, parseLinkTitle
+
 from .tables import html_table_source_end
 
 INLINE_SENTINEL = "MDDOCXMATH"
-_MATH_MARK = re.compile(r"[`\\$]")
+_LINK_MARK = re.compile(r"\]\(|\]:|<|https?://", re.I)
+_MATH_MARK = re.compile(r"[`\\$]|" + _LINK_MARK.pattern, re.I)
+_REFERENCE_LABEL = re.compile(r"^\s*\[(?!\^)(?:[^\[\]\\]|\\.)+\]$")
+_RAW_URL = re.compile(r"https?://[^<>\s]+", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,21 +92,8 @@ def find_math_syntax_issues(markdown: str) -> list[MathSyntaxIssue]:
             issues.append(
                 MathSyntaxIssue(i + 1, "Unterminated same-line display-math delimiter '$$'.")
             )
-        start = 0
-        while True:
-            opened = line.find(r"\(", start)
-            if opened < 0:
-                break
-            if not _is_escaped(line, opened):
-                closed = _find_unescaped(line, r"\)", opened + 2)
-                if closed < 0:
-                    issues.append(
-                        MathSyntaxIssue(i + 1, "Unterminated inline-math delimiter '\\('.")
-                    )
-                    break
-                start = closed + 2
-            else:
-                start = opened + 2
+        for _ in _inline_math_parts(line, start_line=i + 1, issues=issues):
+            pass
         i += 1
     if fence is not None and fence[2] and not any(item.line == fence[3] for item in issues):
         issues.append(MathSyntaxIssue(fence[3], "Unterminated math-labelled fenced block."))
@@ -239,6 +232,8 @@ def normalize_math_syntax(markdown: str) -> str:
 
 def _shield_inline_math(line: str) -> str:
     """Protect inline math on one Markdown line while respecting code spans."""
+    if "$" not in line and "\\" not in line:
+        return line
     return "".join(
         f"{INLINE_SENTINEL}{_enc(value)}ENDMATH" if kind == "math" else value
         for kind, value in _inline_math_parts(line)
@@ -254,6 +249,34 @@ def split_cell_math(
     )
 
 
+def _link_literal_end(text: str, offset: int, marker: str) -> int:
+    if marker == "<":
+        tag = HTML_TAG_RE.match(text, offset)
+        return tag.end() if tag else offset + 1
+    if marker[0].lower() == "h":
+        url = _RAW_URL.match(text, offset)
+        return url.end() if url else offset + len(marker)
+    inline = marker == "](" and text.find("[", 0, offset) >= 0 and not _is_escaped(text, offset)
+    reference = marker == "]:" and _REFERENCE_LABEL.fullmatch(text, 0, offset + 1)
+    if not (inline or reference):
+        return offset + len(marker)
+    start = offset + 2
+    while start < len(text) and text[start] in " \t":
+        start += 1
+    destination = parseLinkDestination(text, start, len(text))
+    if not destination.ok:
+        return start
+    end = destination.pos
+    title_start = end
+    while title_start < len(text) and text[title_start] in " \t":
+        title_start += 1
+    if title_start > end:
+        title = parseLinkTitle(text, title_start, len(text))
+        if title.ok:
+            end = title.pos
+    return end
+
+
 def _inline_math_parts(
     text: str,
     *,
@@ -261,6 +284,10 @@ def _inline_math_parts(
     start_line: int = 1,
     issues: list[MathSyntaxIssue] | None = None,
 ) -> Iterator[tuple[str, str]]:
+    if "$" not in text and "\\" not in text:
+        if text:
+            yield "text", text
+        return
     start = cursor = 0
     code_ticks = 0
     while mark := _MATH_MARK.search(text, cursor):
@@ -279,6 +306,10 @@ def _inline_math_parts(
             continue
         if code_ticks:
             continue
+        if mark[0] not in {"\\", "$"}:
+            if not display_delimiters:
+                cursor = _link_literal_end(text, i, mark[0])
+            continue
 
         opener = text[i : i + 2]
         closer = r"\)" if opener == r"\(" else None
@@ -288,15 +319,21 @@ def _inline_math_parts(
             end = _find_unescaped(text, closer, i + 2)
             if end < 0 and issues is not None:
                 line = start_line + text.count("\n", 0, i)
-                issues.append(
-                    MathSyntaxIssue(line, f"Unterminated table math delimiter {opener!r}.")
-                )
+                scope = "table math" if display_delimiters else "inline-math"
+                issues.append(MathSyntaxIssue(line, f"Unterminated {scope} delimiter {opener!r}."))
             size = 2
         elif mark[0] == "$" and opener != "$$" and not _is_escaped(text, i):
             end = _find_inline_dollar_close(text, i + 1)
             # Never pair a currency range across another dollar delimiter or a code span.
-            if end >= 0 and any(char in text[i + 1 : end] for char in "`$"):
-                end = -1
+            if end >= 0:
+                if any(char in text[i + 1 : end] for char in "`$") or (
+                    not display_delimiters
+                    and any(
+                        _link_literal_end(text, link.start(), link[0]) > end
+                        for link in _LINK_MARK.finditer(text, i + 1, end)
+                    )
+                ):
+                    end = -1
             size = 1
         else:
             continue

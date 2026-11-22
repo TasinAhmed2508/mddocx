@@ -13,6 +13,7 @@ from mddocx.ooxml.sequence import get_or_add
 from mddocx.scripts import has_cjk, has_complex_script
 
 _XML_ALLOWED_CONTROLS = {"\t", "\n", "\r"}
+INLINE_MATH_SEPARATOR = "\u2060"
 
 
 def clean_xml_text(value: str) -> str:

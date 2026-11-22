@@ -33,7 +33,7 @@ from .math.validation import (
 )
 from .ooxml.bangla import LEGACY_BANGLA_FONT
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
-from .ooxml.text import clean_xml_text
+from .ooxml.text import INLINE_MATH_SEPARATOR, clean_xml_text
 from .references import ReferenceRegistry
 from .table_grid import iter_grid_rows, repeatable_header_rows, table_grid
 
@@ -852,6 +852,18 @@ def _read_inlines(parent: etree._Element, links: dict) -> tuple:
             run = node.getparent()
             font = run.find("w:rPr/w:rFonts", NS) if run is not None else None
             text = node.text or ""
+            if (
+                text == INLINE_MATH_SEPARATOR
+                and run is not None
+                and run.find("w:rPr/w:noProof", NS) is not None
+            ):
+                before, after = run.getprevious(), run.getnext()
+                if (
+                    before is not None
+                    and after is not None
+                    and before.tag == after.tag == f"{{{M}}}oMath"
+                ):
+                    continue
             if (
                 font is not None
                 and font.get(f"{{{W}}}ascii", "").casefold() == LEGACY_BANGLA_FONT.casefold()

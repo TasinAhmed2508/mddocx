@@ -361,6 +361,8 @@ on its own line.
 Use `![Description](https://example.org/chart.jpg)` to embed a remote figure. A direct
 HTTP(S) image URL on its own line or a standalone link such as
 `[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.
+Markdown formatting in image labels becomes plain Word alternative text, with TeX source
+for math in the label.
 Append figure attributes to a standalone link to set its size or caption, for example
 `[Chart description](https://example.org/chart.jpg) {width=70% caption="Quarterly output"}`.
 To make the picture clickable, wrap an explicit image in a Markdown link, as in

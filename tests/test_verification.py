@@ -14,6 +14,31 @@ from mddocx.ooxml.package import read_parts, write_parts
 from mddocx.ooxml.sequence import get_or_add
 
 
+def test_adjacent_equations_use_a_word_preserved_separator(tmp_path):
+    source = tmp_path / "adjacent.md"
+    source.write_text(
+        "Adjacent $a$\\(b\\).\n\nAuthor's joiner $c$\u2060\\(d\\).\n", encoding="utf-8"
+    )
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    parts = read_parts(blob)
+    document = etree.fromstring(parts["word/document.xml"])
+    first, second, third, fourth = document.iter(qn("m:oMath"))
+    for start, end in [(first, second), (third, fourth)]:
+        run = start.getnext()
+        assert run.findtext("w:t", namespaces=NS) == "\u2060"
+        assert run.getnext() is end
+    assert first.getnext().find("w:rPr/w:noProof", NS) is not None
+    assert third.getnext().find("w:rPr/w:noProof", NS) is None
+    second.getparent().remove(second)
+    parts["word/document.xml"] = etree.tostring(document)
+    assert any(
+        finding.code == "VERIFY303"
+        for finding in compiler.verify(source, write_parts(parts)).findings
+    )
+
+
 @pytest.mark.parametrize("change", ["linked", "missing-id"])
 def test_verify_detects_picture_without_embedded_binding(tmp_path, change):
     Image.new("RGB", (8, 8), "white").save(tmp_path / "tile.png")

@@ -7,7 +7,7 @@ from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
-from mddocx.ast.base import Document, SourcePosition
+from mddocx.ast.base import Document, SourcePosition, iter_nodes
 from mddocx.ast.block import (
     BlockQuote,
     BulletList,
@@ -46,6 +46,7 @@ from mddocx.ast.inline import (
     CrossReference,
     Citation,
     Comment,
+    link_content,
 )
 from .compatibility import (
     MathSyntaxIssue,
@@ -56,6 +57,7 @@ from .compatibility import (
     normalize_definition_lists,
     normalize_callout_containers,
     protect_escaped_footnote_references,
+    restore_inline_math_text,
     split_footnote_references,
     split_text_math,
     split_comment_markup,
@@ -750,13 +752,9 @@ class MarkdownParser:
     @staticmethod
     def _linked_image(node) -> Image | None:
         if isinstance(node, Link):
-            if any(not isinstance(child, Text) for child in node.children):
-                return None
             url = node.href
-            alt = MarkdownParser._plain_text(node.children)
-            title = node.title
         elif isinstance(node, Text):
-            url, alt, title = node.text.strip(), "", None
+            url = node.text.strip()
             if not url.startswith(("http://", "https://")) or any(c.isspace() for c in url):
                 return None
         else:
@@ -769,7 +767,51 @@ class MarkdownParser:
             return None
         if PurePosixPath(unquote(parsed.path)).suffix.lower() not in _IMAGE_LINK_SUFFIXES:
             return None
+        alt, title = "", None
+        if isinstance(node, Link):
+            # A label can contain styling, while a linked picture keeps its own click target.
+            if any(
+                not isinstance(
+                    child,
+                    (
+                        Text,
+                        InlineCode,
+                        InlineMath,
+                        Emphasis,
+                        Strong,
+                        Strikethrough,
+                        SoftBreak,
+                        HardBreak,
+                    ),
+                )
+                for child in iter_nodes(node.children)
+            ):
+                return None
+            alt = "".join(value for value in link_content(node.children) if isinstance(value, str))
+            title = node.title
         return Image(src=url, alt=alt if alt != url else "", title=title, source=node.source)
+
+    @staticmethod
+    def _image_description(token: Token) -> str:
+        if token.children is None:
+            return restore_inline_math_text(token.content)
+        parts = []
+        for child in token.children:
+            if child.type == "text":
+                text = restore_inline_math_text(child.content)
+                parts.extend(
+                    f"[^{value}]" if kind == "footnote" else value
+                    for kind, value in split_footnote_references(text)
+                )
+            elif child.type == "code_inline":
+                parts.append(child.content)
+            elif child.type == "image":
+                parts.append(MarkdownParser._image_description(child))
+            elif child.type in {"softbreak", "hardbreak"} or (
+                child.type == "html_inline" and re.fullmatch(r"<br\s*/?>", child.content, re.I)
+            ):
+                parts.append(" ")
+        return "".join(parts)
 
     _COMBINED_REF_RE = re.compile(
         r"\[(?P<prefix>Figure|Table|Equation|Listing|Section)\s+@(?P<target>[A-Za-z0-9_.:-]+)\]",
@@ -986,7 +1028,7 @@ class MarkdownParser:
                         Link(href=t.attrGet("href") or "", title=t.attrGet("title"), children=inner)
                     )
             elif t.type == "image":
-                alt = t.content or ""
+                alt = self._image_description(t)
                 nodes.append(Image(src=t.attrGet("src") or "", alt=alt, title=t.attrGet("title")))
                 i += 1
             elif t.type == "html_inline":

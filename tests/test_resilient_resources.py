@@ -219,6 +219,44 @@ def test_direct_image_links_obey_block_remote_flag(tmp_path):
         assert b"/plate.jpg" in package.read("word/_rels/document.xml.rels")
 
 
+def test_image_descriptions_use_label_text_and_keep_requested_click_targets(tmp_path):
+    jpg = BytesIO()
+    Image.new("RGB", (12, 8), "navy").save(jpg, format="JPEG")
+    config = RenderConfig(resources=ResourcePolicy(allow_private_hosts=True))
+    compiler = Compiler(config)
+    source = tmp_path / "descriptions.md"
+    with _server({"/plot.jpg": (200, "image/jpeg", jpg.getvalue())}) as (origin, counts):
+        url = f"{origin}/plot.jpg"
+        click_target = f"{origin}/original.jpg"
+        source.write_text(
+            rf"![**Area** for $r^2$ and `gain`<br>\$draft\$ \[^literal] "
+            rf"![nested $x$\(y\)](unused.png)]({url})"
+            "\n\n"
+            rf"[**Measured** `area` at \(r=2\)]({url})"
+            "\n\n"
+            rf"[![*বাংলা* and $x$]({url})]({click_target})"
+            "\n\nA note.[^picture]\n\n"
+            rf"[^picture]: ![**Plate** for `study`]({url})"
+            "\n",
+            encoding="utf-8",
+        )
+        output = compiler.compile_file(source, source.with_suffix(".docx"))
+        assert not output.diagnostics
+        assert compiler.verify(source, output.output_bytes).ok
+    assert counts == {"/plot.jpg": 1}
+    parts = read_parts(output.output_bytes)
+    document = etree.fromstring(parts["word/document.xml"])
+    notes = etree.fromstring(parts["word/footnotes.xml"])
+    assert [node.get("descr") for node in document.iter(qn("wp:docPr"))] == [
+        "Area for r^2 and gain $draft$ [^literal] nested xy",
+        "Measured area at r=2",
+        "বাংলা and x",
+    ]
+    assert [node.get("descr") for node in notes.iter(qn("wp:docPr"))] == ["Plate for study"]
+    assert click_target.encode() in parts["word/_rels/document.xml.rels"]
+    assert not list(document.iter(qn("m:oMath")))
+
+
 @pytest.mark.parametrize(
     "template",
     [

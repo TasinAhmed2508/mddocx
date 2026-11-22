@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Write formatted Markdown image labels as plain Word descriptions and embed standalone
+  image links with formatted labels.
+- Keep adjacent inline equations distinct inside Markdown emphasis and after saving in Word.
 - Preserve literal math delimiters inside image paths, link destinations, and HTML image attributes.
 - Write merged Word cells directly so long HTML and `layout-table` spans convert
   without recursive merging. Keep horizontal borders visible around shaded merged

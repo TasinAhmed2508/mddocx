@@ -12,6 +12,9 @@ from markdown_it.helpers import parseLinkDestination, parseLinkTitle
 from .tables import html_table_source_end
 
 INLINE_SENTINEL = "MDDOCXMATH"
+# The colon frames adjacent payloads, while Z keeps a final underscore inside a word.
+_INLINE_MATH_END = "Z:ENDMATH"
+_INLINE_MATH_SENTINEL = re.compile(rf"{INLINE_SENTINEL}([A-Za-z0-9_-]+){_INLINE_MATH_END}")
 _LINK_MARK = re.compile(r"\]\(|\]:|<|https?://", re.I)
 _MATH_MARK = re.compile(r"[`\\$]|" + _LINK_MARK.pattern, re.I)
 _REFERENCE_LABEL = re.compile(r"^\s*\[(?!\^)(?:[^\[\]\\]|\\.)+\]$")
@@ -235,7 +238,7 @@ def _shield_inline_math(line: str) -> str:
     if "$" not in line and "\\" not in line:
         return line
     return "".join(
-        f"{INLINE_SENTINEL}{_enc(value)}ENDMATH" if kind == "math" else value
+        f"{INLINE_SENTINEL}{_enc(value)}{_INLINE_MATH_END}" if kind == "math" else value
         for kind, value in _inline_math_parts(line)
     )
 
@@ -424,10 +427,9 @@ def normalize_bibliography_directives(markdown: str) -> str:
 
 def split_text_math(text: str) -> list[tuple[str, str]]:
     """Return [('text'|'math', value)] while respecting escaped dollar signs."""
-    sentinel_re = re.compile(rf"{INLINE_SENTINEL}([A-Za-z0-9_-]+)ENDMATH")
     segments: list[tuple[str, str]] = []
     pos = 0
-    for m in sentinel_re.finditer(text):
+    for m in _INLINE_MATH_SENTINEL.finditer(text):
         if m.start() > pos:
             segments.extend(_split_dollars(text[pos : m.start()]))
         decoded = _try_decode_inline_math(m.group(1))
@@ -441,6 +443,13 @@ def split_text_math(text: str) -> list[tuple[str, str]]:
     if pos < len(text):
         segments.extend(_split_dollars(text[pos:]))
     return [(kind, value) for kind, value in segments if value]
+
+
+def restore_inline_math_text(text: str) -> str:
+    """Recover shielded TeX in metadata, leaving literal dollar signs alone."""
+    return _INLINE_MATH_SENTINEL.sub(
+        lambda match: _try_decode_inline_math(match[1]) or match[0], text
+    )
 
 
 def _split_dollars(text: str) -> list[tuple[str, str]]:

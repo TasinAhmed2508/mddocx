@@ -8,7 +8,7 @@ from lxml import etree
 
 from mddocx import MarkdownWord, MathFailurePolicy, RenderConfig
 from mddocx.ast.block import MathBlock
-from mddocx.ast.inline import InlineMath
+from mddocx.ast.inline import Emphasis, InlineMath
 from mddocx.parser import MarkdownParser
 from mddocx.parser.compatibility import normalize_math_syntax
 from mddocx.math.preflight import inspect_math
@@ -102,15 +102,26 @@ formula = "$$not_math$$"
 
 
 def test_invalid_math_markers_remain_text_next_to_valid_math():
-    markdown = "Literal MDDOCXMATHaENDMATH and MDDOCXMATH_aENDMATH; $0$ then $x^2$."
+    markdown = "Literal MDDOCXMATHaZ:ENDMATH and MDDOCXMATH_aZ:ENDMATH; $0$ then $x^2$."
 
     ast = MarkdownParser().parse(markdown)
     nodes = list(_walk(ast.children))
 
     assert [node.source_text for node in nodes if isinstance(node, InlineMath)] == ["0", "x^2"]
     text = "".join(getattr(node, "text", "") for node in nodes)
-    assert "MDDOCXMATHaENDMATH" in text
-    assert "MDDOCXMATH_aENDMATH" in text
+    assert "MDDOCXMATHaZ:ENDMATH" in text
+    assert "MDDOCXMATH_aZ:ENDMATH" in text
+
+
+def test_adjacent_inline_equations_keep_their_boundaries_inside_emphasis():
+    ast = MarkdownParser().parse(r"_Equations $x$\(y\) and \(ab?\)_")
+    (span,) = ast.children[0].children
+    assert isinstance(span, Emphasis)
+    assert [node.source_text for node in span.children if isinstance(node, InlineMath)] == [
+        "x",
+        "y",
+        "ab?",
+    ]
 
 
 def test_unclosed_display_delimiter_does_not_consume_document_tail():

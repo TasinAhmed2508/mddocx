@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 from mddocx.diagnostics import Diagnostic, MddocxError
-from mddocx.ooxml.text import clean_xml_text
+from mddocx.ooxml.text import INLINE_MATH_SEPARATOR, clean_xml_text
 
 from .context import RenderContext
 
@@ -22,6 +23,9 @@ class NativeMathRenderer:
                 math_paragraph.append(omath)
                 paragraph._p.append(math_paragraph)
             else:
+                if len(paragraph._p) and paragraph._p[-1].tag == qn("m:oMath"):
+                    # Word joins consecutive OMML objects when saving without a text run between them.
+                    paragraph.add_run(INLINE_MATH_SEPARATOR).font.no_proof = True
                 paragraph._p.append(omath)
         except Exception as exc:
             mode = self.context.config.math_failure.mode

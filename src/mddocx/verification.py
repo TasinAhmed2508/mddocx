@@ -22,7 +22,13 @@ from .data import load_data_table
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
 from .layout import LayoutPlanner
-from .layout_table import parse_layout_table, text_layout_kind
+from .layout_table import (
+    FORM_PHOTO_LABEL,
+    parse_layout_table,
+    parse_ruled_rows,
+    parse_text_form,
+    text_layout_kind,
+)
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
 from .math.validation import (
@@ -31,7 +37,7 @@ from .math.validation import (
     validate_omml,
     visible_omml,
 )
-from .ooxml.bangla import LEGACY_BANGLA_FONT
+from .ooxml.bangla import LEGACY_BANGLA_FONT, decode_bijoy
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
 from .ooxml.text import INLINE_MATH_SEPARATOR, clean_xml_text
 from .references import ReferenceRegistry
@@ -340,43 +346,20 @@ def compare_document(
                     expected.append(
                         _Unit("caption", ("", clean_xml_text(node.caption), None), node)
                     )
-            elif (
-                isinstance(node, block.CodeBlock)
-                and (node.language or "").lower() == "layout-table"
-            ):
-                rows, weights, placements = parse_layout_table(node, config.limits.max_table_cells)
-                cells = tuple(
-                    (
-                        False,
-                        tuple(
-                            (
-                                entry.span,
-                                entry.merge,
-                                _layout_cell_tokens(row[entry.column])
-                                if entry.cell is not None
-                                else (),
-                            )
-                            for entry in grid
-                        ),
-                    )
-                    for row, grid in zip(
-                        rows, iter_grid_rows(len(weights), placements), strict=True
-                    )
-                )
-                expected.append(_Unit("table", (len(weights), cells), node))
             elif isinstance(node, block.CodeBlock):
-                if text_layout_kind(node) is not None:
-                    incomplete("Automatic plain-text layout coverage is incomplete.", node)
-                    continue
-                language = (node.language or "text").strip() or "text"
-                if language.lower() == "mermaid" and config.mermaid.enabled:
-                    incomplete("Rendered Mermaid diagram coverage is incomplete.", node)
-                    continue
                 title = (
                     (node.caption or ("Code listing" if node.identifier else None))
                     if config.references.captions
                     else None
                 )
+                layout_units = _expected_text_layout(node, config.limits.max_table_cells)
+                if layout_units is not None:
+                    captioned(layout_units, "Listing", title, node)
+                    continue
+                language = (node.language or "text").strip() or "text"
+                if language.lower() == "mermaid" and config.mermaid.enabled:
+                    incomplete("Rendered Mermaid diagram coverage is incomplete.", node)
+                    continue
                 lines = node.code.splitlines() or [""]
                 numbers = (
                     config.code.line_numbers if node.line_numbers is None else node.line_numbers
@@ -475,7 +458,7 @@ def compare_document(
         findings.append(
             _finding(
                 "VERIFY303",
-                f"Unit {first + 1}: expected {_describe(wanted)}, found {_describe(found)}.",
+                f"Unit {first + 1}. {_replacement_message(wanted, found)}",
                 wanted[0].source if wanted else None,
             )
         )
@@ -500,7 +483,7 @@ def compare_document(
             findings.append(
                 _finding(
                     "VERIFY303",
-                    f"Expected {_describe(expected[start:end])}, found {_describe(actual[actual_start:actual_end])}.",
+                    _replacement_message(expected[start:end], actual[actual_start:actual_end]),
                     expected[start].source,
                 )
             )
@@ -572,6 +555,36 @@ def _describe(units: list[_Unit]) -> str:
     first = units[0]
     extra = f" and {len(units) - 1} more" if len(units) > 1 else ""
     return f"{first.kind} {repr(first.content)[:150]}{extra}"
+
+
+def _replacement_message(expected: list[_Unit], actual: list[_Unit]) -> str:
+    if len(expected) == len(actual) == 1 and expected[0].kind == actual[0].kind == "table":
+        columns, rows = expected[0].content
+        found_columns, found_rows = actual[0].content
+        if columns != found_columns:
+            return f"Expected {columns} table columns, found {found_columns}."
+        if len(rows) != len(found_rows):
+            return f"Expected {len(rows)} table rows, found {len(found_rows)}."
+        for index, (row, found_row) in enumerate(zip(rows, found_rows, strict=True), 1):
+            header, cells = row
+            found_header, found_cells = found_row
+            if header != found_header:
+                return f"Table row {index} repeat-header setting changed."
+            if len(cells) != len(found_cells):
+                return f"Table row {index} has {len(found_cells)} cells, expected {len(cells)}."
+            column = 1
+            for cell, found_cell in zip(cells, found_cells, strict=True):
+                if cell[:2] != found_cell[:2]:
+                    return f"Table row {index}, column {column} span or merge changed."
+                if cell[2] != found_cell[2]:
+                    wanted_text = repr(cell[2])[:150]
+                    found_text = repr(found_cell[2])[:150]
+                    return (
+                        f"Table row {index}, column {column} content changed. "
+                        f"Expected {wanted_text}, found {found_text}."
+                    )
+                column += cell[0]
+    return f"Expected {_describe(expected)}, found {_describe(actual)}."
 
 
 def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFinding]:
@@ -668,6 +681,54 @@ def _layout_cell_tokens(text: str) -> tuple:
     )
 
 
+def _plain_grid_content(rows: list[list[str]]) -> tuple:
+    return len(rows[0]), tuple(
+        (False, tuple((1, None, _layout_cell_tokens(cell)) for cell in row)) for row in rows
+    )
+
+
+def _expected_text_layout(node: block.CodeBlock, cell_limit: int) -> list[_Unit] | None:
+    kind = text_layout_kind(node)
+    if kind is None:
+        return None
+    if kind == "structured":
+        rows, weights, placements = parse_layout_table(node, cell_limit)
+        columns = len(weights)
+        cells = tuple(
+            (
+                False,
+                tuple(
+                    (
+                        entry.span,
+                        entry.merge,
+                        _layout_cell_tokens(row[entry.column]) if entry.cell is not None else (),
+                    )
+                    for entry in grid
+                ),
+            )
+            for row, grid in zip(rows, iter_grid_rows(columns, placements), strict=True)
+        )
+        return [_Unit("table", (columns, cells), node)]
+    if kind == "ruled":
+        return [_Unit("table", _plain_grid_content(parse_ruled_rows(node.code)), node)]
+
+    fields, addresses, signatures = parse_text_form(node.code)
+    field_tokens: list = []
+    for index, field in enumerate(fields):
+        if index:
+            field_tokens.append(("paragraph-break",))
+        field_tokens.extend(_layout_cell_tokens(field))
+    photo = ("table", *_plain_grid_content([[FORM_PHOTO_LABEL]]))
+    form = (2, ((False, ((1, None, tuple(field_tokens)), (1, None, (photo,)))),))
+    units = [_Unit("table", form, node)]
+    if addresses:
+        units.append(_Unit("table", _plain_grid_content(addresses), node))
+    units.extend(
+        _Unit("paragraph", _layout_cell_tokens(signature), node) for signature in signatures
+    )
+    return units
+
+
 def _plain_text(nodes) -> str:
     return clean_xml_text(
         "".join(
@@ -752,28 +813,7 @@ def _read_body(
                     )
                 )
                 continue
-            rows = []
-            for row in child.findall("w:tr", NS):
-                cells = []
-                for cell in row.findall("w:tc", NS):
-                    span = cell.find("w:tcPr/w:gridSpan", NS)
-                    merge = cell.find("w:tcPr/w:vMerge", NS)
-                    cells.append(
-                        (
-                            _word_span(span),
-                            merge.get(f"{{{W}}}val", "continue") if merge is not None else None,
-                            _read_inlines(cell, links),
-                        )
-                    )
-                header = row.find("w:trPr/w:tblHeader", NS)
-                repeated = header is not None and header.get(f"{{{W}}}val", "1") not in {
-                    "0",
-                    "false",
-                    "off",
-                }
-                rows.append((repeated, tuple(cells)))
-            columns = len(child.findall("w:tblGrid/w:gridCol", NS))
-            result.append(_Unit("table", (columns, tuple(rows))))
+            result.append(_Unit("table", _read_table_content(child, links)))
         elif child.tag == f"{{{W}}}p":
             pending = child.find("w:pPr/w:sectPr", NS)
             tokens = _read_inlines(child, links)
@@ -844,6 +884,46 @@ def _word_span(element) -> int:
         return 0
 
 
+def _read_table_content(table: etree._Element, links: dict) -> tuple:
+    rows = []
+    for row in table.findall("w:tr", NS):
+        cells = []
+        for cell in row.findall("w:tc", NS):
+            span = cell.find("w:tcPr/w:gridSpan", NS)
+            merge = cell.find("w:tcPr/w:vMerge", NS)
+            cells.append(
+                (
+                    _word_span(span),
+                    merge.get(f"{{{W}}}val", "continue") if merge is not None else None,
+                    _read_cell_content(cell, links),
+                )
+            )
+        header = row.find("w:trPr/w:tblHeader", NS)
+        repeated = header is not None and header.get(f"{{{W}}}val", "1") not in {
+            "0",
+            "false",
+            "off",
+        }
+        rows.append((repeated, tuple(cells)))
+    columns = len(table.findall("w:tblGrid/w:gridCol", NS))
+    return columns, tuple(rows)
+
+
+def _read_cell_content(cell: etree._Element, links: dict) -> tuple:
+    tokens = []
+    previous_paragraph = False
+    for child in cell:
+        if child.tag == f"{{{W}}}p":
+            if previous_paragraph:
+                tokens.append(("paragraph-break",))
+            tokens.extend(_read_inlines(child, links))
+            previous_paragraph = True
+        elif child.tag == f"{{{W}}}tbl":
+            tokens.append(("table", *_read_table_content(child, links)))
+            previous_paragraph = False
+    return _merge_text(tokens)
+
+
 def _read_inlines(parent: etree._Element, links: dict) -> tuple:
     tokens = []
     ref_field = False
@@ -868,9 +948,7 @@ def _read_inlines(parent: etree._Element, links: dict) -> tuple:
                 font is not None
                 and font.get(f"{{{W}}}ascii", "").casefold() == LEGACY_BANGLA_FONT.casefold()
             ):
-                from bijoy2unicode.converter import Unicode
-
-                text = Unicode().convertBijoyToUnicode(text.replace("\u00f8", "\u00ad"))
+                text = decode_bijoy(text)
             tokens.append(text)
         elif node.tag == f"{{{W}}}br":
             tokens.append(("page-break",) if node.get(f"{{{W}}}type") == "page" else ("break",))

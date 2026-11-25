@@ -512,21 +512,65 @@ def test_verify_plain_code_in_lists_and_quotes(tmp_path, edit):
 
 def test_verify_distinguishes_ruled_layout_from_plain_text(tmp_path):
     source = tmp_path / "ruled.md"
-    ruled = "Floor | East | West\n----------\n4 | Alice | Bob\n----------\n3 | Common | Carol"
+    ruled = (
+        "Floor | East | West\n----------\n4 | Alice | Bob\n | 1125 | 1125\n"
+        "----------\n3 | Common | Carol"
+    )
     compiler = Compiler()
     output = source.with_suffix(".docx")
     source.write_text(f"~~~text\n{ruled}\n~~~\n", encoding="utf-8")
     layout = compiler.compile_file(source, output)
-    assert Document(output).tables
-    assert any(
-        finding.code == "VERIFY304" and "plain-text layout" in finding.message
-        for finding in compiler.verify(source, layout.output_bytes).findings
-    )
+    assert Document(output).tables[0].cell(1, 1).text == "Alice\n1125"
+    assert compiler.verify(source, layout.output_bytes).ok
+    parts = read_parts(layout.output_bytes)
+    document = etree.fromstring(parts["word/document.xml"])
+    continuation = next(node for node in document.iter(qn("w:t")) if node.text == "1125")
+    continuation.text = "9999"
+    parts["word/document.xml"] = etree.tostring(document)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part, finding.line) == ("VERIFY303", "word/document.xml", 1)
+    assert "row 2, column 2" in finding.message and "9999" in finding.message
 
     source.write_text(f"~~~text\n{ruled}\nUnstructured line\n~~~\n", encoding="utf-8")
     code = compiler.compile_file(source, output)
     assert not Document(output).tables
     assert compiler.verify(source, code.output_bytes).ok
+
+
+@pytest.mark.parametrize("change", ["photo-label", "photo-box", "signature"])
+def test_verify_text_form_with_native_photo_box(tmp_path, change):
+    source = tmp_path / "form.md"
+    source.write_text(
+        '~~~text {#lst-contact caption="Contact form"}\n'
+        "নাম : উদাহরণ ┌────┐\nপিতা : উদাহরণ │ ছবি │\nমাতা : উদাহরণ └────┘\n"
+        "ধর্ম : ইসলাম\nপেশা : শিক্ষক\nস্থায়ী | বর্তমান\n"
+        "গ্রাম : ক | গ্রাম : খ\nজেলা : ক | জেলা : খ\n"
+        ".............. Signature\n~~~\n",
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.fonts.bengali = "SutonnyMJ"
+    compiler = Compiler(config)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    document = etree.fromstring(parts["word/document.xml"])
+    photo = document.find("./w:body/w:tbl/w:tr/w:tc/w:tbl", NS)
+    assert photo is not None
+
+    if change == "photo-label":
+        next(photo.iter(qn("w:t"))).text = "Changed"
+    elif change == "photo-box":
+        photo.getparent().remove(photo)
+    else:
+        signature = next(
+            node for node in document.iter(qn("w:t")) if node.text == ".............. Signature"
+        )
+        signature.text = "Signature"
+    parts["word/document.xml"] = etree.tostring(document)
+
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part, finding.line) == ("VERIFY303", "word/document.xml", 1)
 
 
 def test_verify_cli_respects_listing_flags(tmp_path, capsys):

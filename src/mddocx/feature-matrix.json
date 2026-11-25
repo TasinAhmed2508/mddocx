@@ -63,7 +63,7 @@
         "tests/test_technical_report.py",
         "tests/test_table_and_setup_rc2.py"
       ],
-      "verify": "Row order, repeated headers, cell spans and content, links, pictures, native math, and explicit layout-table grids"
+      "verify": "Row order, repeated headers, cell spans and content, links, pictures, native math, explicit layout-table grids, and detected ruled tables and forms"
     },
     {
       "id": "word-sections",

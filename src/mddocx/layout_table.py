@@ -12,6 +12,7 @@ from .diagnostics import Diagnostic, MddocxError
 from .table_grid import check_grid_size
 
 _RULED_LINE = re.compile(r"\s*-{5,}\s*")
+FORM_PHOTO_LABEL = "ছবি"
 
 
 def text_layout_kind(node: CodeBlock) -> Literal["form", "ruled", "structured"] | None:
@@ -37,6 +38,47 @@ def text_layout_kind(node: CodeBlock) -> Literal["form", "ruled", "structured"] 
     ):
         return "form"
     return None
+
+
+def parse_ruled_rows(code: str) -> list[list[str]]:
+    """Read a recognized ruled layout and join its continuation cells."""
+    rows: list[list[str]] = []
+    continuation = False
+    for line in code.splitlines():
+        if _RULED_LINE.fullmatch(line):
+            continuation = False
+            continue
+        cells = [part.strip() for part in line.split("|")]
+        if continuation and not cells[0]:
+            rows[-1] = [
+                old + ("\n" if old and new else "") + new
+                for old, new in zip(rows[-1], cells, strict=True)
+            ]
+        else:
+            rows.append(cells)
+        continuation = True
+    return rows
+
+
+class TextForm(NamedTuple):
+    fields: list[str]
+    addresses: list[list[str]]
+    signatures: list[str]
+
+
+def parse_text_form(code: str) -> TextForm:
+    form = TextForm([], [], [])
+    for raw_line in code.splitlines():
+        line = re.split("[┌│└]", raw_line, maxsplit=1)[0].strip()
+        if not line:
+            continue
+        if "|" in line:
+            form.addresses.append([part.strip() for part in line.split("|", 1)])
+        elif re.match(r"\.{3,}", line):
+            form.signatures.append(line)
+        else:
+            form.fields.append(re.sub(r"\s*:\s*", "\t: ", line, count=1))
+    return form
 
 
 class LayoutTable(NamedTuple):

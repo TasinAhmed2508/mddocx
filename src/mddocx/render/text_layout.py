@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from itertools import repeat
-import re
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-from mddocx.layout_table import parse_layout_table, text_layout_kind
+from mddocx.layout_table import (
+    FORM_PHOTO_LABEL,
+    parse_layout_table,
+    parse_ruled_rows,
+    parse_text_form,
+    text_layout_kind,
+)
 from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.text import clean_xml_text
 from mddocx.ooxml.utils import set_table_fixed_layout, set_table_grid_widths
@@ -71,57 +76,28 @@ def render_text_layout(renderer, node) -> bool:
         total_weight = sum(weights)
         table(rows, [available * weight / total_weight for weight in weights], True, placements)
         return True
-    lines = node.code.splitlines()
     if kind == "ruled":
-        rows = []
-        continuation = False
-        for line in lines:
-            if re.fullmatch(r"\s*-{5,}\s*", line):
-                continuation = False
-                continue
-            cells = [part.strip() for part in line.split("|")]
-            if continuation and not cells[0]:
-                rows[-1] = [
-                    old + ("\n" if old and new else "") + new for old, new in zip(rows[-1], cells)
-                ]
-            else:
-                rows.append(cells)
-            continuation = True
+        rows = parse_ruled_rows(node.code)
         table(rows, [available * 0.16, available * 0.42, available * 0.42], True)
         return True
 
-    fields, addresses, signatures = [], [], []
-    for line in lines:
-        line = re.split("[┌│└]", line, maxsplit=1)[0].strip()
-        if not line:
-            continue
-        if "|" in line:
-            addresses.append([part.strip() for part in line.split("|", 1)])
-        elif re.match(r"\.{3,}", line):
-            signatures.append(line)
-        else:
-            fields.append([line])
+    fields, addresses, signatures = parse_text_form(node.code)
     outer = table([["", ""]], [available * 0.76, available * 0.24])
     left, photo = outer.rows[0].cells
-    for index, values in enumerate(fields):
+    for index, value in enumerate(fields):
         p = left.paragraphs[0] if index == 0 else left.add_paragraph()
         p._p.style = renderer._paragraph_style_id("MD Normal")
         p.paragraph_format.space_after = Pt(0)
         p.paragraph_format.line_spacing = 1
         # Use tab stops rather than Unicode character counts for shaped Bangla.
         p.paragraph_format.tab_stops.add_tab_stop(Mm(34))
-        value = re.sub(r"\s*:\s*", "\t: ", values[0], count=1)
         renderer._configure_run(p.add_run(value), value)
     p = photo.paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(12)
-    renderer._configure_run(p.add_run("ছবি"), "ছবি")
-    # Draw an actual bordered photo box inside the right-hand layout cell.
     box = photo.add_table(rows=1, cols=1)
     box.cell(0, 0).vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     bp = box.cell(0, 0).paragraphs[0]
     bp._p.style = renderer._paragraph_style_id("MD Normal")
-    renderer._configure_run(bp.add_run("ছবি"), "ছবি")
+    renderer._configure_run(bp.add_run(FORM_PHOTO_LABEL), FORM_PHOTO_LABEL)
     box.autofit = False
     set_table_fixed_layout(box)
     set_table_grid_widths(box, [1361])

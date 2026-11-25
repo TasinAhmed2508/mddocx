@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Verify ruled text tables and detected forms, including continued cells, editable photo
+  boxes, address grids, and signature text. Report the row and column for changed cells.
+- Preserve the Bangla reph in SutonnyMJ output and reconstruct it during verification.
 - Verify plain and indented code listings, including listings inside lists and block quotes.
 - Preserve wrapped inline code, indented code, and quoted or list-nested code
   fences containing math delimiters. Render display equations inside lists and quotes

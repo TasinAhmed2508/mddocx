@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Render inline equations in Word footnotes, endnotes, and definition lists. Keep
+  escaped dollars as text and preserve escaped punctuation and entities in Markdown tables.
 - Batch common boxed formulas, Greek symbols, spacing, and text annotations in
   MathJax to speed up equation-heavy reports while preserving editable Word output.
 - Render escaped inline and display equations from ChatGPT Markdown exports as editable

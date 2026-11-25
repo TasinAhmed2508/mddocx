@@ -58,6 +58,7 @@ from .compatibility import (
     normalize_callout_containers,
     protect_escaped_footnote_references,
     restore_inline_math_text,
+    shield_inline_math,
     slash_display_block,
     split_footnote_references,
     split_text_math,
@@ -213,11 +214,9 @@ class MarkdownParser:
         children = self._postprocess_blocks(children)
         footnotes: dict[str, list] = {}
         for label, (note_source, line) in footnote_sources.items():
-            inline_tokens = self.md.parseInline(protect_escaped_footnote_references(note_source))
-            inline = inline_tokens[0] if inline_tokens else None
             position = SourcePosition(source_file, line + self._line_offset, 1)
-            footnotes[label] = (
-                self._inline(inline.children or [], position) if inline is not None else []
+            footnotes[label] = self._parse_inline_fragment(
+                protect_escaped_footnote_references(note_source), position
             )
         return Document(
             children=children,
@@ -287,28 +286,19 @@ class MarkdownParser:
                     nodes.append(BibliographyBlock(source=self._pos(t)))
                 elif info == "mddocx-definition":
                     items = []
+                    position = self._pos(t)
                     for line in t.content.splitlines():
                         if "\t" not in line:
                             continue
                         term, definition = line.split("\t", 1)
-                        term_tokens = self.md.parseInline(term)
-                        def_tokens = self.md.parseInline(definition)
-                        term_nodes = (
-                            self._inline(term_tokens[0].children or [], self._pos(t))
-                            if term_tokens
-                            else [Text(text=term)]
-                        )
-                        def_nodes = (
-                            self._inline(def_tokens[0].children or [], self._pos(t))
-                            if def_tokens
-                            else [Text(text=definition)]
-                        )
                         items.append(
                             DefinitionItem(
-                                term=term_nodes, definition=def_nodes, source=self._pos(t)
+                                term=self._parse_inline_fragment(term, position),
+                                definition=self._parse_inline_fragment(definition, position),
+                                source=position,
                             )
                         )
-                    nodes.append(DefinitionList(items=items, source=self._pos(t)))
+                    nodes.append(DefinitionList(items=items, source=position))
                 else:
                     language, identifier, attrs = self._parse_fence_info(info)
                     kind = (language or "").lower()
@@ -910,12 +900,13 @@ class MarkdownParser:
                 )
             contents = []
             for column in range(width):
-                parsed: list[Token] = []
-                if column < len(cells):
-                    self.md.inline.parse(cells[column], self.md, self._parse_env, parsed)
                 contents.append(
                     TableCell(
-                        children=self._inline(parsed, position),
+                        children=(
+                            self._parse_inline_fragment(cells[column], position)
+                            if column < len(cells)
+                            else []
+                        ),
                         alignment=alignments[column] if column < len(alignments) else None,
                         header=index == 0,
                         source=position,
@@ -970,6 +961,12 @@ class MarkdownParser:
                 current_cells = None
             i += 1
         return Table(rows=rows, source=self._pos(opener)), i + 1
+
+    def _parse_inline_fragment(self, text: str, position: SourcePosition) -> list:
+        if "$" in text or "\\" in text:
+            text = "\n".join(shield_inline_math(line) for line in text.split("\n"))
+        tokens = self.md.parseInline(text, self._parse_env)
+        return self._inline(tokens[0].children or [], position) if tokens else []
 
     def _inline(self, tokens: list[Token], source: SourcePosition | None = None) -> list:
         nodes, _ = self._inline_range(tokens, 0, None)

@@ -5,8 +5,9 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from lxml import etree
+import pytest
 
-from mddocx import MarkdownWord, MathFailurePolicy, RenderConfig
+from mddocx import MarkdownWord, MathFailurePolicy, NotesConfig, RenderConfig
 from mddocx.ast.block import MathBlock
 from mddocx.ast.inline import Emphasis, InlineMath
 from mddocx.parser import MarkdownParser
@@ -145,6 +146,51 @@ Inline \\(x^2\\). Literal: `\\(x^2\\)`.
     assert len(root.xpath(".//w:tc//m:m/m:mr", namespaces=NS)) == 2
     assert root.xpath(".//m:sSub", namespaces=NS)
     assert "%" in "".join(root.xpath(".//m:t/text()", namespaces=NS))
+
+
+@pytest.mark.parametrize("note_style", ["footnote", "endnote"])
+def test_math_fragments_keep_equations_and_escaped_dollars_distinct(note_style):
+    markdown = r"""Body \$literal\$ and $a^2$.[^example]
+
+| Cell |
+| --- |
+| \$cell\$ a\|b &amp; c |
+
+Sequence \(r_{i+1}\)
+: Exported \\(s\_{i+1}\\) and \$definition\$.
+
+[^example]: Note \(x_{i+1}+y_{i-1}\) and \\(\frac{x\_{i}}{2}\\).
+    Keep \$note\$, `$code$`, and the [guide].
+
+[guide]: https://example.org/guide
+"""
+    report = inspect_math(markdown)
+    assert report.ok
+    assert [equation.source for equation in report.equations] == [
+        "a^2",
+        "r_{i+1}",
+        "s_{i+1}",
+        "x_{i+1}+y_{i-1}",
+        r"\frac{x_{i}}{2}",
+    ]
+
+    config = RenderConfig(
+        notes=NotesConfig(style=note_style), math_failure=MathFailurePolicy(mode="error")
+    )
+    compiler = MarkdownWord(config)
+    with ZipFile(BytesIO(compiler.render_string(markdown))) as package:
+        document = etree.fromstring(package.read("word/document.xml"))
+        notes = etree.fromstring(package.read(f"word/{note_style}s.xml"))
+
+    assert compiler.diagnostics == ()
+    assert len(document.xpath(".//m:oMath", namespaces=NS)) == 3
+    assert len(notes.xpath(".//m:oMath", namespaces=NS)) == 2
+    assert notes.xpath(".//m:f", namespaces=NS)
+    assert notes.xpath(".//w:hyperlink[.//w:t='guide']", namespaces=NS)
+    body_text = "".join(document.xpath(".//w:t/text()", namespaces=NS))
+    assert all(value in body_text for value in ("$literal$", "$cell$ a|b & c", "$definition$"))
+    note_text = "".join(notes.xpath(".//w:t/text()", namespaces=NS))
+    assert "$note$" in note_text and "$code$" in note_text
 
 
 def test_invalid_math_markers_remain_text_next_to_valid_math():

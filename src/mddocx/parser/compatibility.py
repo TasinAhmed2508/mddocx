@@ -224,7 +224,7 @@ def normalize_math_syntax(markdown: str) -> str:
                 out.append(attrs)
             i = closing + 1
             continue
-        out.append(_shield_inline_math(line))
+        out.append(shield_inline_math(line))
         i += 1
 
     return "\n".join(out)
@@ -254,7 +254,7 @@ def _unescape_exported_tex(body: str) -> str:
     return _EXPORTED_TEX_ESCAPES.sub("", body)
 
 
-def _shield_inline_math(line: str) -> str:
+def shield_inline_math(line: str) -> str:
     """Protect inline math on one Markdown line while respecting code spans."""
     if "$" not in line and "\\" not in line:
         return line
@@ -453,12 +453,12 @@ def normalize_bibliography_directives(markdown: str) -> str:
 
 
 def split_text_math(text: str) -> list[tuple[str, str]]:
-    """Return [('text'|'math', value)] while respecting escaped dollar signs."""
+    """Decode shielded math after Markdown has consumed literal escape characters."""
     segments: list[tuple[str, str]] = []
     pos = 0
     for m in _INLINE_MATH_SENTINEL.finditer(text):
         if m.start() > pos:
-            segments.extend(_split_dollars(text[pos : m.start()]))
+            segments.append(("text", text[pos : m.start()]))
         decoded = _try_decode_inline_math(m.group(1))
         if decoded is None:
             # Not a payload we produced (literal text or corrupted stream):
@@ -468,7 +468,7 @@ def split_text_math(text: str) -> list[tuple[str, str]]:
             segments.append(("math", decoded))
         pos = m.end()
     if pos < len(text):
-        segments.extend(_split_dollars(text[pos:]))
+        segments.append(("text", text[pos:]))
     return [(kind, value) for kind, value in segments if value]
 
 
@@ -477,17 +477,6 @@ def restore_inline_math_text(text: str) -> str:
     return _INLINE_MATH_SENTINEL.sub(
         lambda match: _try_decode_inline_math(match[1]) or match[0], text
     )
-
-
-def _split_dollars(text: str) -> list[tuple[str, str]]:
-    # Reuse the same delimiter rules used before Markdown parsing.  Inline
-    # content is also parsed independently for footnotes and extensions, and a
-    # second permissive dollar parser here used to turn currency ranges into
-    # enormous false-positive equations.
-    return [
-        (kind, value.replace(r"\$", "$") if kind == "text" else value)
-        for kind, value in _inline_math_parts(text)
-    ]
 
 
 _FOOTNOTE_DEF_RE = re.compile(r"^ {0,3}\[\^([^\]]+)\]:[ \t]*(.*)$")

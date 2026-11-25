@@ -50,16 +50,18 @@ from mddocx.ast.inline import (
 )
 from .compatibility import (
     MathSyntaxIssue,
+    display_math_block,
+    is_math_fence,
+    math_aware_fence,
     normalize_export_citations,
     extract_footnote_definitions,
-    normalize_math_syntax,
     normalize_bibliography_directives,
     normalize_definition_lists,
     normalize_callout_containers,
     protect_escaped_footnote_references,
     restore_inline_math_text,
     shield_inline_math,
-    slash_display_block,
+    shield_inline_tokens,
     split_footnote_references,
     split_text_math,
     split_comment_markup,
@@ -176,9 +178,13 @@ class MarkdownParser:
         from .tables import table_block
 
         self.md.block.ruler.at("table", table_block, {"alt": ["paragraph", "reference"]})
-        self.md.block.ruler.before(
-            "paragraph", "mddocx_display_math", slash_display_block, {"alt": ["paragraph"]}
+        self.md.block.ruler.at(
+            "fence", math_aware_fence, {"alt": ["paragraph", "reference", "blockquote", "list"]}
         )
+        self.md.block.ruler.before(
+            "paragraph", "mddocx_display_math", display_math_block, {"alt": ["paragraph"]}
+        )
+        self.md.core.ruler.before("inline", "mddocx_inline_math", shield_inline_tokens)
         call_configure_markdown(self.extensions, self.md)
         self.source_file: str | None = None
 
@@ -195,21 +201,22 @@ class MarkdownParser:
         sanitize_metadata: bool = True,
     ) -> Document:
         self.source_file = source_file
-        self.table_math_syntax_issues: list[MathSyntaxIssue] = []
+        self.math_syntax_issues: list[MathSyntaxIssue] = []
         if sanitize_metadata:
             markdown = sanitize_markdown_metadata(markdown, self.metadata_config).markdown
         metadata, body, line_offset = split_front_matter(markdown, source_file=self.source_file)
         body = normalize_export_citations(body, strip=self.metadata_config.ai_export != "keep")
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
-        normalized = normalize_math_syntax(
-            normalize_bibliography_directives(
-                normalize_definition_lists(normalize_callout_containers(body))
-            )
+        normalized = normalize_bibliography_directives(
+            normalize_definition_lists(normalize_callout_containers(body))
         )
-        self._parse_env = {}
-        tokens = self.md.parse(normalized, self._parse_env)
         self._line_offset = line_offset + base_line_offset
+        self._parse_env = {
+            "mddocx_math_issues": self.math_syntax_issues,
+            "mddocx_line_offset": self._line_offset,
+        }
+        tokens = self.md.parse(normalized, self._parse_env)
         children, _ = self._parse_blocks(tokens, 0, None)
         children = self._postprocess_blocks(children)
         footnotes: dict[str, list] = {}
@@ -217,6 +224,14 @@ class MarkdownParser:
             position = SourcePosition(source_file, line + self._line_offset, 1)
             footnotes[label] = self._parse_inline_fragment(
                 protect_escaped_footnote_references(note_source), position
+            )
+        for issue in sorted(self.math_syntax_issues, key=lambda item: item.line):
+            self.reporter.warn(
+                "MATH101",
+                issue.message,
+                source_file,
+                issue.line,
+                "Close the explicit math delimiter/fence or escape it when literal text is intended.",
             )
         return Document(
             children=children,
@@ -280,7 +295,7 @@ class MarkdownParser:
                 i += 1
             elif t.type in {"fence", "code_block"}:
                 info = (t.info or "").strip()
-                if info == "mddocx-math":
+                if is_math_fence(info):
                     nodes.append(MathBlock(source_text=t.content.strip(), source=self._pos(t)))
                 elif info == "mddocx-bibliography":
                     nodes.append(BibliographyBlock(source=self._pos(t)))
@@ -963,8 +978,9 @@ class MarkdownParser:
         return Table(rows=rows, source=self._pos(opener)), i + 1
 
     def _parse_inline_fragment(self, text: str, position: SourcePosition) -> list:
-        if "$" in text or "\\" in text:
-            text = "\n".join(shield_inline_math(line) for line in text.split("\n"))
+        text = shield_inline_math(
+            text, start_line=position.line or 1, issues=self.math_syntax_issues
+        )
         tokens = self.md.parseInline(text, self._parse_env)
         return self._inline(tokens[0].children or [], position) if tokens else []
 

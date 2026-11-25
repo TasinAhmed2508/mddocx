@@ -8,10 +8,9 @@ from lxml import etree
 import pytest
 
 from mddocx import MarkdownWord, MathFailurePolicy, NotesConfig, RenderConfig
-from mddocx.ast.block import MathBlock
-from mddocx.ast.inline import Emphasis, InlineMath
+from mddocx.ast.block import CodeBlock, MathBlock
+from mddocx.ast.inline import Emphasis, InlineCode, InlineMath
 from mddocx.parser import MarkdownParser
-from mddocx.parser.compatibility import normalize_math_syntax
 from mddocx.math.preflight import inspect_math
 from mddocx.math.converter import DefaultMathConverter
 
@@ -93,13 +92,74 @@ def test_math_scanner_does_not_convert_code_or_currency():
 formula = "$$not_math$$"
 ```
 """
-    normalized = normalize_math_syntax(markdown)
-
-    assert "Price range: $5 to $10." in normalized
-    assert "`$x$`" in normalized
-    assert 'formula = "$$not_math$$"' in normalized
     ast = MarkdownParser().parse(markdown)
-    assert not any(isinstance(node, (MathBlock, InlineMath)) for node in _walk(ast.children))
+    nodes = list(_walk(ast.children))
+    assert not any(isinstance(node, (MathBlock, InlineMath)) for node in nodes)
+    assert [node.code for node in nodes if isinstance(node, InlineCode)] == ["$x$"]
+    assert [node.code for node in nodes if isinstance(node, CodeBlock)] == [
+        'formula = "$$not_math$$"'
+    ]
+
+
+def test_wrapped_code_spans_and_literal_backticks_preserve_neighboring_equations():
+    markdown = r"""Example ``show
+$x^2$ and \(an open delimiter
+as-is``, then $y^2$.
+
+Escaped \` and formula $z^2$.
+
+Unmatched ` and formula $q^2$.
+"""
+    nodes = list(_walk(MarkdownParser().parse(markdown).children))
+    assert [node.code for node in nodes if isinstance(node, InlineCode)] == [
+        r"show $x^2$ and \(an open delimiter as-is"
+    ]
+    report = inspect_math(markdown)
+    assert report.ok
+    assert [equation.source for equation in report.equations] == ["y^2", "z^2", "q^2"]
+
+
+def test_code_blocks_and_display_math_respect_markdown_containers():
+    markdown = r"""    show $x^2$ in code
+    $$x+1$$
+    \(incomplete delimiter
+
+> ~~~text
+> show $y^2$ and \(
+> ~~~
+>
+> $$y^2$$
+
+- Example
+
+  ~~~text
+  $z^2$
+  ~~~
+
+  $$
+  \frac{1}{2}
+  $$ {#eq:half}
+
+  ~~~~latex
+  \boxed{w}
+  ~~~~
+
+# After the equations
+"""
+    ast = MarkdownParser().parse(markdown)
+    nodes = list(_walk(ast.children))
+    assert [node.code for node in nodes if isinstance(node, CodeBlock)] == [
+        "show $x^2$ in code\n$$x+1$$\n\\(incomplete delimiter",
+        r"show $y^2$ and \(",
+        "$z^2$",
+    ]
+    display_math = [node for node in nodes if isinstance(node, MathBlock)]
+    assert [node.source_text for node in display_math] == ["y^2", r"\frac{1}{2}", r"\boxed{w}"]
+    assert display_math[1].identifier == "eq:half"
+    assert ast.children[-1].source.line == 25
+    report = inspect_math(markdown)
+    assert report.ok
+    assert report.native == 3
 
 
 def test_chat_export_escaped_math_stays_editable_in_text_and_tables():
@@ -235,6 +295,19 @@ def test_unclosed_display_delimiter_does_not_consume_document_tail():
     assert not report.ok
     assert report.syntax_issues[0].line == 3
     assert "broken.md:3" in report.to_text()
+
+
+def test_malformed_math_warning_retains_original_line_with_ast_cache(tmp_path):
+    markdown = "---\ntitle: Report\n---\n\n$$x^2$$\n\nText with \\(an open delimiter.\n"
+    config = RenderConfig()
+    config.cache.ast_enabled = True
+    config.cache.directory = tmp_path / "ast-cache"
+    compiler = MarkdownWord(config)
+
+    for _ in range(2):
+        compiler.render_string(markdown, base_dir=tmp_path)
+        (finding,) = compiler.diagnostics
+        assert (finding.code, finding.line) == ("MATH101", 7)
 
 
 def test_math_syntax_diagnostics_ignore_code_fences():

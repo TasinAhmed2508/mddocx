@@ -11,7 +11,7 @@ from mddocx.ast.block import MathBlock
 from mddocx.ast.inline import InlineMath
 from mddocx.config import MetadataConfig
 from mddocx.parser import MarkdownParser
-from mddocx.parser.compatibility import MathSyntaxIssue, find_math_syntax_issues
+from mddocx.parser.compatibility import MathSyntaxIssue
 
 from .converter import DefaultMathConverter
 
@@ -114,10 +114,7 @@ def inspect_math(
     report = MathPreflightReport(
         engine=converter.engine_name,
         source_file=source_file,
-        syntax_issues=sorted(
-            [*find_math_syntax_issues(markdown), *parser.table_math_syntax_issues],
-            key=lambda issue: issue.line,
-        ),
+        syntax_issues=sorted(parser.math_syntax_issues, key=lambda issue: issue.line),
     )
     equations = list(_equation_nodes(document))
     converter.prepare_batch([(node.source_text, isinstance(node, MathBlock)) for node in equations])

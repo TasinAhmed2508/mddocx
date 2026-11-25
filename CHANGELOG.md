@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve wrapped inline code, indented code, and quoted or list-nested code
+  fences containing math delimiters. Render display equations inside lists and quotes
+  without inserting synthetic fence lines before later content.
 - Render inline equations in Word footnotes, endnotes, and definition lists. Keep
   escaped dollars as text and preserve escaped punctuation and entities in Markdown tables.
 - Batch common boxed formulas, Greek symbols, spacing, and text annotations in

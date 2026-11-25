@@ -7,13 +7,14 @@ from collections.abc import Callable
 
 from markdown_it.rules_block.state_block import StateBlock
 
+from .compatibility import shield_inline_math
+
 _PIPE_SEPARATOR = re.compile(r":?-+:?")
 _SPAN = re.compile(r"-{3,}")
 _BORDER = re.compile(r"-{10,}")
 _HTML_START = re.compile(r"<table(?:\s|>|$)", re.I)
 _HTML_CLOSE = re.compile(r"</table\s*>\s*$", re.I)
 _HTML_TABLE_TAG = re.compile(r"<(/?)table(?=[\s>])[^>]*>", re.I)
-_HTML_CONTAINER = re.compile(r"^[ \t]*(?:>[ \t]*|(?:[-+*]|\d{1,9}[.)])[ \t]+)*")
 _BLOCK_START = re.compile(
     r"(?:#{1,6}(?:\s|$)|[>]|[-+*]\s|\d+[.)]\s|~~~|\x60{3,}|<|(?:[-*_]\s*){3,}$)"
 )
@@ -68,19 +69,6 @@ def _html_table_end(line: Callable[[int], str], start: int, end: int) -> int:
     return broken_end if broken_end is not None else cursor
 
 
-def html_table_source_end(lines: list[str], start: int) -> int:
-    """Locate a raw table before Markdown text rewrites, including quoted or list tables."""
-    if "<" not in lines[start]:
-        return start
-
-    def content(index: int) -> str:
-        return _HTML_CONTAINER.sub("", lines[index], count=1)
-
-    if _HTML_START.match(content(start)):
-        return _html_table_end(content, start, len(lines))
-    return start
-
-
 def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
     if state.is_code_block(start):
         return False
@@ -103,10 +91,16 @@ def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
     if start + 1 >= end or not first:
         return False
 
-    header = None if _BLOCK_START.match(first) else _pipe_cells(first)
     separator = line(start + 1)
-    marks = _pipe_cells(separator) or [separator]
-    if header and len(header) == len(marks) and all(_PIPE_SEPARATOR.fullmatch(m) for m in marks):
+    marks = (_pipe_cells(separator) or [separator]) if "-" in separator else []
+    header = (
+        _pipe_cells(shield_inline_math(first))
+        if marks
+        and all(_PIPE_SEPARATOR.fullmatch(m) for m in marks)
+        and not _BLOCK_START.match(first)
+        else None
+    )
+    if header and len(header) == len(marks):
         if silent:
             return True
         rows = [(start, header)]
@@ -115,7 +109,7 @@ def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
             current = line(cursor)
             if not current or (_BLOCK_START.match(current) and not current.startswith("|")):
                 break
-            cells = _pipe_cells(current)
+            cells = _pipe_cells(shield_inline_math(current))
             if not cells:
                 break
             # A new header plus delimiter row starts a fresh table.

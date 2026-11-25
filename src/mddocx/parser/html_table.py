@@ -163,7 +163,7 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
             raise ValueError("HTML table is empty.")
         table = Table(rows=rows, caption=caption, source=source)
         table_grid(table, parser.max_table_cells)
-        parser.table_math_syntax_issues.extend(math_issues)
+        parser.math_syntax_issues.extend(math_issues)
         return table
     except MddocxError as exc:
         if exc.diagnostic.code != "TABLE402":

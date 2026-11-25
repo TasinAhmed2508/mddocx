@@ -22,7 +22,7 @@ from .data import load_data_table
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
 from .layout import LayoutPlanner
-from .layout_table import parse_layout_table
+from .layout_table import parse_layout_table, text_layout_kind
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
 from .math.validation import (
@@ -364,14 +364,14 @@ def compare_document(
                     )
                 )
                 expected.append(_Unit("table", (len(weights), cells), node))
-            elif isinstance(node, block.CodeBlock) and (node.language or "").lower() not in {
-                "",
-                "text",
-                "plain",
-                "plaintext",
-                "form",
-                "mermaid",
-            }:
+            elif isinstance(node, block.CodeBlock):
+                if text_layout_kind(node) is not None:
+                    incomplete("Automatic plain-text layout coverage is incomplete.", node)
+                    continue
+                language = (node.language or "text").strip() or "text"
+                if language.lower() == "mermaid" and config.mermaid.enabled:
+                    incomplete("Rendered Mermaid diagram coverage is incomplete.", node)
+                    continue
                 title = (
                     (node.caption or ("Code listing" if node.identifier else None))
                     if config.references.captions
@@ -387,8 +387,8 @@ def compare_document(
                     else node.show_language_label
                 )
                 units = []
-                if label:
-                    units.append(_Unit("paragraph", (clean_xml_text(node.language),), node))
+                if label and language.lower() not in {"text", "plain", "plaintext"}:
+                    units.append(_Unit("paragraph", (clean_xml_text(language),), node))
                 for index, line in enumerate(lines, 1):
                     prefix = f"{index:>{len(str(len(lines)))}}  " if numbers else ""
                     units.append(

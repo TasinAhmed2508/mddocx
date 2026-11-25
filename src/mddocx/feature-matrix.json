@@ -172,16 +172,17 @@
     },
     {
       "id": "callouts-comments-code",
-      "syntax": "GitHub/colon callouts, CriticMarkup comments and fenced code",
+      "syntax": "GitHub/colon callouts, CriticMarkup comments, and fenced or indented code",
       "ast": "Callout, Comment and CodeBlock",
       "ooxml": "styled paragraphs/tables, native comments part and editable code runs",
       "malformed_diagnostic": "unsupported containers remain literal source",
       "word365": "implemented",
       "optional_renderer": "supported with theme differences",
       "tests": [
-        "tests/test_technical_report.py"
+        "tests/test_technical_report.py",
+        "tests/test_verification.py"
       ],
-      "verify": "See offline verification scope in the README"
+      "verify": "Code listing text and order, including indented and nested listings"
     },
     {
       "id": "rtl-unicode-xml",

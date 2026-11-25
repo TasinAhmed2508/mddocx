@@ -1,14 +1,42 @@
-"""Validate the native table grid described by a layout-table fence."""
+"""Recognize plain-text layouts and validate explicit native table grids."""
 
 from __future__ import annotations
 
-from typing import NamedTuple
+import re
+from typing import Literal, NamedTuple
 
 import yaml
 
 from .ast.block import CodeBlock, TableCell
 from .diagnostics import Diagnostic, MddocxError
 from .table_grid import check_grid_size
+
+_RULED_LINE = re.compile(r"\s*-{5,}\s*")
+
+
+def text_layout_kind(node: CodeBlock) -> Literal["form", "ruled", "structured"] | None:
+    language = (node.language or "").lower()
+    if language == "layout-table":
+        return "structured"
+    if language not in {"text", "plain", "plaintext", "form", ""}:
+        return None
+    lines = node.code.splitlines()
+    ruled = (
+        sum(bool(_RULED_LINE.fullmatch(line)) for line in lines) >= 2
+        and sum(line.count("|") == 2 for line in lines) >= 3
+    )
+    if ruled:
+        if all(_RULED_LINE.fullmatch(line) or line.count("|") == 2 for line in lines):
+            return "ruled"
+        return None
+    # A box and paired address columns distinguish forms from code samples.
+    if (
+        any("┌" in line and "┐" in line for line in lines)
+        and sum(":" in line or "ঃ" in line for line in lines) >= 5
+        and sum("|" in line for line in lines) >= 3
+    ):
+        return "form"
+    return None
 
 
 class LayoutTable(NamedTuple):

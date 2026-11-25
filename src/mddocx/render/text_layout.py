@@ -8,7 +8,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-from mddocx.layout_table import parse_layout_table
+from mddocx.layout_table import parse_layout_table, text_layout_kind
 from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.text import clean_xml_text
 from mddocx.ooxml.utils import set_table_fixed_layout, set_table_grid_widths
@@ -18,27 +18,8 @@ from .tables import append_grid_rows
 
 
 def render_text_layout(renderer, node) -> bool:
-    structured = (node.language or "").lower() == "layout-table"
-    if not structured and (node.language or "").lower() not in {
-        "text",
-        "plain",
-        "plaintext",
-        "form",
-        "",
-    }:
-        return False
-    lines = node.code.splitlines()
-    # A box and paired address columns distinguish forms from code samples.
-    form = (
-        any("┌" in line and "┐" in line for line in lines)
-        and sum(":" in line or "ঃ" in line for line in lines) >= 5
-        and sum("|" in line for line in lines) >= 3
-    )
-    ruled = (
-        sum(bool(re.fullmatch(r"\s*-{5,}\s*", line)) for line in lines) >= 2
-        and sum(line.count("|") == 2 for line in lines) >= 3
-    )
-    if not structured and not form and not ruled:
+    kind = text_layout_kind(node)
+    if kind is None:
         return False
 
     def table(rows, widths, borders=False, placements=None):
@@ -85,20 +66,19 @@ def render_text_layout(renderer, node) -> bool:
 
     section = renderer.document.sections[-1]
     available = (section.page_width - section.left_margin - section.right_margin) / 36000
-    if structured:
+    if kind == "structured":
         rows, weights, placements = parse_layout_table(node, renderer.config.limits.max_table_cells)
         total_weight = sum(weights)
         table(rows, [available * weight / total_weight for weight in weights], True, placements)
         return True
-    if ruled:
+    lines = node.code.splitlines()
+    if kind == "ruled":
         rows = []
         continuation = False
         for line in lines:
             if re.fullmatch(r"\s*-{5,}\s*", line):
                 continuation = False
                 continue
-            if line.count("|") != 2:
-                return False
             cells = [part.strip() for part in line.split("|")]
             if continuation and not cells[0]:
                 rows[-1] = [

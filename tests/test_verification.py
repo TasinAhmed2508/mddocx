@@ -478,3 +478,68 @@ def test_verify_editable_numbered_listing(tmp_path):
     compiler = Compiler()
     compiler.compile_file(source, output)
     assert compiler.verify(source, output).ok
+
+
+@pytest.mark.parametrize("edit", ["replace", "delete"])
+def test_verify_plain_code_in_lists_and_quotes(tmp_path, edit):
+    source = tmp_path / "plain-code.md"
+    source.write_text(
+        "# Guide\n\n    keep $x^2$ literally\n\n"
+        "> ~~~text\n> quoted $y^2$\n> ~~~\n>\n> $$y^2$$\n\n"
+        "- Example\n\n  ~~~plain\n  listed $z^2$\n  ~~~\n",
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.code.show_language_label = True
+    compiler = Compiler(config)
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+
+    parts = read_parts(blob)
+    document = etree.fromstring(parts["word/document.xml"])
+    text = next(t for t in document.iter(qn("w:t")) if t.text == "keep $x^2$ literally")
+    if edit == "replace":
+        text.text = "keep $x^3$ literally"
+    else:
+        paragraph = text.getparent().getparent()
+        paragraph.getparent().remove(paragraph)
+    parts["word/document.xml"] = etree.tostring(document)
+
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert finding.code == ("VERIFY303" if edit == "replace" else "VERIFY301")
+    assert (finding.part, finding.line) == ("word/document.xml", 3)
+
+
+def test_verify_distinguishes_ruled_layout_from_plain_text(tmp_path):
+    source = tmp_path / "ruled.md"
+    ruled = "Floor | East | West\n----------\n4 | Alice | Bob\n----------\n3 | Common | Carol"
+    compiler = Compiler()
+    output = source.with_suffix(".docx")
+    source.write_text(f"~~~text\n{ruled}\n~~~\n", encoding="utf-8")
+    layout = compiler.compile_file(source, output)
+    assert Document(output).tables
+    assert any(
+        finding.code == "VERIFY304" and "plain-text layout" in finding.message
+        for finding in compiler.verify(source, layout.output_bytes).findings
+    )
+
+    source.write_text(f"~~~text\n{ruled}\nUnstructured line\n~~~\n", encoding="utf-8")
+    code = compiler.compile_file(source, output)
+    assert not Document(output).tables
+    assert compiler.verify(source, code.output_bytes).ok
+
+
+def test_verify_cli_respects_listing_flags(tmp_path, capsys):
+    source = tmp_path / "code-config.md"
+    source.write_text(
+        "~~~text\nplain text\n~~~\n\n~~~python\nprint(1)\n~~~\n\n"
+        "~~~mermaid\nflowchart TD\nA --> B\n~~~\n",
+        encoding="utf-8",
+    )
+    target = source.with_suffix(".docx")
+    flags = ["--code-line-numbers", "--code-language-labels", "--no-mermaid"]
+
+    assert main([str(source), "-o", str(target), *flags]) == 0
+    capsys.readouterr()
+    assert main(["verify", str(source), str(target), *flags, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"]

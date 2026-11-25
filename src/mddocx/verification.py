@@ -32,6 +32,7 @@ from .layout_table import (
 from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
 from .math.validation import (
+    explicit_nary_limits_preserved,
     source_matrices_preserved,
     source_tokens_preserved,
     validate_omml,
@@ -522,6 +523,13 @@ def _equation_findings(
                 yield _finding(
                     "VERIFY303",
                     "Native equation lost an alignment array or matrix layout.",
+                    node,
+                    part=part,
+                )
+            elif not explicit_nary_limits_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation changed a large operator's explicit limit placement.",
                     node,
                     part=part,
                 )

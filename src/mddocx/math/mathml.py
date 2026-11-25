@@ -6,9 +6,10 @@ import re
 from lxml import etree
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from .latex import NARY
 from .validation import validate_mathml
 
-NARY_CHARS = {"∑", "∏", "∫", "∬", "∭", "∮"}
+NARY_CHARS = frozenset(NARY.values())
 GROUP_CHARS = {"⏞", "⏟", "⏜", "⏝", "⎴", "⎵", "↔"}
 ENCLOSURE_EDGES = {"top": "hideTop", "bottom": "hideBot", "left": "hideLeft", "right": "hideRight"}
 ENCLOSURE_STRIKES = {
@@ -87,7 +88,7 @@ class MathMLToOMML:
             base, pre, post = sideset
             self._append_script_pairs(parent, base, pre, post, variant)
             return
-        if tag in {"math", "mrow"}:
+        if tag in {"math", "mrow", "mstyle"}:
             children = list(node)
             if not self._append_fenced_row(parent, children, variant):
                 self._append_row(parent, children, variant)
@@ -99,10 +100,6 @@ class MathMLToOMML:
                     break
             return
         if tag in {"annotation", "annotation-xml"}:
-            return
-        if tag == "mstyle":
-            for child in node:
-                self._append_children(parent, child, variant)
             return
         if tag == "mphantom":
             phantom = OxmlElement("m:phant")
@@ -199,6 +196,9 @@ class MathMLToOMML:
             return
         if tag == "mmultiscripts" and len(node):
             self._append_multiscripts(parent, node, variant)
+            return
+        if tag in {"munder", "mover", "munderover"} and self._is_nary_node(node):
+            parent.append(self._make_nary(node, inherited_variant=variant))
             return
         if tag in {"munder", "mover"} and len(node) == 2 and self._local(node[1]) == "mo":
             mark = self._text(node[1])
@@ -823,6 +823,23 @@ class MathMLToOMML:
             return False
         return True
 
+    @staticmethod
+    def _display_style(node) -> bool:
+        child = node
+        for ancestor in node.iterancestors():
+            tag = etree.QName(ancestor).localname
+            if tag == "mfrac" or (
+                tag in {"msub", "msup", "msubsup", "munder", "mover", "munderover", "mroot"}
+                and child is not ancestor[0]
+            ):
+                return False
+            if (style := ancestor.get("displaystyle")) is not None:
+                return style == "true"
+            if tag == "math":
+                return ancestor.get("display") == "block"
+            child = ancestor
+        return False
+
     def _make_nary(
         self, node, operand=None, operand_omml=None, inherited_variant: str | None = None
     ):
@@ -852,7 +869,12 @@ class MathMLToOMML:
         chr_el.set(qn("m:val"), self._text(base))
         pr.append(chr_el)
         lim = OxmlElement("m:limLoc")
-        lim.set(qn("m:val"), "undOvr")
+        inline_limits = (
+            not self._display_style(node)
+            if base.get("movablelimits") == "true"
+            else tag in {"msub", "msup", "msubsup"}
+        )
+        lim.set(qn("m:val"), "subSup" if inline_limits else "undOvr")
         pr.append(lim)
         if sub_node is None:
             hide = OxmlElement("m:subHide")

@@ -396,7 +396,7 @@ def test_fallback_caches_only_native_alignment_when_external_result_is_flat():
     converter = DefaultMathConverter(sidecar=SimpleNamespace(available=False))
     calls = []
 
-    def flatten(latex):
+    def flatten(latex, *, display):
         calls.append(latex)
         return '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>a</mi><mi>b</mi></math>'
 
@@ -409,6 +409,46 @@ def test_fallback_caches_only_native_alignment_when_external_result_is_flat():
     assert "lost an alignment or matrix" in first.warnings[0]
     assert first.omml is not second.omml
     assert next(second.omml.iter(qn("m:m")), None) is not None
+
+
+@pytest.mark.parametrize("engine", ["mathjax-sidecar", "latex2mathml", "mddocx-basic"])
+def test_large_operator_limits_use_native_word_placement(engine):
+    converter = DefaultMathConverter(cache=False)
+    if engine == "mathjax-sidecar" and not converter._sidecar.available:
+        pytest.skip("optional MathJax sidecar is unavailable")
+    if engine != "mathjax-sidecar":
+        converter._sidecar.executable = None
+    if engine == "mddocx-basic":
+        converter._external = None
+
+    cases = [
+        (r"\sum_{i=1}^{n} i", False, "∑", "subSup"),
+        (r"\sum_{i=1}^{n} i", True, "∑", "undOvr"),
+        (r"\sum\nolimits_{i=1}^{n} i", True, "∑", "subSup"),
+        (r"\sum\limits_{i=1}^{n} i", False, "∑", "undOvr"),
+        (r"\int_0^1 x\,dx", True, "∫", "subSup"),
+        (r"\int\limits_0^1 x\,dx", True, "∫", "undOvr"),
+        (r"\bigcup_{i=1}^{n} A_i", True, "⋃", "undOvr"),
+        (r"\bigcup\limits_{i=1}^{n} A_i", True, "⋃", "undOvr"),
+        (r"\frac{\sum_{i=1}^{n} i}{n}", True, "∑", "subSup"),
+    ]
+    for source, display, glyph, placement in cases:
+        equation = converter.convert(source, display=display)
+        assert equation.engine == engine
+        (operator,) = equation.omml.iter(qn("m:nary"))
+        props = operator.find(qn("m:naryPr"))
+        assert props.find(qn("m:chr")).get(qn("m:val")) == glyph
+        assert props.find(qn("m:limLoc")).get(qn("m:val")) == placement
+        assert "".join(operator.find(qn("m:sub")).itertext()).strip()
+        assert "".join(operator.find(qn("m:sup")).itertext()).strip()
+        assert "".join(operator.find(qn("m:e")).itertext()).strip()
+
+    mixed = converter.convert(r"\bigcup_{i=1}^{n} A_i+\sum\nolimits_{i=1}^n i", display=True)
+    assert mixed.engine == engine
+    assert [limit.get(qn("m:val")) for limit in mixed.omml.iter(qn("m:limLoc"))] == [
+        "undOvr",
+        "subSup",
+    ]
 
 
 def test_pure_python_sideset_keeps_limit_and_script_positions():

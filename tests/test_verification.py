@@ -480,6 +480,25 @@ def test_verify_editable_numbered_listing(tmp_path):
     assert compiler.verify(source, output).ok
 
 
+def test_verify_detects_changed_explicit_limit_placement(tmp_path):
+    source = tmp_path / "limits.md"
+    source.write_text(r"$$\sum\nolimits_{i=1}^{n} i+\int\limits_0^1 x\,dx$$", encoding="utf-8")
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    parts = read_parts(blob)
+    document = etree.fromstring(parts["word/document.xml"])
+    first, second = document.iter(qn("m:limLoc"))
+    assert first.get(qn("m:val")) == "subSup"
+    assert second.get(qn("m:val")) == "undOvr"
+    first.set(qn("m:val"), "undOvr")
+    parts["word/document.xml"] = etree.tostring(document)
+
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part, finding.line) == ("VERIFY303", "word/document.xml", 1)
+    assert "explicit limit placement" in finding.message
+
+
 @pytest.mark.parametrize("edit", ["replace", "delete"])
 def test_verify_plain_code_in_lists_and_quotes(tmp_path, edit):
     source = tmp_path / "plain-code.md"

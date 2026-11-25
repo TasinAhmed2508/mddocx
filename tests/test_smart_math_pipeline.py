@@ -110,7 +110,7 @@ def test_mathml_validator_rejects_foreign_and_active_content():
 def test_engine_failure_falls_through_and_is_observable():
     converter = DefaultMathConverter(cache=False)
     converter._sidecar.executable = None
-    converter._external = lambda _: "<not-math/>"  # type: ignore[assignment]
+    converter._external = lambda _, **kwargs: "<not-math/>"  # type: ignore[assignment]
 
     result = converter.convert("x+1")
 
@@ -125,7 +125,7 @@ def test_repeated_equations_share_engine_work_but_keep_separate_xml():
     converter._sidecar.executable = None
     calls = []
 
-    def engine(latex):
+    def engine(latex, *, display):
         calls.append(latex)
         return '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>'
 
@@ -142,7 +142,7 @@ def test_repeated_equations_share_engine_work_but_keep_separate_xml():
 def test_external_engine_semantic_token_loss_falls_through():
     converter = DefaultMathConverter(cache=False)
     converter._sidecar.executable = None
-    converter._external = lambda _: (  # type: ignore[assignment]
+    converter._external = lambda _, **kwargs: (  # type: ignore[assignment]
         '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>'
     )
 

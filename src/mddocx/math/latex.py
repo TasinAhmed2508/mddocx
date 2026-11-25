@@ -136,7 +136,28 @@ SYMBOLS = {
     "Im": "ℑ",
     "checkmark": "✓",
 }
-NARY = {"sum": "∑", "prod": "∏", "int": "∫", "iint": "∬", "iiint": "∭", "oint": "∮"}
+NARY = {
+    "sum": "∑",
+    "prod": "∏",
+    "coprod": "∐",
+    "bigcup": "⋃",
+    "bigcap": "⋂",
+    "bigvee": "⋁",
+    "bigwedge": "⋀",
+    "biguplus": "⨄",
+    "bigsqcup": "⨆",
+    "bigoplus": "⨁",
+    "bigotimes": "⨂",
+    "bigodot": "⨀",
+    "int": "∫",
+    "iint": "∬",
+    "iiint": "∭",
+    "oint": "∮",
+    "oiint": "∯",
+    "oiiint": "∰",
+}
+INTEGRAL_SYMBOLS = frozenset("∫∬∭∮∯∰")
+_LIMIT_MODIFIER = re.compile(r"\\(nolimits|limits)(?![A-Za-z])")
 FUNCTIONS = {
     "lim",
     "sin",
@@ -250,12 +271,12 @@ class BasicLatexToMathML:
     It covers the Phase-2 regression surface, not arbitrary TeX macro expansion.
     """
 
-    def convert(self, latex: str) -> str:
+    def convert(self, latex: str, *, display: bool = False) -> str:
         parser = _Parser(latex)
         children = parser.parse_sequence()
         if parser.i < len(parser.text):
             raise ValueError(f"Unexpected LaTeX at offset {parser.i}")
-        math = _e("math", None, *children)
+        math = _e("math", None, *children, display="block" if display else "inline")
         return ET.tostring(math, encoding="unicode")
 
 
@@ -282,6 +303,16 @@ class _Parser:
             base = self.parse_atom()
             sub = sup = None
             self._skip_spaces()
+            above_below = False
+            if base.get("largeop") == "true":
+                above_below = base.text not in INTEGRAL_SYMBOLS
+                if modifier := _LIMIT_MODIFIER.match(self.text, self.i):
+                    above_below = modifier[1] == "limits"
+                    base.set("movablelimits", "false")
+                    self.i = modifier.end()
+                    self._skip_spaces()
+                elif above_below:
+                    base.set("movablelimits", "true")
             while self.i < len(self.text) and self.text[self.i] in "_^":
                 op = self.text[self.i]
                 self.i += 1
@@ -320,11 +351,11 @@ class _Parser:
                         base = _e("mrow", None, *grouped)
 
             if sub is not None and sup is not None:
-                base = _e("msubsup", None, base, sub, sup)
+                base = _e("munderover" if above_below else "msubsup", None, base, sub, sup)
             elif sub is not None:
-                base = _e("msub", None, base, sub)
+                base = _e("munder" if above_below else "msub", None, base, sub)
             elif sup is not None:
-                base = _e("msup", None, base, sup)
+                base = _e("mover" if above_below else "msup", None, base, sup)
             out.append(base)
         if stop:
             raise ValueError(f"Unclosed LaTeX group, expected {stop!r}")

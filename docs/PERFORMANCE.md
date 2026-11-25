@@ -173,3 +173,17 @@ The synthetic workload is available as the technical_math case in the roadmap ru
 Every run produced byte-identical DOCX output for its workload. Batches still use the
 128-equation bound. Equations with tags and other commands that may affect neighboring
 equations continue to run separately.
+
+## Integrals and large operators
+
+Five alternating pairs on Windows with Python 3.12.11 compared the same renderer
+with the batching allow-list from 2b5eb66 and with the expanded allow-list. The
+large_operator_math case in the roadmap runner uses 32 distinct equations with
+integrals, thin spaces, and sums with explicit side limits.
+
+| Workload | Median before | Median after | MathJax requests before | MathJax requests after |
+| --- | ---: | ---: | ---: | ---: |
+| 32 integrals paired with sums | 2.837 s | 0.267 s | 32 | 1 |
+| 20-section mixed report | 0.477 s | 0.487 s | 1 | 1 |
+
+Each before and after run produced identical DOCX bytes for its workload.

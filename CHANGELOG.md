@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve side and stacked limits on native Word integrals and large operators.
+  Honor LaTeX limits and nolimits in the Python fallback and detect changed explicit
+  limit placement during verification.
 - Verify ruled text tables and detected forms, including continued cells, editable photo
   boxes, address grids, and signature text. Report the row and column for changed cells.
 - Preserve the Bangla reph in SutonnyMJ output and reconstruct it during verification.

@@ -8,13 +8,21 @@ from typing import Protocol
 from lxml import etree
 
 from .chemistry import attach_chemistry_scripts
-from .latex import BasicLatexToMathML, UnsupportedLatexError, array_preambles, array_span_preambles
-from .mathml import MathMLToOMML
+from .latex import (
+    NARY,
+    INTEGRAL_SYMBOLS,
+    BasicLatexToMathML,
+    UnsupportedLatexError,
+    array_preambles,
+    array_span_preambles,
+)
+from .mathml import NARY_CHARS, MathMLToOMML
 from .models import MathConversion
 from .normalize import normalize_equation
 from .sidecar import MathJaxSidecar, MathJaxSidecarError
 from .validation import (
     MATHML_NS,
+    explicit_nary_limits_preserved,
     semantic_fingerprint,
     semantic_tokens_preserved,
     source_matrices_preserved,
@@ -24,7 +32,9 @@ from .validation import (
 )
 
 _BATCH_COMMANDS = {
+    *NARY,
     "%",
+    ",",
     "approx",
     "boxed",
     "cdot",
@@ -41,7 +51,9 @@ _BATCH_COMMANDS = {
     "left",
     "leftarrow",
     "leq",
+    "limits",
     "lvert",
+    "nolimits",
     "partial",
     "pu",
     "quad",
@@ -49,13 +61,33 @@ _BATCH_COMMANDS = {
     "right",
     "rvert",
     "sqrt",
-    "sum",
     "text",
     "times",
     "xi",
 }
 _BATCH_SIZE = 128
 _MATHJAX_TEXT_AMPERSAND = re.compile(r"(?<!\\)\\&")
+_MOVABLE_OPERATORS = NARY_CHARS - INTEGRAL_SYMBOLS
+_NARY_SOURCE = re.compile(
+    rf"(?<!\\)\\({'|'.join(NARY)})(?![A-Za-z])(?:\s*\\(limits|nolimits)(?![A-Za-z]))?"
+)
+
+
+def _mark_movable_operators(root: etree._Element, explicit_source: str | None = None) -> bool:
+    operators = [
+        operator for operator in root.iter(f"{{{MATHML_NS}}}mo") if operator.text in NARY_CHARS
+    ]
+    if explicit_source is not None:
+        source = _NARY_SOURCE.findall(explicit_source)
+        if [NARY[command] for command, _ in source] != [op.text for op in operators]:
+            return False
+        operators = [op for op, (_, mode) in zip(operators, source, strict=True) if not mode]
+    changed = False
+    for operator in operators:
+        if operator.text in _MOVABLE_OPERATORS and "movablelimits" not in operator.attrib:
+            operator.set("movablelimits", "true")
+            changed = True
+    return changed
 
 
 class MathConverter(Protocol):
@@ -188,12 +220,18 @@ class DefaultMathConverter:
         if sidecar_ready and not spanning:
             engines.append(("mathjax-sidecar", lambda: self._convert_sidecar(key, normalized.text)))
         if self._external is not None and not (decorated_array or spanning):
-            engines.append(("latex2mathml", lambda: self._external(normalized.text)))
-        engines.append(("mddocx-basic", lambda: self._fallback.convert(normalized.text)))
+            external_display = "block" if display else "inline"
+            engines.append(
+                ("latex2mathml", lambda: self._external(normalized.text, display=external_display))
+            )
+        engines.append(
+            ("mddocx-basic", lambda: self._fallback.convert(normalized.text, display=display))
+        )
         for engine, operation in engines:
             try:
                 mathml = operation()
                 root = validate_mathml(mathml)
+                changed = False
                 if engine == "mathjax-sidecar":
                     changed = r"\ce" in normalized.text and attach_chemistry_scripts(root)
                     if r"\&" in normalized.text:
@@ -203,14 +241,23 @@ class DefaultMathConverter:
                             if rendered != text:
                                 token.text = rendered
                                 changed = True
-                    if changed:
-                        mathml = etree.tostring(root, encoding="unicode")
+                    # MathJax leaves implicit dictionary values out of its serialization.
+                    changed = _mark_movable_operators(root) or changed
+                elif engine == "latex2mathml":
+                    has_modifier = r"\limits" in normalized.text or r"\nolimits" in normalized.text
+                    changed = _mark_movable_operators(
+                        root, normalized.text if has_modifier else None
+                    )
+                if changed:
+                    mathml = etree.tostring(root, encoding="unicode")
                 if engine != "mddocx-basic" and not source_tokens_preserved(normalized.text, root):
                     raise UnsupportedLatexError(
                         f"{engine} output lost one or more source identifier or numeral tokens"
                     )
                 omml = self.mathml_to_omml(mathml, display, root=root)
                 validate_omml(omml)
+                if not explicit_nary_limits_preserved(normalized.text, omml):
+                    raise UnsupportedLatexError(f"{engine} changed an explicit limit placement")
                 if not source_matrices_preserved(normalized.text, omml):
                     raise UnsupportedLatexError(
                         f"{engine} output lost an alignment or matrix layout"

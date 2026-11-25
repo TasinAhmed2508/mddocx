@@ -8,6 +8,8 @@ from unicodedata import normalize
 from lxml import etree
 
 from .latex import (
+    INTEGRAL_SYMBOLS,
+    NARY,
     UnsupportedLatexError,
     _ENVIRONMENT_TOKEN,
     _MATRIX_ENVIRONMENTS,
@@ -55,6 +57,9 @@ ALLOWED_MATHML = {
 }
 _FORBIDDEN_ATTRIBUTES = {"href", "src", "actiontype"}
 _GENFRAC_CONTROLS = re.compile(r"(?<!\\)\\genfrac(?![A-Za-z])\s*(?:\{(?:\\.|[^{}\\])*\}\s*){4}")
+_EXPLICIT_NARY_LIMITS = re.compile(
+    rf"(?<!\\)\\({'|'.join(NARY)})(?![A-Za-z])\s*\\(limits|nolimits)\s*(?=[_^])"
+)
 
 
 def validate_mathml(mathml: str):
@@ -132,6 +137,31 @@ def semantic_fingerprint(mathml_root) -> str:
     mathml_tokens = _node_tokens(mathml_root)
     structure = ",".join(etree.QName(node).localname for node in mathml_root.iter())
     return hashlib.sha256((structure + "|" + "".join(mathml_tokens)).encode()).hexdigest()
+
+
+def explicit_nary_limits_preserved(latex: str, omml: etree._Element) -> bool:
+    if r"\sideset" in latex or "phantom" in latex:
+        # Sided operators and hidden elements use different Word structures.
+        return True
+    expected = Counter(
+        (NARY[command], "undOvr" if mode == "limits" else "subSup")
+        for command, mode in _EXPLICIT_NARY_LIMITS.findall(latex)
+    )
+    if not expected:
+        return True
+    actual = Counter()
+    for operator in visible_omml(omml):
+        if operator.tag != _M + "nary":
+            continue
+        props = operator.find(_M + "naryPr")
+        glyph = props.find(_M + "chr") if props is not None else None
+        location = props.find(_M + "limLoc") if props is not None else None
+        character = glyph.get(_M + "val", "") if glyph is not None else "∫"
+        default = "subSup" if character in INTEGRAL_SYMBOLS else "undOvr"
+        actual[
+            character, location.get(_M + "val", default) if location is not None else default
+        ] += 1
+    return expected <= actual
 
 
 def semantic_tokens_preserved(mathml_root, omml: object) -> bool:

@@ -34,6 +34,13 @@ Leading `\newcommand` declarations can provide positional arguments and a defaul
 first argument. Definitions apply within the equation that contains them. AMS `\genfrac`
 preserves the delimiters, numerator, denominator, and zero-width rule in editable Word math.
 
+Integrals keep their limits beside the operator by default. Sums, products, and
+indexed unions and intersections use side limits inline and stacked limits in
+display equations. Use
+`\limits` to stack limits and `\nolimits` to put them beside the symbol. Word keeps
+the operator, limits, and operand editable, and `mddocx verify` checks explicit
+placement on named large operators.
+
 LaTeX arrays support `l`, `c`, and `r` columns, bounded repetition such as
 `*{2}{r}`, vertical rules, and intercolumn expressions such as `r@{.}l` for aligned
 decimal points. Vertical rules stay aligned across tall cells such as fractions. Mixed

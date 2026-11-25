@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Batch common boxed formulas, Greek symbols, spacing, and text annotations in
+  MathJax to speed up equation-heavy reports while preserving editable Word output.
 - Render escaped inline and display equations from ChatGPT Markdown exports as editable
   Word math, including formulas inside tables, subscripts, percentages, and matrices.
 - Write formatted Markdown image labels as plain Word descriptions and embed standalone

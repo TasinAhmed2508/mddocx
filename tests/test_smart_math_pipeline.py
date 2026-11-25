@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from lxml import etree
 
 from mddocx.math.converter import DefaultMathConverter
 from mddocx.math.normalize import normalize_equation
@@ -35,6 +36,36 @@ def test_large_equation_batches_run_lazily_and_with_bounded_chunks(monkeypatch):
     assert sizes == []
     assert all(converter.convert(*item).engine == "mathjax-sidecar" for item in expressions)
     assert sizes == [128, 12]
+
+
+def test_chat_report_formulas_share_a_batch_without_changing_equations(monkeypatch):
+    sidecar = MathJaxSidecar()
+    if not sidecar.available:
+        pytest.skip("optional MathJax sidecar is unavailable")
+    expressions = [
+        (r"\boxed{x_{i+1}=x_i-\frac{f(x_i)}{f'(x_i)}}", True),
+        (r"\varepsilon_a\approx6.25\%\quad\text{relative error}", False),
+        (r"\displaystyle\left\lvert\frac{\Delta x}{x}\right\rvert\tag{A}", True),
+        (r"\lambda\sqrt{x}+\delta\qquad x\leq y", False),
+    ]
+    individual = [DefaultMathConverter(sidecar=sidecar).convert(*item) for item in expressions]
+    requests = []
+    convert_many = sidecar.convert_many
+
+    def capture(batch):
+        requests.append(batch)
+        return convert_many(batch)
+
+    monkeypatch.setattr(sidecar, "convert_many", capture)
+    converter = DefaultMathConverter(sidecar=sidecar)
+    converter.prepare_batch(expressions)
+    batched = [converter.convert(*item) for item in expressions]
+
+    assert requests == [[expressions[0], expressions[1], expressions[3]], [expressions[2]]]
+    for before, after in zip(individual, batched, strict=True):
+        assert before.engine == after.engine == "mathjax-sidecar"
+        assert before.mathml == after.mathml
+        assert etree.tostring(before.omml) == etree.tostring(after.omml)
 
 
 def test_full_math_conversion_does_not_keep_a_second_unbounded_cache(monkeypatch):

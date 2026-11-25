@@ -23,7 +23,37 @@ from .validation import (
     validate_omml,
 )
 
-_BATCH_COMMANDS = {"frac", "sum", "sqrt", "left", "right", "cdot", "times", "le", "ge", "ce", "pu"}
+_BATCH_COMMANDS = {
+    "%",
+    "approx",
+    "boxed",
+    "cdot",
+    "cdots",
+    "ce",
+    "delta",
+    "Delta",
+    "displaystyle",
+    "varepsilon",
+    "frac",
+    "ge",
+    "lambda",
+    "le",
+    "left",
+    "leftarrow",
+    "leq",
+    "lvert",
+    "partial",
+    "pu",
+    "quad",
+    "qquad",
+    "right",
+    "rvert",
+    "sqrt",
+    "sum",
+    "text",
+    "times",
+    "xi",
+}
 _BATCH_SIZE = 128
 _MATHJAX_TEXT_AMPERSAND = re.compile(r"(?<!\\)\\&")
 
@@ -84,7 +114,7 @@ class DefaultMathConverter:
         return self.convert(latex, display).omml
 
     def prepare_batch(self, expressions: list[tuple[str, bool]]) -> None:
-        """Group simple equations for lazy, bounded conversion by the bundled sidecar."""
+        """Group equations with stateless commands for bounded conversion by the bundled sidecar."""
         bundled = Path(__file__).with_name("bin") / "mddocx-mathjax.mjs"
         if (
             not self._cache_enabled
@@ -94,7 +124,7 @@ class DefaultMathConverter:
             return
         self._batches.clear()
         self._prefetched.clear()
-        # shortcut: batch only small expressions using known commands, until the sidecar isolates user macros.
+        # shortcut: keep commands that can affect later equations out of shared processes.
         eligible = {}
         for latex, display in dict.fromkeys(expressions):
             if len(latex) > 4096:

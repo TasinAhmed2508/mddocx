@@ -156,3 +156,20 @@ Loading notes into the Word package before serialization reduced median time fro
 and embedded image bytes matched. Relationship IDs and content-type declaration order
 account for the different archive hashes. Both documents verified.
 The 20-section mixed workload measured **0.513 s to 0.520 s** with identical DOCX bytes.
+
+## Boxed and annotated equations
+
+Five alternating pairs on Windows with Python 3.12.11 compared the expanded MathJax
+batching against commit dbf64cb. Each run used a fresh Python process, the same
+Node runtime, and strict math conversion. Timings exclude interpreter startup.
+The synthetic workload is available as the technical_math case in the roadmap runner.
+
+| Workload | Median before | Median after | MathJax requests before | MathJax requests after |
+| --- | ---: | ---: | ---: | ---: |
+| ChatGPT export with 200 equations | 7.910 s | 1.313 s | 95 | 10 |
+| 80 distinct boxed formulas with fractions, Greek symbols, and labels in text | 6.364 s | 0.311 s | 80 | 1 |
+| 20-section mixed report | 0.448 s | 0.447 s | 1 | 1 |
+
+Every run produced byte-identical DOCX output for its workload. Batches still use the
+128-equation bound. Equations with tags and other commands that may affect neighboring
+equations continue to run separately.

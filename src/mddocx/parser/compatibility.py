@@ -8,6 +8,7 @@ import re
 
 from markdown_it.common.html_re import HTML_TAG_RE
 from markdown_it.helpers import parseLinkDestination, parseLinkTitle
+from markdown_it.rules_block import StateBlock
 
 from .tables import html_table_source_end
 
@@ -19,6 +20,13 @@ _LINK_MARK = re.compile(r"\]\(|\]:|<|https?://", re.I)
 _MATH_MARK = re.compile(r"[`\\$]|" + _LINK_MARK.pattern, re.I)
 _REFERENCE_LABEL = re.compile(r"^\s*\[(?!\^)(?:[^\[\]\\]|\\.)+\]$")
 _RAW_URL = re.compile(r"https?://[^<>\s]+", re.I)
+_DISPLAY_CLOSE = {
+    "$$": re.compile(r"^\$\$\s*(\{[^{}]+\})?$"),
+    r"\[": re.compile(r"^\\\]\s*(\{[^{}]+\})?$"),
+    r"\\[": re.compile(r"^\\\\\]\s*(\{[^{}]+\})?$"),
+}
+_SAME_LINE_SLASH_DISPLAY = re.compile(r"^(\\{1,2})\[(.+?)(?<!\\)\1\]\s*(\{[^{}]+\})?$")
+_EXPORTED_TEX_ESCAPES = re.compile(r"(?<!\\)(?:\\(?=_)|\\(?=\\%)|\\(?=\\\\[ \t]))")
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,12 +81,7 @@ def find_math_syntax_issues(markdown: str) -> list[MathSyntaxIssue]:
             i = table_end
             continue
         stripped = line.strip()
-        if stripped in {"$$", r"\["}:
-            close_re = (
-                re.compile(r"^\$\$\s*(?:\{[^{}]+\})?$")
-                if stripped == "$$"
-                else re.compile(r"^\\\]\s*(?:\{[^{}]+\})?$")
-            )
+        if close_re := _DISPLAY_CLOSE.get(stripped):
             closing = next(
                 (j for j in range(i + 1, len(lines)) if close_re.match(lines[j].strip())),
                 None,
@@ -195,13 +198,11 @@ def normalize_math_syntax(markdown: str) -> str:
                 out.append(one.group(2))
             i += 1
             continue
-        if stripped in {"$$", r"\["}:
-            is_dollar = stripped == "$$"
-            close_re = (
-                re.compile(r"^\$\$\s*(\{[^{}]+\})?$")
-                if is_dollar
-                else re.compile(r"^\\\]\s*(\{[^{}]+\})?$")
-            )
+        if _SAME_LINE_SLASH_DISPLAY.fullmatch(stripped):
+            out.append(line)
+            i += 1
+            continue
+        if close_re := _DISPLAY_CLOSE.get(stripped):
             closing = next(
                 (j for j in range(i + 1, len(lines)) if close_re.match(lines[j].strip())),
                 None,
@@ -212,25 +213,45 @@ def normalize_math_syntax(markdown: str) -> str:
                 out.append(line)
                 i += 1
                 continue
-            i += 1
-            body: list[str] = []
-            attrs = None
-            while i <= closing:
-                close_match = close_re.match(lines[i].strip())
-                if close_match:
-                    attrs = close_match.group(1)
-                    i += 1
-                    break
-                body.append(lines[i])
-                i += 1
-            out.extend(["```mddocx-math", "\n".join(body), "```"])
+            body = "\n".join(lines[i + 1 : closing])
+            if stripped == r"\\[":
+                body = _unescape_exported_tex(body)
+            close_match = close_re.match(lines[closing].strip())
+            assert close_match is not None
+            attrs = close_match.group(1)
+            out.extend(["```mddocx-math", body, "```"])
             if attrs:
                 out.append(attrs)
+            i = closing + 1
             continue
         out.append(_shield_inline_math(line))
         i += 1
 
     return "\n".join(out)
+
+
+def slash_display_block(state: StateBlock, start_line: int, end_line: int, silent: bool) -> bool:
+    """Read a standalone same-line equation without shifting subsequent source positions."""
+    if state.sCount[start_line] - state.blkIndent >= 4:
+        return False
+    start = state.bMarks[start_line] + state.tShift[start_line]
+    line = state.src[start : state.eMarks[start_line]].rstrip()
+    match = _SAME_LINE_SLASH_DISPLAY.fullmatch(line)
+    if match is None:
+        return False
+    if not silent:
+        slashes, body, attrs = match.groups()
+        token = state.push("mddocx_display_math", "", 0)
+        token.map = [start_line, start_line + 1]
+        token.content = _unescape_exported_tex(body) if len(slashes) == 2 else body
+        token.info = attrs or ""
+        state.line = start_line + 1
+    return True
+
+
+def _unescape_exported_tex(body: str) -> str:
+    # Chat exports escape subscripts, percent signs, and flattened matrix row separators.
+    return _EXPORTED_TEX_ESCAPES.sub("", body)
 
 
 def _shield_inline_math(line: str) -> str:
@@ -315,16 +336,21 @@ def _inline_math_parts(
             continue
 
         opener = text[i : i + 2]
-        closer = r"\)" if opener == r"\(" else None
+        exported = text.startswith(r"\\(", i) or (display_delimiters and text.startswith(r"\\[", i))
+        if exported:
+            opener = text[i : i + 3]
+            closer = r"\\)" if opener == r"\\(" else r"\\]"
+        else:
+            closer = r"\)" if opener == r"\(" else None
         if display_delimiters and closer is None:
             closer = {r"\[": r"\]", "$$": "$$"}.get(opener)
         if closer and not _is_escaped(text, i):
-            end = _find_unescaped(text, closer, i + 2)
-            if end < 0 and issues is not None:
+            size = len(opener)
+            end = _find_unescaped(text, closer, i + size)
+            if end < 0 and issues is not None and not exported:
                 line = start_line + text.count("\n", 0, i)
                 scope = "table math" if display_delimiters else "inline-math"
                 issues.append(MathSyntaxIssue(line, f"Unterminated {scope} delimiter {opener!r}."))
-            size = 2
         elif mark[0] == "$" and opener != "$$" and not _is_escaped(text, i):
             end = _find_inline_dollar_close(text, i + 1)
             # Never pair a currency range across another dollar delimiter or a code span.
@@ -345,7 +371,8 @@ def _inline_math_parts(
             continue
         if start < i:
             yield "text", text[start:i]
-        yield "math", text[i + size : end]
+        body = text[i + size : end]
+        yield "math", _unescape_exported_tex(body) if exported else body
         cursor = start = end + size
     if start < len(text):
         yield "text", text[start:]

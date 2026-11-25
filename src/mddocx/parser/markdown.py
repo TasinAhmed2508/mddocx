@@ -58,6 +58,7 @@ from .compatibility import (
     normalize_callout_containers,
     protect_escaped_footnote_references,
     restore_inline_math_text,
+    slash_display_block,
     split_footnote_references,
     split_text_math,
     split_comment_markup,
@@ -174,6 +175,9 @@ class MarkdownParser:
         from .tables import table_block
 
         self.md.block.ruler.at("table", table_block, {"alt": ["paragraph", "reference"]})
+        self.md.block.ruler.before(
+            "paragraph", "mddocx_display_math", slash_display_block, {"alt": ["paragraph"]}
+        )
         call_configure_markdown(self.extensions, self.md)
         self.source_file: str | None = None
 
@@ -264,6 +268,17 @@ class MarkdownParser:
                     image if image is not None else Paragraph(children=content, source=source)
                 )
                 i += 3
+            elif t.type == "mddocx_display_math":
+                identifier, attrs = self._parse_attrs_text(t.info)
+                nodes.append(
+                    MathBlock(
+                        source_text=t.content.strip(),
+                        identifier=identifier,
+                        caption=attrs.get("caption"),
+                        source=self._pos(t),
+                    )
+                )
+                i += 1
             elif t.type in {"fence", "code_block"}:
                 info = (t.info or "").strip()
                 if info == "mddocx-math":

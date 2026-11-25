@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Render escaped inline and display equations from ChatGPT Markdown exports as editable
+  Word math, including formulas inside tables, subscripts, percentages, and matrices.
 - Write formatted Markdown image labels as plain Word descriptions and embed standalone
   image links with formatted labels.
 - Keep adjacent inline equations distinct inside Markdown emphasis and after saving in Word.

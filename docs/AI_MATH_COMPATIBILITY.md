@@ -8,11 +8,15 @@ service or network request is used during conversion.
 
 | Source form | Result |
 |---|---|
-| `\\(x^2\\)` | Inline native Word equation |
+| `\(x^2\)` or `\\(x^2\\)` | Inline native Word equation |
 | `$x^2$` | Inline native Word equation |
-| `\\[` ... `\\]` | Display native Word equation |
+| `\[ x^2 \]` or `\\[ x^2 \\]` | Display native Word equation, on one line or with delimiters on separate lines |
 | `$$` ... `$$` | Display native Word equation |
 | fenced `math`, `latex`, `tex`, or `mddocx-math` | Display native Word equation |
+
+ChatGPT Markdown downloads can use the doubled-backslash forms and escape subscripts,
+percent signs, and matrix row separators inside the equation. mddocx reads these forms
+in the original downloaded file, including inline formulas in Markdown tables.
 
 Inline code and non-math fenced code are never scanned for equations. Escaped dollar signs and
 common currency ranges remain text. An unmatched display delimiter is preserved as source text and

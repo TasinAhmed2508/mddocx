@@ -101,6 +101,52 @@ formula = "$$not_math$$"
     assert not any(isinstance(node, (MathBlock, InlineMath)) for node in _walk(ast.children))
 
 
+def test_chat_export_escaped_math_stays_editable_in_text_and_tables():
+    markdown = r"""# Revision notes
+
+\\[ \boxed{x\_{i+1}=6.25\\%} \\] {#eq:percentage}
+
+| Method | Formula |
+| ------ | ------- |
+| Matrix | \\(\begin{bmatrix} 4&1\\\ 12&13 \end{bmatrix}\\) |
+
+\\[
+\frac{x\_{i+1}}{2}
+\\]
+
+Inline \\(x^2\\). Literal: `\\(x^2\\)`.
+
+```text
+\\[ x^2 \\]
+```
+
+# Still here
+"""
+    ast = MarkdownParser().parse(markdown)
+    nodes = list(_walk(ast.children))
+    display = [node for node in nodes if isinstance(node, MathBlock)]
+    assert [node.source_text for node in display] == [
+        r"\boxed{x_{i+1}=6.25\%}",
+        r"\frac{x_{i+1}}{2}",
+    ]
+    assert display[0].identifier == "eq:percentage"
+    assert [node.source.line for node in display] == [3, 9]
+    assert ast.children[-1].source.line == 19
+    assert [node.source_text for node in nodes if isinstance(node, InlineMath)] == [
+        r"\begin{bmatrix} 4&1\\ 12&13 \end{bmatrix}",
+        "x^2",
+    ]
+
+    compiler = MarkdownWord(RenderConfig(math_failure=MathFailurePolicy(mode="error")))
+    root = _document_xml(compiler.render_string(markdown))
+    assert compiler.diagnostics == ()
+    assert len(root.xpath(".//m:oMath", namespaces=NS)) == 4
+    assert len(root.xpath(".//m:oMathPara", namespaces=NS)) == 2
+    assert len(root.xpath(".//w:tc//m:m/m:mr", namespaces=NS)) == 2
+    assert root.xpath(".//m:sSub", namespaces=NS)
+    assert "%" in "".join(root.xpath(".//m:t/text()", namespaces=NS))
+
+
 def test_invalid_math_markers_remain_text_next_to_valid_math():
     markdown = "Literal MDDOCXMATHaZ:ENDMATH and MDDOCXMATH_aZ:ENDMATH; $0$ then $x^2$."
 

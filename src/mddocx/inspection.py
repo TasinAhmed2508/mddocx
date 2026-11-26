@@ -24,6 +24,9 @@ ADEC = "http://schemas.microsoft.com/office/drawing/2017/decorative"
 NS = {"w": W, "m": M, "r": R, "w14": W14, "wp": WP, "adec": ADEC, "pr": PR}
 
 _SUSPICIOUS_PLACEHOLDERS = ("□", "▯", "�")
+_BOOKMARK_STORY_TAGS = frozenset(
+    f"{{{W}}}{tag}" for tag in ("document", "hdr", "ftr", "footnotes", "endnotes", "comments")
+)
 
 
 @dataclass(slots=True)
@@ -253,10 +256,7 @@ def _inspect_parts(
     report.hyperlinks = sum(
         len(root.xpath(".//w:hyperlink", namespaces=NS)) for root in content_roots
     )
-    note_stories = [
-        roots[name] for name in ("word/footnotes.xml", "word/endnotes.xml") if name in roots
-    ]
-    anchor_stories = [document, *note_stories]
+    anchor_stories = [root for root in roots.values() if root.tag in _BOOKMARK_STORY_TAGS]
     anchors = [
         node.get(f"{{{W}}}anchor")
         for story in anchor_stories

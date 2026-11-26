@@ -6,13 +6,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docx import Document as WordDocument
-from docx.oxml import OxmlElement
+from docx.opc.constants import CONTENT_TYPE as CT
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 
 from mddocx.diagnostics import Diagnostic, MddocxError
 from mddocx.validation import validate_docx_package
 
 from . import sections
+
+_BOOKMARK_STORIES = {
+    CT.WML_DOCUMENT_MAIN,
+    CT.WML_HEADER,
+    CT.WML_FOOTER,
+    CT.WML_FOOTNOTES,
+    CT.WML_ENDNOTES,
+    CT.WML_COMMENTS,
+}
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -55,6 +65,25 @@ def configure_document(renderer: DocxRenderer) -> None:
         props.comments = renderer.config.comments
     if renderer.config.created_at:
         props.created = renderer.config.created_at
+
+
+def reserve_template_bookmarks(renderer: DocxRenderer) -> None:
+    for part in renderer.document.part.package.parts:
+        if part.content_type not in _BOOKMARK_STORIES:
+            continue
+        root = getattr(part, "element", None)
+        if root is None:
+            root = parse_xml(part.blob)
+        for node in root.iter(qn("w:bookmarkStart"), qn("w:bookmarkEnd")):
+            name = node.get(qn("w:name"))
+            if name:
+                renderer._bookmark_names.add(name)
+            try:
+                renderer._bookmark_id = max(
+                    renderer._bookmark_id, int(node.get(qn("w:id"), "0")) + 1
+                )
+            except ValueError:
+                continue
 
 
 def request_field_updates(renderer: DocxRenderer) -> None:

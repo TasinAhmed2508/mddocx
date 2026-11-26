@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Reserve bookmark names and IDs from template bodies, headers, footers, notes,
+  and comments before allocating report headings, captions, and equation references.
+  Include header and footer bookmarks when validating links and duplicate names.
 - Preserve malformed HTML tables as source text with `TABLE202` when text appears
   outside cells or captions, rather than silently discarding that text.
 - Refetch and atomically repair invalid or oversized persistent image-cache entries.

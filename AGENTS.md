@@ -5,6 +5,7 @@
 - Keep `D:\Project\mddocx` limited to the active checkout and `mddocx-explainer.mp4`. Use staging outside this folder for virtual environments, builds, draft videos, and generated review files.
 - Preserve working-tree changes when moving or cleaning a checkout. Use the Recycle Bin for workspace files the user asks to remove.
 - Use ordinary Git and source inspection for repository work. Graphify was uninstalled at the user's request.
+- Consult `docs/MAINTENANCE_AUDIT_1.5.md` for current review evidence and confirmed open defects. Verify the current code and checks before treating an earlier result as proof.
 
 ## User font preference
 

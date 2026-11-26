@@ -146,6 +146,10 @@ class DocxRenderer:
         self._theme = get_theme(self.config.theme)
         self.fonts = FontSlots.resolve(self.config, self._theme)
         self.document = document_setup.open_document(self)
+        self._bookmark_names.clear()
+        self._bookmark_id = 1
+        if self.config.template:
+            document_setup.reserve_template_bookmarks(self)
         self._paragraph_styles.clear()
         validate_style_mapping(self.document, self.config, self.reporter)
         ensure_styles(self.document, self.config)
@@ -171,6 +175,7 @@ class DocxRenderer:
             self.config.references.equation_number_format,
             self.config.references.caption_number_format,
             self.config.references.listing_numbering,
+            reserved_bookmarks=self._bookmark_names,
         )
         self.context = RenderContext(
             word_document=self.document,

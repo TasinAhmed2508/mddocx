@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import re
 
@@ -93,8 +93,11 @@ class ReferenceRegistry:
         equation_number_format: str = "document",
         caption_number_format: str = "document",
         listing_numbering: bool = True,
+        *,
+        reserved_bookmarks: Iterable[str] = (),
     ) -> "ReferenceRegistry":
         reg = cls()
+        reg._bookmark_names.update(reserved_bookmarks)
         if not listing_numbering:
             reg._counts.pop("Listing")
         section = 0

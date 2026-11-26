@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 
 from docx import Document
 import pytest
@@ -32,6 +33,30 @@ def test_opt_in_recovery_preserves_surrounding_content(declaration, code):
     assert before.text == "Before." and after.text == "After."
     assert code in placeholder.text and "Markdown:3" in placeholder.text
     assert placeholder.style.name == "MD Quote"
+
+
+@pytest.mark.parametrize(
+    "values", ["[oops]", "[.nan]", "[.inf]", "[true]", "false", "0", str([10**400])]
+)
+def test_invalid_chart_values_preserve_output_and_recover_explicitly(tmp_path, capsys, values):
+    source = tmp_path / "chart.md"
+    output = source.with_suffix(".docx")
+    source.write_text(
+        f"Before.\n\n~~~chart\ncategories: [A]\nseries:\n  - name: Count\n    values: {values}\n~~~\n\nAfter.",
+        encoding="utf-8",
+    )
+    output.write_bytes(b"previous output")
+    assert main([str(source), "--json"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    diagnostic = report["results"][0]["diagnostics"][0]
+    assert (diagnostic["code"], diagnostic["line"]) == ("CHART205", 3)
+    assert output.read_bytes() == b"previous output"
+    assert main([str(source), "--recover", "--json"]) == 3
+    capsys.readouterr()
+    assert inspect_docx_bytes(output.read_bytes()).ok
+    paragraphs = Document(output).paragraphs
+    assert paragraphs[0].text == "Before." and paragraphs[-1].text == "After."
+    assert "CHART205" in paragraphs[1].text
 
 
 def test_project_recovery_does_not_become_strict_cache_hit(tmp_path, capsys):

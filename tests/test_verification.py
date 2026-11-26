@@ -16,6 +16,7 @@ from mddocx import (
     inspect_docx_bytes,
 )
 from mddocx.cli import main
+from mddocx.diagnostics import MddocxError
 from mddocx.inspection import NS
 from mddocx.ooxml import bangla
 from mddocx.ooxml.charts import C
@@ -558,6 +559,31 @@ def test_chart_retains_values_with_short_categories_and_blank_points(tmp_path, k
     parts["word/charts/chart1.xml"] = etree.tostring(root)
     (finding,) = compiler.verify(source, write_parts(parts)).findings
     assert finding.code == "VERIFY303" and "values changed" in finding.message
+
+
+@pytest.mark.parametrize("x", [".nan", ".inf", "1e999", "true", "wrong"])
+def test_scatter_rejects_invalid_coordinates_with_source_location(tmp_path, x):
+    source = tmp_path / "scatter.md"
+    source.write_text(
+        f"~~~chart\ntype: scatter\ncategories: [{x}]\nseries: {{Count: [2]}}\n~~~",
+        encoding="utf-8",
+    )
+    with pytest.raises(MddocxError, match="CHART208") as error:
+        Compiler().compile_file(source, source.with_suffix(".docx"))
+    assert error.value.diagnostic.line == 1
+
+
+def test_chart_blank_csv_fields_remain_gaps(tmp_path):
+    source = tmp_path / "csv-chart.md"
+    (tmp_path / "values.csv").write_text("Item,Count\nA,2\nB,\nC,4\n", encoding="utf-8")
+    source.write_text("~~~chart\nsource: values.csv\n~~~", encoding="utf-8")
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    parts = read_parts(blob)
+    root = etree.fromstring(parts["word/charts/chart1.xml"])
+    points = root.findall(".//{*}val/{*}numRef/{*}numCache/{*}pt")
+    assert [point.get("idx") for point in points] == ["0", "2"]
 
 
 @pytest.mark.parametrize(

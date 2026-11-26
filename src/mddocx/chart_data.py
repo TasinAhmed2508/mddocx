@@ -1,5 +1,7 @@
 """Normalize chart declarations for rendering and offline verification."""
 
+from math import isfinite
+
 from .ast.block import ChartBlock
 from .config import RenderConfig
 from .data import coerce_number, load_tabular_data, resolve_data_path
@@ -67,7 +69,9 @@ def prepare_chart_entry(
                 )
             )
         name = str(item.get("name") or f"Series {idx}")
-        values = item.get("values") or []
+        values = item.get("values")
+        if values is None:
+            values = []
         if not isinstance(values, list):
             raise MddocxError(
                 Diagnostic(
@@ -79,12 +83,25 @@ def prepare_chart_entry(
                 )
             )
         numeric: list[object] = []
-        for value in values:
-            if value is None:
+        for point, value in enumerate(values, start=1):
+            if value is None or isinstance(value, str) and not value.strip():
                 numeric.append(None)
                 continue
-            number = coerce_number(value)
-            numeric.append(number if number is not None else 0.0)
+            try:
+                number = coerce_number(value)
+            except (TypeError, ValueError, OverflowError):
+                number = None
+            if number is None or not isfinite(number):
+                raise MddocxError(
+                    Diagnostic(
+                        "error",
+                        "CHART205",
+                        f"Chart series '{name}', point {point} must be a finite number or blank.",
+                        getattr(node.source, "file", None),
+                        getattr(node.source, "line", None),
+                    )
+                )
+            numeric.append(number)
         max_points = max(max_points, len(numeric))
         series.append((name, numeric))
     max_points = max(max_points, len(categories))
@@ -115,13 +132,19 @@ def prepare_chart_entry(
     if node.chart_type.lower() == "scatter":
         converted: list[object] = []
         for value in categories:
-            number = coerce_number(value)
-            if number is None and value is not None:
+            if value is None or isinstance(value, str) and not value.strip():
+                converted.append(None)
+                continue
+            try:
+                number = coerce_number(value)
+            except (TypeError, ValueError, OverflowError):
+                number = None
+            if number is None or not isfinite(number):
                 raise MddocxError(
                     Diagnostic(
                         "error",
                         "CHART208",
-                        "Scatter chart x/category values must be numeric.",
+                        "Scatter chart x/category values must be finite numbers or blank.",
                         getattr(node.source, "file", None),
                         getattr(node.source, "line", None),
                     )

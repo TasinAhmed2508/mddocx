@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report invalid and non-finite chart values with source-located diagnostics before
+  writing the document. Opt-in recovery annotates invalid series and preserves surrounding text.
 - Extend native chart ranges to retain values beyond the supplied category labels.
   Preserve nulls and short series as blank points in ChartML and the embedded workbook.
 - Compare native chart types, series names, categories, cached values and workbook

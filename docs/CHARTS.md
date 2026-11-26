@@ -8,6 +8,12 @@ remain blank workbook cells and chart gaps. When categories are omitted entirely
 the compiler generates sequential category values. Scatter charts keep missing
 coordinates blank and require numeric values for coordinates that are present.
 
+Series values accept finite numbers, numeric strings, and blanks. An invalid series
+value produces `CHART205` with the series name and point index. Invalid scatter
+coordinates produce `CHART208`. A failed conversion preserves the previous output.
+Use `--recover` to replace an invalid series declaration with an editable diagnostic
+placeholder and continue with the surrounding content.
+
 ````markdown
 ```chart {#fig-sales caption="Quarterly performance"}
 type: column

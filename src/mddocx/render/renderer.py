@@ -72,6 +72,7 @@ from mddocx.ooxml.notes import (
     open_note_part,
 )
 from mddocx.ooxml.numbering import NumberingEngine
+from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.text import clean_xml_text, configure_xml_run, set_xml_paragraph_rtl
 from mddocx.references import ReferenceRegistry
 from mddocx.resources import ResourceResolver
@@ -282,9 +283,10 @@ class DocxRenderer:
         decision = self._layout_plan.for_node(node)
         if decision is None:
             return
-        paragraph.paragraph_format.keep_with_next = decision.keep_with_next
-        paragraph.paragraph_format.keep_together = decision.keep_together
-        paragraph.paragraph_format.page_break_before = decision.page_break_before
+        properties = paragraph._p.get_or_add_pPr()
+        get_or_add(properties, "w:keepNext").val = decision.keep_with_next
+        get_or_add(properties, "w:keepLines").val = decision.keep_together
+        get_or_add(properties, "w:pageBreakBefore").val = decision.page_break_before
 
     def _render_block(self, node, list_level=0, *, paragraph_style="MD Normal"):
         """Dispatch one block node to the surface module that owns it."""

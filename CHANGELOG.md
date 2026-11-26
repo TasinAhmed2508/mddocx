@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Speed up long reports by writing planned paragraph properties through the shared
+  ordered XML helpers and skipping elements outside the schema-order checks.
+
 ## 1.5.0rc3
 
 - Preserve the dimensions and visibility of LaTeX phantom and smash commands in

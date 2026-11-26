@@ -61,15 +61,17 @@ def _is_validated_part(part: str) -> bool:
 
 
 def _element_violations(part: str, tag: str, element: etree._Element) -> list[str]:
+    leading = LEADING.get(tag)
+    sequence = SEQUENCES.get(tag)
+    trailing = TRAILING.get(tag)
+    if leading is None and sequence is None and trailing is None:
+        return []
     names = _children(element)
     found: list[str] = []
-    leading = LEADING.get(tag)
     if leading is not None:
         found.extend(_leading_violations(part, tag, names, leading))
-    sequence = SEQUENCES.get(tag)
     if sequence is not None:
         found.extend(_sequence_violations(part, tag, names, sequence))
-    trailing = TRAILING.get(tag)
     if trailing is not None:
         found.extend(_trailing_violations(part, tag, names, trailing))
     return found

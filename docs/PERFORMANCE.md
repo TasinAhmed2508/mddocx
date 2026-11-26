@@ -187,3 +187,17 @@ integrals, thin spaces, and sums with explicit side limits.
 | 20-section mixed report | 0.477 s | 0.487 s | 1 | 1 |
 
 Each before and after run produced identical DOCX bytes for its workload.
+
+## Planned paragraph properties
+
+Five alternating pairs on Windows with Python 3.12.11 compared the ordered
+paragraph-property writes and schema-order check with `985ec5d`. Each run used
+a fresh process and timed the conversion after interpreter startup. The stress
+document contains 6,000 level-two headings, each followed by a short paragraph.
+
+| Workload | Median before | Median after |
+| --- | ---: | ---: |
+| 6,000 headings and paragraphs | 8.988 s | 7.583 s |
+| 20-section mixed report | 0.572 s | 0.550 s |
+
+Each workload produced identical DOCX bytes across all ten runs.

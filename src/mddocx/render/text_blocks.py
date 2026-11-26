@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 
 
 def render_heading(renderer: DocxRenderer, node: Heading) -> None:
+    if node.level == 1:
+        renderer._caption_section += 1
+        if renderer.config.references.caption_number_format == "section":
+            renderer._caption_counts.clear()
     p = renderer._add_paragraph(f"MD Heading {node.level}")
     renderer._apply_planned_paragraph_layout(p, node)
     if (

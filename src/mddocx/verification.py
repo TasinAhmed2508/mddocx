@@ -121,6 +121,8 @@ def compare_document(
 ) -> VerificationResult:
     expected: list[_Unit] = []
     findings: list[VerificationFinding] = []
+    caption_counts: dict[str, int] = {}
+    caption_section = 0
     sections = [_SectionStart(0, config.page.orientation)]
     layout = LayoutPlanner(config)
     references = ReferenceRegistry.from_document(
@@ -129,6 +131,8 @@ def compare_document(
         config.references.equation_number_format,
         config.references.caption_number_format,
         config.references.listing_numbering,
+        image_captions_from_title=config.image_captions_from_title,
+        mermaid_enabled=config.mermaid.enabled,
     )
     notes: dict[str, int] = {}
     note_kind = config.notes.style
@@ -208,7 +212,12 @@ def compare_document(
                     and (target.title or "").lower().startswith(prefix.lower())
                 ):
                     tokens.append(prefix + " ")
-                tokens.append(("ref", target.bookmark, r"\h"))
+                value = (
+                    str(target.number) if target.number is not None else target.title or node.target
+                )
+                tokens.append(
+                    ("ref", target.bookmark, r"\h", _merge_text((clean_xml_text(value),)))
+                )
             else:
                 incomplete(f"Inline {type(node).__name__} coverage is incomplete.", node)
         return _merge_text(tokens)
@@ -221,18 +230,18 @@ def compare_document(
         fields: tuple[tuple[str, ...], ...] = ()
         visible = clean_xml_text(text)
         if label != "Listing" or config.references.listing_numbering:
+            count = caption_counts.get(label, 0) + 1
+            caption_counts[label] = count
+            number: int | str = count
+            if config.references.caption_number_format == "section":
+                number = f"{max(1, caption_section)}.{count}"
             fields = _sequence_fields(
                 label,
-                target.number if target else None,
+                number,
                 config.references.caption_number_format == "section",
             )
             display = getattr(config.references, f"{label.lower()}_label")
-            visible = (
-                display
-                + " "
-                + ("." if len(fields) == 2 else "")
-                + (" — " + visible if text else "")
-            )
+            visible = display + " " + str(number) + (" — " + visible if text else "")
         caption = _Unit(
             "caption",
             (_merge_text((visible,)), target.bookmark if target else None, fields),
@@ -244,8 +253,13 @@ def compare_document(
             expected.extend((*units, caption))
 
     def blocks(nodes, level: int = 0) -> None:
+        nonlocal caption_section
         for node in nodes:
             if isinstance(node, block.Heading):
+                if node.level == 1:
+                    caption_section += 1
+                    if config.references.caption_number_format == "section":
+                        caption_counts.clear()
                 target = references.get(node.identifier) if node.identifier else None
                 bookmark = target.bookmark if config.heading_bookmarks and target else None
                 expected.append(
@@ -943,7 +957,9 @@ def _read_body(
             instructions: list[tuple[str, ...]] | None = (
                 [] if name == "MDCaption" or hidden_fields else None
             )
-            tokens = _read_inlines(child, links, fields=instructions)
+            tokens = _read_inlines(
+                child, links, fields=instructions, include_field_values=name == "MDCaption"
+            )
             before, after = child.getprevious(), child.getnext()
             if (
                 len(child) == 0
@@ -1039,19 +1055,29 @@ def _read_cell_content(cell: etree._Element, links: dict) -> tuple:
 
 
 def _read_inlines(
-    parent: etree._Element, links: dict, *, fields: list[tuple[str, ...]] | None = None
+    parent: etree._Element,
+    links: dict,
+    *,
+    fields: list[tuple[str, ...]] | None = None,
+    include_field_values: bool = False,
 ) -> tuple:
-    return _merge_text(_read_inline_content(read_field_content(parent), links, fields))
+    return _merge_text(
+        _read_inline_content(read_field_content(parent), links, fields, include_field_values)
+    )
 
 
-def _read_inline_content(items, links, fields=None) -> list:
+def _read_inline_content(items, links, fields=None, include_field_values=False) -> list:
     tokens: list = []
     for node in items:
         if isinstance(node, WordField):
             if fields is not None:
                 fields.append(node.words)
+                if include_field_values:
+                    tokens.extend(_read_inline_content(node.result, links))
             elif node.words[:1] == ("REF",):
-                tokens.append(("ref", *node.words[1:]))
+                tokens.append(
+                    ("ref", *node.words[1:], _merge_text(_read_inline_content(node.result, links)))
+                )
             else:
                 tokens.extend(_read_inline_content(node.result, links))
         elif node.tag == f"{{{W}}}t":
@@ -1096,5 +1122,7 @@ def _read_inline_content(items, links, fields=None) -> list:
             kind = etree.QName(node).localname.removesuffix("Reference")
             tokens.append(("note", kind, node.get(f"{{{W}}}id")))
         elif node.tag in {f"{{{W}}}p", f"{{{M}}}oMathPara"}:
-            tokens.extend(_read_inlines(node, links, fields=fields))
+            tokens.extend(
+                _read_inlines(node, links, fields=fields, include_field_values=include_field_values)
+            )
     return tokens

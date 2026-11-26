@@ -95,6 +95,8 @@ class ReferenceRegistry:
         listing_numbering: bool = True,
         *,
         reserved_bookmarks: Iterable[str] = (),
+        image_captions_from_title: bool = True,
+        mermaid_enabled: bool = True,
     ) -> "ReferenceRegistry":
         reg = cls()
         reg._bookmark_names.update(reserved_bookmarks)
@@ -103,6 +105,22 @@ class ReferenceRegistry:
         section = 0
         equation_in_section = 0
         caption_in_section = {"Figure": 0, "Table": 0, "Listing": 0}
+
+        def caption(node, kind: str, title: str, anonymous_caption: bool) -> None:
+            if not node.identifier and not anonymous_caption:
+                return
+            numbered = kind in reg._counts
+            if numbered:
+                caption_in_section[kind] += 1
+            number = (
+                f"{max(1, section)}.{caption_in_section[kind]}"
+                if numbered and caption_number_format == "section"
+                else None
+            )
+            reg.register(node.identifier, kind, title, number)
+            if numbered and not node.identifier:
+                reg._counts[kind] += 1
+
         for node in _reference_blocks(document.children):
             if isinstance(node, Heading):
                 title = plain_text(node.children)
@@ -113,38 +131,21 @@ class ReferenceRegistry:
                 if node.identifier:
                     reg.register(node.identifier, "Section", title)
             elif isinstance(node, ImageBlock):
-                if node.identifier and caption_number_format == "section":
-                    caption_in_section["Figure"] += 1
-                    reg.register(
-                        node.identifier,
-                        "Figure",
-                        node.caption or node.title or node.alt,
-                        f"{max(1, section)}.{caption_in_section['Figure']}",
-                    )
-                else:
-                    reg.register(node.identifier, "Figure", node.caption or node.title or node.alt)
+                caption(
+                    node,
+                    "Figure",
+                    node.caption or node.title or node.alt,
+                    bool(node.caption or (node.title if image_captions_from_title else None)),
+                )
             elif isinstance(node, ChartBlock):
-                if node.identifier and caption_number_format == "section":
-                    caption_in_section["Figure"] += 1
-                    reg.register(
-                        node.identifier,
-                        "Figure",
-                        node.caption or node.title or "",
-                        f"{max(1, section)}.{caption_in_section['Figure']}",
-                    )
-                else:
-                    reg.register(node.identifier, "Figure", node.caption or node.title or "")
+                caption(
+                    node,
+                    "Figure",
+                    node.caption or node.title or "",
+                    bool(node.caption or node.title),
+                )
             elif isinstance(node, (Table, DataTableBlock)):
-                if node.identifier and caption_number_format == "section":
-                    caption_in_section["Table"] += 1
-                    reg.register(
-                        node.identifier,
-                        "Table",
-                        node.caption or "",
-                        f"{max(1, section)}.{caption_in_section['Table']}",
-                    )
-                else:
-                    reg.register(node.identifier, "Table", node.caption or "")
+                caption(node, "Table", node.caption or "", bool(node.caption))
             elif isinstance(node, MathBlock):
                 if node.identifier and equation_number_format == "section":
                     equation_in_section += 1
@@ -157,17 +158,13 @@ class ReferenceRegistry:
                 else:
                     reg.register(node.identifier, "Equation", node.caption or "")
             elif isinstance(node, CodeBlock):
-                kind = "Figure" if (node.language or "").lower() == "mermaid" else "Listing"
-                if kind == "Listing" and not listing_numbering:
-                    reg.register(node.identifier, kind, node.caption or "Code listing")
-                elif node.identifier and caption_number_format == "section":
-                    caption_in_section[kind] += 1
-                    reg.register(
-                        node.identifier,
-                        kind,
-                        node.caption or "",
-                        f"{max(1, section)}.{caption_in_section[kind]}",
-                    )
-                else:
-                    reg.register(node.identifier, kind, node.caption or "")
+                kind = (
+                    "Figure"
+                    if (node.language or "").strip().lower() == "mermaid" and mermaid_enabled
+                    else "Listing"
+                )
+                title = node.caption or (
+                    "Code listing" if kind == "Listing" and not listing_numbering else ""
+                )
+                caption(node, kind, title, bool(node.caption))
         return reg

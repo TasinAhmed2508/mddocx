@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Number every emitted figure, table, and listing caption, including captions without
+  identifiers. Refresh cached cross-reference text after rendering so forward references
+  and recovered blocks use the final numbers. Offline verification now checks cached
+  caption and reference values as well as their Word field instructions.
 - Reserve bookmark names and IDs from template bodies, headers, footers, notes,
   and comments before allocating report headings, captions, and equation references.
   Include header and footer bookmarks when validating links and duplicate names.

@@ -17,6 +17,7 @@ and publication. The completed 1.4.3 review is recorded separately in
 | Persistent image cache | Invalid and oversized entries are refetched and atomically repaired. SVG/WebP settings and SVG resolution participate in cache keys. The repaired body-and-table fixture produces identical DOCX bytes and verifies offline. |
 | Malformed HTML tables | Non-whitespace text outside cells or captions is preserved as source text with `TABLE202`. Six previously silent losses and a valid whitespace case have regression coverage. |
 | Template bookmarks | `tests/test_template_bookmarks.py` covers reserved names and IDs in bodies, headers, footers, footnotes, and endnotes, with output validation enabled and disabled. It checks generated REF instructions, internal links, and start/end IDs. |
+| Cached caption numbers | `tests/test_caption_numbering.py` covers anonymous captions, five block types, both caption positions, document/section numbering, native/static references, title policy, and recovery. Captions count actual emissions. Forward reference caches are refreshed before serialization. Offline verification detects edited cached caption and reference values. |
 | Package inspection | Header/footer bookmarks participate in duplicate-name and reference checks. Inspection uses the XML already parsed by validation. |
 | Dead-code screening | Ruff checks unused imports and local variables. A reference-name scan across Python source, tests, and scripts found no private function name appearing only at its definition. This screening does not establish reachability for every dynamic hook or public API. |
 
@@ -58,18 +59,24 @@ checkout on `PYTHONPATH`:
 These installed-release checks do not qualify the newer integration-branch fixes
 as part of the unchanged rc4 release archives.
 
-## Confirmed issue still open
+## Caption numbering qualification
 
-Cached caption numbering ignores earlier captions without identifiers. For example,
-two tables captioned `First` and `Second {#second}` currently display `Table 1` twice,
-and `[Table @second]` initially displays `Table 1`. The desired values are `Table 1`,
-`Table 2`, and `Table 2`, consistent with the native Word sequence after updating
-fields. Review both `references.py` and `render/citations.py`, including figure,
-listing, section-scoped, and recovery behavior before changing the counter policy.
+The initial cached-number mismatch is corrected. Earlier captions without identifiers
+now advance later caption numbers, and both forward and backward references display
+the final values. This applies to figures, tables, listings, imported tables, and charts.
+Known recovery placeholders do not consume caption numbers. There are 49 targeted
+caption cases. The combined nonvisual suite passed 961 tests, with two optional visual
+tests deselected. Ruff, formatting, the 11-file mypy gate, and diagnostic checks passed.
+
+An optional Word field-update check did not produce a saved result within its time
+budget. The identified review automation process was stopped after 226 seconds, and
+its client was terminated. The generated review inputs are retained outside the
+checkout. This is a **not completed** result, not evidence that Word updated the fields
+correctly or incorrectly. Diagnose that automation before repeating the qualification.
 
 ## Qualification still required
 
-- Finish the caption-numbering correction and its independent regression cases.
+- Diagnose and finish the Word field-update check for section-scoped caption numbering.
 - Continue the review across the remaining paths; the whole-code review is not
   certified complete by the private-name scan.
 - Qualify the final candidate on the platform matrix and clean release archives.

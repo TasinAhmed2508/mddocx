@@ -54,21 +54,30 @@ def render_caption(
             renderer._bookmark_id += 1
         return
     p.add_run(display_label(renderer, label) + " ")
-    if target and target.number is not None:
-        if (
-            renderer.config.references.caption_number_format == "section"
-            and isinstance(target.number, str)
-            and "." in target.number
-        ):
-            section_no, item_no = target.number.split(".", 1)
-            add_chapter_seq_field(
-                p, label, section_no, item_no, target.bookmark, renderer._bookmark_id
-            )
-        else:
-            add_seq_field(p, label, str(target.number), target.bookmark, renderer._bookmark_id)
-        renderer._bookmark_id += 1
+    count = renderer._caption_counts.get(label, 0) + 1
+    renderer._caption_counts[label] = count
+    number: int | str = count
+    if renderer.config.references.caption_number_format == "section":
+        number = f"{max(1, renderer._caption_section)}.{count}"
+        add_chapter_seq_field(
+            p,
+            label,
+            str(max(1, renderer._caption_section)),
+            str(count),
+            target.bookmark if target else None,
+            renderer._bookmark_id if target else None,
+        )
     else:
-        add_seq_field(p, label, "1")
+        add_seq_field(
+            p,
+            label,
+            str(count),
+            target.bookmark if target else None,
+            renderer._bookmark_id if target else None,
+        )
+    if target:
+        target.number = number
+        renderer._bookmark_id += 1
     if caption:
         p.add_run(" — " + clean_xml_text(caption))
         renderer._apply_text_policy(p, caption)
@@ -106,6 +115,7 @@ def render_cross_reference(renderer: DocxRenderer, paragraph, node: CrossReferen
         text = ((prefix + " ") if prefix else "") + value
         r = paragraph.add_run(text)
         renderer._configure_run(r, text)
+        renderer._cross_reference_results.append((r, target, prefix))
         return
     if (
         prefix is None
@@ -123,7 +133,20 @@ def render_cross_reference(renderer: DocxRenderer, paragraph, node: CrossReferen
         r = paragraph.add_run(prefix + " ")
         renderer._configure_run(r, r.text)
     value = target.title or node.target if target.number is None else str(target.number)
-    add_ref_field(paragraph, target.bookmark, value)
+    result = add_ref_field(paragraph, target.bookmark, value)
+    if result is not None:
+        renderer._cross_reference_results.append((result, target, None))
+
+
+def refresh_cross_reference_results(renderer: DocxRenderer) -> None:
+    # Forward references and recovered blocks can change the final caption number.
+    for run, target, prefix in renderer._cross_reference_results:
+        value = (
+            str(target.number) if target.number is not None else target.title or target.identifier
+        )
+        if prefix and target.number is None and value.lower().startswith(prefix.lower()):
+            prefix = None
+        run.text = (prefix + " " if prefix else "") + value
 
 
 def render_bibliography(renderer: DocxRenderer) -> None:

@@ -15,6 +15,7 @@ from pathlib import Path
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.text.run import Run
 
 from mddocx.ast.base import Document
 from mddocx.ast.block import (
@@ -74,7 +75,7 @@ from mddocx.ooxml.notes import (
 from mddocx.ooxml.numbering import NumberingEngine
 from mddocx.ooxml.sequence import get_or_add
 from mddocx.ooxml.text import clean_xml_text, configure_xml_run, set_xml_paragraph_rtl
-from mddocx.references import ReferenceRegistry
+from mddocx.references import ReferenceRegistry, ReferenceTarget
 from mddocx.resources import ResourceResolver
 from mddocx.scripts import is_rtl_text
 from mddocx.styles import (
@@ -122,6 +123,9 @@ class DocxRenderer:
         self._note_width = 0
         self._task_control_id = 1000
         self.references = None
+        self._caption_counts: dict[str, int] = {}
+        self._caption_section = 0
+        self._cross_reference_results: list[tuple[Run, ReferenceTarget, str | None]] = []
         self.bibliography = BibliographyDatabase()
         self._cited_keys: list[str] = []
         self._bibliography_rendered = False
@@ -148,6 +152,9 @@ class DocxRenderer:
         self.document = document_setup.open_document(self)
         self._bookmark_names.clear()
         self._bookmark_id = 1
+        self._caption_counts.clear()
+        self._caption_section = 0
+        self._cross_reference_results.clear()
         if self.config.template:
             document_setup.reserve_template_bookmarks(self)
         self._paragraph_styles.clear()
@@ -176,6 +183,8 @@ class DocxRenderer:
             self.config.references.caption_number_format,
             self.config.references.listing_numbering,
             reserved_bookmarks=self._bookmark_names,
+            image_captions_from_title=self.config.image_captions_from_title,
+            mermaid_enabled=self.config.mermaid.enabled,
         )
         self.context = RenderContext(
             word_document=self.document,
@@ -235,6 +244,7 @@ class DocxRenderer:
             ):
                 citations.render_bibliography(self)
             tables.remove_empty_table_sections(self)
+            citations.refresh_cross_reference_results(self)
             document_setup.request_field_updates(self)
             stream = BytesIO()
             self.document.save(stream)

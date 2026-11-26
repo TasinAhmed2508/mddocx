@@ -7,6 +7,7 @@ import re
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.text.run import Run
 from lxml import etree
 
 from mddocx.ooxml.sequence import insert_ordered
@@ -194,7 +195,7 @@ def append_hyperlink_text(
 
 def add_field(
     paragraph, instruction: str, placeholder: str | None = None, dirty: bool = True
-) -> None:
+) -> Run | None:
     begin = OxmlElement("w:fldChar")
     begin.set(qn("w:fldCharType"), "begin")
     if dirty:
@@ -214,11 +215,11 @@ def add_field(
     r3 = OxmlElement("w:r")
     r3.append(separate)
     paragraph._p.extend([r1, r2, r3])
-    if placeholder:
-        paragraph.add_run(placeholder)
+    result = paragraph.add_run(placeholder) if placeholder else None
     r4 = OxmlElement("w:r")
     r4.append(end)
     paragraph._p.append(r4)
+    return result
 
 
 def add_page_number(paragraph) -> None:
@@ -269,9 +270,9 @@ def add_internal_hyperlink(paragraph, text: str | None, anchor: str):
     return hyperlink
 
 
-def add_ref_field(paragraph, bookmark: str, placeholder: str, hyperlink: bool = True) -> None:
+def add_ref_field(paragraph, bookmark: str, placeholder: str, hyperlink: bool = True) -> Run | None:
     switch = " \\h" if hyperlink else ""
-    add_field(paragraph, f" REF {bookmark}{switch} ", placeholder)
+    return add_field(paragraph, f" REF {bookmark}{switch} ", placeholder)
 
 
 def add_seq_field(

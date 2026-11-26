@@ -14,12 +14,14 @@ is a wish list.
   validated XML parts, atomic DOCX and cache writes, and per-file project source limits.
 - **Integration branch:** OOXML ordering checks, source-located front-matter diagnostics,
   accessibility diagnostics, and tests for conversion without office tooling.
-- **Implemented in the local candidate:** structural corpus and field lint, offline verification,
+- **Included in the 1.5 prereleases:** structural corpus and field lint, offline verification,
   opt-in recovery, aggregate project input limits, single-file watch, batch workers,
   capabilities, completions, and bounded MathJax batching. See [performance results](PERFORMANCE.md).
-- **Pending:** cross-platform CI and release publication. Broader verification coverage,
-  the optional renderer corpus, and compatibility changes remain staged.
-  Strict conversion is the default, and annotated output recovery is opt-in.
+- **Included in 1.5.0rc3:** the Report theme, native portrait and landscape transitions,
+  merged-table and image-link improvements, and expanded native math and verification coverage.
+  See the [changelog](../CHANGELOG.md#150rc3).
+- **Planned:** broader verification coverage, an expanded optional visual corpus, and the
+  compatibility work for 2.x. Strict conversion remains the default with opt-in recovery.
 
 ## Part 1 — Usability and performance for users
 
@@ -89,6 +91,9 @@ rest are structural debts.
 
 ## How to use this document
 
+- Check the local checkout name when starting roadmap work and after every version bump.
+  Use `mddocx-<version>` with the exact version in `pyproject.toml`, including prerelease
+  suffixes. When a rename is needed, verify Git at the new path. See [workspace conventions](../AGENTS.md).
 - Each PR addresses one row and states its acceptance criterion in the description.
 - New rows go in the table rather than into issue text, so the plan stays readable and
   reviewable in the repository.

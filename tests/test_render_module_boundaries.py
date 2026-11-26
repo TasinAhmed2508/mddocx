@@ -33,12 +33,11 @@ SURFACE_MODULES = {
     "lists": ("render_list",),
     "tables": (
         "render_table_block",
-        "render_table_with_layout",
         "render_table",
         "table_should_landscape",
         "remove_table_borders",
     ),
-    "data_tables": ("resolve_data_path", "render_data_table"),
+    "data_tables": ("render_data_table",),
     "charts": ("render_chart", "prepare_chart_entry"),
     "figures": ("render_image_block", "add_image", "add_image_path"),
     "code_blocks": ("render_code_block", "write_fenced_code"),

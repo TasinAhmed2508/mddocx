@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
-from typing import Any
+from dataclasses import dataclass
 
-from mddocx.ast.base import Document, Node
+from mddocx.ast.base import Document, iter_nodes
 from mddocx.ast.block import ChartBlock, CodeBlock, Heading, ImageBlock, MathBlock, Table
 from mddocx.ast.inline import Citation, CrossReference, FootnoteReference
 
@@ -33,7 +32,7 @@ def build_semantic_index(document: Document) -> SemanticIndex:
     citations: list[str] = []
     note_references: list[str] = []
     crossrefs: list[str] = []
-    for node in _walk(document.children):
+    for node in iter_nodes(document.children):
         identifier = getattr(node, "identifier", None)
         if isinstance(node, Heading) and identifier:
             headings.append(identifier)
@@ -71,17 +70,3 @@ def build_semantic_index(document: Document) -> SemanticIndex:
             dict.fromkeys(label for label in note_references if label not in document.footnotes)
         ),
     )
-
-
-def _walk(value: Any):
-    if isinstance(value, dict):
-        for item in value.values():
-            yield from _walk(item)
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            yield from _walk(item)
-    elif isinstance(value, Node):
-        yield value
-        for item in fields(value):
-            if item.name != "source":
-                yield from _walk(getattr(value, item.name))

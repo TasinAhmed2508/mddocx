@@ -58,3 +58,146 @@ the 60 × 24 table from **1.5094 s to 0.7709 s** (49%). The mixed workload went 
 **0.5378 s to 0.4916 s**. Each workload produced identical DOCX bytes in all ten runs.
 The measurements compare the change against commit `52938bc` using a fresh Python
 process per run and exclude interpreter startup from the timed conversion.
+
+## Large equation batches
+
+Five paired runs on Windows with Python 3.12 and the same Node.js runtime
+compared the current candidate with released commit `5198533`. The workload
+contains 160 distinct inline equations from `x^{0}+1` through `x^{159}+1`.
+Chunking the requests reduced median compilation time from **11.6446 s to
+0.5427 s**. The 20-section mixed report measured **0.5164 s and 0.5143 s**,
+respectively. Each workload produced byte-identical DOCX files across all runs.
+
+For 600 distinct fractions with `latex2mathml` on the same Python version,
+removing the redundant OMML cache reduced retained Python allocations from
+366,536 to 120,489 bytes under `tracemalloc`. The combined OMML SHA-256 matched
+commit `889a360`. This measurement covers Python allocations in the converter.
+
+## Chemistry equations
+
+On Windows with Python 3.12, five alternating pairs of strict conversions rendered
+40 distinct reactions of the form `\ce{n H2 + O2 -> n H2O}` for `n` from 1 to 40.
+Grouping the reactions into one bundled MathJax request reduced median conversion
+time from **3.560 s to 0.316 s**. Both modes produced byte-identical DOCX files.
+
+The 20-section mixed report measured **0.586 s to 0.573 s** across five alternating
+pairs, comparing commit `e32a386` with the chemistry changes. All outputs matched byte
+for byte.
+
+## Imported tables
+
+Five alternating pairs on Windows with Python 3.12 parsed the same CSV of 8,000 rows
+and 32 columns. Each run averaged 12 parses. Compared with commit `82e93e8`, median
+parser CPU time per parse fell from **0.0573 s to 0.0404 s**. Peak traced Python
+memory per parse fell from **20.73 MiB to 15.79 MiB**. The parsed datasets matched.
+
+Microsoft Word laid out an 84-row, eight-column survey in **seven pages with compact
+Report-theme cells**, down from nine pages with body paragraph spacing. Both exports
+contain all 84 record IDs exactly once, with repeated table headers and portrait
+pages before and after the landscape section.
+
+Five alternating pairs on Windows with Python 3.12 compared direct grid emission
+against `c5f7070`. For a 160-row, ten-column HTML table with twenty merged
+eight-row by four-column groups, median conversion fell from **0.6186 s to 0.5458 s**
+(11.8%). A dense 60 × 24 table measured **0.7944 s and 0.8110 s**, and the
+25-section mixed report measured **0.4724 s and 0.4763 s**, respectively. Each
+workload produced byte-identical DOCX output across all ten runs.
+
+## Markdown math scanning
+
+Five alternating pairs on Windows with Python 3.12 compared the shared delimiter
+scanner with commit `7ffe9cf`. For `build_benchmark_markdown(500)`, median math
+normalization went from **20.11 ms to 10.83 ms**, averaging 12 normalizations per
+process after warming up. Whole-source parsing went from **250.18 ms to 226.75 ms**.
+The 50-section mixed report rendered in **822.68 ms and 823.46 ms**, respectively,
+and produced identical DOCX bytes across all ten runs.
+
+## Repeated Python-only alignments
+
+On Windows with Python 3.12 and Node.js disabled, five alternating pairs of
+strict conversions generated documents with 160 occurrences of the same
+two-pair alignment containing a nested matrix and a fraction. The median
+conversion CPU time was **0.484 s with the math cache disabled** and **0.281 s
+with it enabled**. All ten DOCX files were byte-identical.
+
+## Paragraph style lookup
+
+Five alternating pairs on Windows with Python 3.12.11 compared the style cache against
+commit `56e5e85`, timing `Compiler().compile_string(source)` in a fresh process per run.
+The table and mixed report use the existing roadmap workloads. The heading stress test
+joins 2,000 blocks of `f"## Checkpoint {i}\n\nOne short result."` with blank lines.
+
+| Workload | Before | After | DOCX bytes |
+| --- | ---: | ---: | ---: |
+| 2,000 headings and paragraphs | 4.905 s | 1.972 s | 60,987 |
+| 20 mixed sections | 0.571 s | 0.493 s | 38,895 |
+| 60 × 24 table | 0.807 s | 0.791 s | 40,982 |
+
+All ten DOCX files for each workload had the same SHA-256 hash.
+
+## Math preflight
+
+Five alternating pairs on Windows with Python 3.12.11 and bundled MathJax compared
+`inspect_math` against commit `fefb31a`. Each process inspected a Markdown document
+containing 80 distinct inline equations from `x^{0}+1` through `x^{79}+1`. The median
+time decreased from **5.672 s to 0.201 s**. The JSON report matched byte for byte.
+The 20-section mixed conversion measured **0.497 s to 0.491 s**, with identical
+DOCX bytes across the ten runs.
+
+## Native note parts
+
+Five alternating pairs on Windows with Python 3.12.11 compared compilation against
+commit `1f49ec1`. The report contains eight text footnotes and eight body images. The
+images are 1200 × 800 JPEGs generated from `Random(417).randbytes(1200 * 800 * 3)`
+in sequence and encoded at quality 88.
+
+Loading notes into the Word package before serialization reduced median time from
+**1.059 s to 0.847 s**. Both versions produced 6,420,007-byte DOCX files, and the notes
+and embedded image bytes matched. Relationship IDs and content-type declaration order
+account for the different archive hashes. Both documents verified.
+The 20-section mixed workload measured **0.513 s to 0.520 s** with identical DOCX bytes.
+
+## Boxed and annotated equations
+
+Five alternating pairs on Windows with Python 3.12.11 compared the expanded MathJax
+batching against commit dbf64cb. Each run used a fresh Python process, the same
+Node runtime, and strict math conversion. Timings exclude interpreter startup.
+The synthetic workload is available as the technical_math case in the roadmap runner.
+
+| Workload | Median before | Median after | MathJax requests before | MathJax requests after |
+| --- | ---: | ---: | ---: | ---: |
+| ChatGPT export with 200 equations | 7.910 s | 1.313 s | 95 | 10 |
+| 80 distinct boxed formulas with fractions, Greek symbols, and labels in text | 6.364 s | 0.311 s | 80 | 1 |
+| 20-section mixed report | 0.448 s | 0.447 s | 1 | 1 |
+
+Every run produced byte-identical DOCX output for its workload. Batches still use the
+128-equation bound. Equations with tags and other commands that may affect neighboring
+equations continue to run separately.
+
+## Integrals and large operators
+
+Five alternating pairs on Windows with Python 3.12.11 compared the same renderer
+with the batching allow-list from 2b5eb66 and with the expanded allow-list. The
+large_operator_math case in the roadmap runner uses 32 distinct equations with
+integrals, thin spaces, and sums with explicit side limits.
+
+| Workload | Median before | Median after | MathJax requests before | MathJax requests after |
+| --- | ---: | ---: | ---: | ---: |
+| 32 integrals paired with sums | 2.837 s | 0.267 s | 32 | 1 |
+| 20-section mixed report | 0.477 s | 0.487 s | 1 | 1 |
+
+Each before and after run produced identical DOCX bytes for its workload.
+
+## Planned paragraph properties
+
+Five alternating pairs on Windows with Python 3.12.11 compared the ordered
+paragraph-property writes and schema-order check with `985ec5d`. Each run used
+a fresh process and timed the conversion after interpreter startup. The stress
+document contains 6,000 level-two headings, each followed by a short paragraph.
+
+| Workload | Median before | Median after |
+| --- | ---: | ---: |
+| 6,000 headings and paragraphs | 8.988 s | 7.583 s |
+| 20-section mixed report | 0.572 s | 0.550 s |
+
+Each workload produced identical DOCX bytes across all ten runs.

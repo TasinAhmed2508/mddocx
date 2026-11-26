@@ -13,7 +13,8 @@ from .media import MediaInfo, inspect_raster
 def prepare_image(
     path: Path, *, temp_dir: Path, policy: ResourcePolicy, images: ImageConfig
 ) -> tuple[Path, MediaInfo]:
-    header = path.read_bytes()[:512]
+    with path.open("rb") as stream:
+        header = stream.read(512)
     if header[:5].lstrip().startswith(b"<svg") or b"<svg" in header:
         if not images.svg_conversion:
             raise MddocxError(Diagnostic("error", "IMAGE203", "SVG conversion is disabled."))

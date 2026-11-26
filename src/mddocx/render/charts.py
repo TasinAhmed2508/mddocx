@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from mddocx.ast.block import ChartBlock
-from mddocx.data import coerce_number, load_tabular_data
+from mddocx.data import coerce_number, load_tabular_data, resolve_data_path
 from mddocx.diagnostics import Diagnostic, MddocxError
 from mddocx.ooxml.charts import ChartEntry
 from mddocx.recovery import recovery_block
 
-from . import citations, data_tables, text_blocks
+from . import citations, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -48,7 +48,7 @@ def render_chart(renderer: DocxRenderer, node: ChartBlock) -> None:
     token = f"MDDOCX_CHART_{len(renderer._chart_entries) + 1}_PLACEHOLDER"
     entry.token = token
     renderer._chart_entries.append(entry)
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+    p = renderer._add_paragraph("MD Normal")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_together = True
     if caption and renderer.config.references.figure_caption_position == "below":
@@ -68,7 +68,7 @@ def prepare_chart_entry(renderer: DocxRenderer, node: ChartBlock) -> ChartEntry:
     categories = list(node.categories)
     raw_series = list(node.series)
     if node.source_path:
-        path = data_tables.resolve_data_path(renderer, node.source_path, node.source)
+        path = resolve_data_path(renderer.config.base_dir, node.source_path, node.source)
         data = load_tabular_data(
             path,
             max_rows=renderer.config.data.max_rows,

@@ -2,30 +2,62 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
+from itertools import zip_longest
 import json
 from pathlib import PurePosixPath
 import re
+from typing import Literal
 
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.oxml.ns import qn
 from lxml import etree
 
 from .ast import block, inline
 from .ast.base import Document, Node
 from .config import RenderConfig
+from .data import load_data_table
 from .diagnostics import Diagnostic
 from .inspection import M, NS, R, W
+from .layout import LayoutPlanner
+from .layout_table import (
+    FORM_PHOTO_LABEL,
+    parse_layout_table,
+    parse_ruled_rows,
+    parse_text_form,
+    text_layout_kind,
+)
+from .math.latex import UnsupportedLatexError
 from .math.normalize import normalize_equation
-from .math.validation import source_tokens_preserved
-from .ooxml.bangla import LEGACY_BANGLA_FONT
+from .math.validation import (
+    explicit_nary_limits_preserved,
+    source_matrices_preserved,
+    source_phantoms_preserved,
+    source_tokens_preserved,
+    validate_omml,
+    visible_omml,
+)
+from .ooxml.bangla import LEGACY_BANGLA_FONT, decode_bijoy
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
-from .ooxml.text import clean_xml_text
+from .ooxml.text import INLINE_MATH_SEPARATOR, clean_xml_text
 from .references import ReferenceRegistry
-from .table_grid import repeatable_header_rows, table_grid
+from .table_grid import iter_grid_rows, repeatable_header_rows, table_grid
 
 BODY = "word/document.xml"
-_RELS = "word/_rels/document.xml.rels"
 _HEADING = re.compile(r"(?:MD)?Heading[ ]?([1-6])", re.I)
+_TEX_COMMAND = re.compile(r"\\([A-Za-z]+|.)")
+_NATIVE_MATH = {
+    "frac": "f",
+    "dfrac": "f",
+    "tfrac": "f",
+    "genfrac": "f",
+    "binom": "f",
+    "dbinom": "f",
+    "tbinom": "f",
+    "sqrt": "rad",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,16 +94,27 @@ class _Unit:
         return self.kind, self.content
 
 
+@dataclass(frozen=True, slots=True)
+class _SectionStart:
+    offset: int
+    orientation: Literal["portrait", "landscape"]
+    source: Node | None = None
+    restoration: bool = False
+
+
 def compare_document(
     document: Document, roots: dict[str, etree._Element], config: RenderConfig
 ) -> VerificationResult:
     expected: list[_Unit] = []
     findings: list[VerificationFinding] = []
+    sections = [_SectionStart(0, config.page.orientation)]
+    layout = LayoutPlanner(config)
     references = ReferenceRegistry.from_document(
         document,
         _plain_text,
         config.references.equation_number_format,
         config.references.caption_number_format,
+        config.references.listing_numbering,
     )
     notes: dict[str, int] = {}
     note_kind = config.notes.style
@@ -81,7 +124,19 @@ def compare_document(
     def incomplete(reason: str, node: Node | None = None) -> None:
         findings.append(_finding("VERIFY304", reason, node))
 
-    def expected_inlines(nodes) -> tuple:
+    def start_section(
+        orientation: Literal["portrait", "landscape"], node: Node, *, automatic: bool = False
+    ) -> None:
+        start = _SectionStart(len(expected), orientation, node)
+        prior = sections[-1]
+        if prior.offset == start.offset and (
+            prior.restoration or (automatic and len(sections) == 1)
+        ):
+            sections[-1] = start
+        else:
+            sections.append(start)
+
+    def expected_inlines(nodes, *, in_note: bool = False) -> tuple:
         tokens = []
         for node in nodes:
             if isinstance(node, inline.Text):
@@ -89,7 +144,7 @@ def compare_document(
             elif isinstance(node, inline.InlineCode):
                 tokens.append(clean_xml_text(node.code))
             elif isinstance(node, (inline.Strong, inline.Emphasis, inline.Strikethrough)):
-                tokens.extend(expected_inlines(node.children))
+                tokens.extend(expected_inlines(node.children, in_note=in_note))
             elif isinstance(node, inline.SoftBreak):
                 tokens.append(" ")
             elif isinstance(node, inline.HardBreak):
@@ -98,19 +153,25 @@ def compare_document(
                 tokens.append(("math",))
                 expected_math.append((node.source_text, node))
             elif isinstance(node, inline.Image):
-                tokens.append(("image", node.alt))
+                tokens.append(("image", clean_xml_text(node.alt)))
             elif isinstance(node, inline.Link):
                 href = node.href
-                if href.startswith("#") and config.references.enabled:
+                content = _merge_text(
+                    ("image", clean_xml_text(item.alt))
+                    if isinstance(item, inline.Image)
+                    else clean_xml_text(item)
+                    for item in inline.link_content(node.children)
+                )
+                if href.startswith("#"):
                     target = references.get(href[1:])
                     if target is None:
                         incomplete("Unresolved internal hyperlink.", node)
-                        tokens.append(_plain_text(node.children))
+                        tokens.extend(content)
                         continue
                     href = "#" + target.bookmark
-                tokens.append(("link", href, _plain_text(node.children)))
+                tokens.append(("link", href, content))
             elif isinstance(node, inline.FootnoteReference):
-                if node.label in document.footnotes:
+                if node.label in document.footnotes and not in_note:
                     number = notes.setdefault(node.label, len(notes) + 1)
                     tokens.append(("note", note_kind, str(number)))
                 else:
@@ -142,8 +203,13 @@ def compare_document(
             expected.extend(units)
             return
         target = references.get(node.identifier) if node.identifier else None
+        field_label = (
+            "" if label == "Listing" and not config.references.listing_numbering else label
+        )
         caption = _Unit(
-            "caption", (label, clean_xml_text(text), target.bookmark if target else None), node
+            "caption",
+            (field_label, clean_xml_text(text), target.bookmark if target else None),
+            node,
         )
         if getattr(config.references, f"{label.lower()}_caption_position") == "above":
             expected.extend((caption, *units))
@@ -204,40 +270,47 @@ def compare_document(
             elif isinstance(node, block.HorizontalRule):
                 expected.append(_Unit("paragraph", (), node))
             elif isinstance(node, block.SectionBreak):
-                incomplete("Section break layout is outside current coverage.", node)
+                start_section(node.orientation or config.page.orientation, node)
+            elif isinstance(node, block.DataTableBlock):
+                blocks([load_data_table(node, config)], level)
             elif isinstance(node, block.Table):
                 columns, placements = table_grid(node, config.limits.max_table_cells)
+                rotate = (
+                    sections[-1].orientation == "portrait"
+                    and layout.landscape_reason(node, columns) is not None
+                )
+                if rotate:
+                    start_section("landscape", node, automatic=True)
                 repeat = repeatable_header_rows(node) if config.table.repeat_header else 0
-                active: dict[int, tuple[int, int]] = {}
-                expected_rows = []
-                for index, entries in enumerate(placements):
-                    row = {column: cell for column, cell in entries}
-                    cells = []
-                    column = 0
-                    while column < columns:
-                        if column in active and active[column][0] > index:
-                            span = active[column][1]
-                            cells.append((span, "continue", ()))
-                        elif column in row:
-                            cell = row[column]
-                            span = cell.column_span
-                            merge = "restart" if cell.row_span > 1 else None
-                            if merge:
-                                active[column] = (index + cell.row_span, span)
-                            cells.append((span, merge, expected_inlines(cell.children)))
-                        else:
-                            span = 1
-                            cells.append((span, None, ()))
-                        column += span
-                    expected_rows.append((index < repeat, tuple(cells)))
+                expected_rows = tuple(
+                    (
+                        index < repeat,
+                        tuple(
+                            (
+                                entry.span,
+                                entry.merge,
+                                expected_inlines(entry.cell.children) if entry.cell else (),
+                            )
+                            for entry in cells
+                        ),
+                    )
+                    for index, cells in enumerate(iter_grid_rows(columns, placements))
+                )
                 title = (
                     (node.caption or ("Table" if node.identifier else None))
                     if config.references.captions
                     else None
                 )
                 captioned(
-                    [_Unit("table", (columns, tuple(expected_rows)), node)], "Table", title, node
+                    [_Unit("table", (columns, expected_rows), node)] if columns else [],
+                    "Table",
+                    title,
+                    node,
                 )
+                if rotate and config.table.restore_portrait_after_landscape:
+                    sections.append(
+                        _SectionStart(len(expected), "portrait", node, restoration=True)
+                    )
             elif isinstance(node, block.ImageBlock):
                 title = (
                     (
@@ -275,20 +348,20 @@ def compare_document(
                     expected.append(
                         _Unit("caption", ("", clean_xml_text(node.caption), None), node)
                     )
-            elif isinstance(node, block.CodeBlock) and (node.language or "").lower() not in {
-                "",
-                "text",
-                "plain",
-                "plaintext",
-                "form",
-                "layout-table",
-                "mermaid",
-            }:
+            elif isinstance(node, block.CodeBlock):
                 title = (
                     (node.caption or ("Code listing" if node.identifier else None))
                     if config.references.captions
                     else None
                 )
+                layout_units = _expected_text_layout(node, config.limits.max_table_cells)
+                if layout_units is not None:
+                    captioned(layout_units, "Listing", title, node)
+                    continue
+                language = (node.language or "text").strip() or "text"
+                if language.lower() == "mermaid" and config.mermaid.enabled:
+                    incomplete("Rendered Mermaid diagram coverage is incomplete.", node)
+                    continue
                 lines = node.code.splitlines() or [""]
                 numbers = (
                     config.code.line_numbers if node.line_numbers is None else node.line_numbers
@@ -299,8 +372,8 @@ def compare_document(
                     else node.show_language_label
                 )
                 units = []
-                if label:
-                    units.append(_Unit("paragraph", (clean_xml_text(node.language),), node))
+                if label and language.lower() not in {"text", "plain", "plaintext"}:
+                    units.append(_Unit("paragraph", (clean_xml_text(language),), node))
                 for index, line in enumerate(lines, 1):
                     prefix = f"{index:>{len(str(len(lines)))}}  " if numbers else ""
                     units.append(
@@ -313,58 +386,69 @@ def compare_document(
                 incomplete(f"Block {type(node).__name__} coverage is incomplete.", node)
 
     blocks(document.children)
+    if sections[-1].restoration and sections[-1].offset == len(expected):
+        sections.pop()
     if (
         config.extensions
         or config.plugins.names
         or config.template
         or config.title_page.enabled
         or config.abstract.text
+        or config.abstract.keywords
         or config.toc.enabled
     ):
         incomplete(
             "Generated front matter, templates, and extensions have limited verification coverage."
         )
-    body_math_count = len(expected_math)
-    expected_notes = {
-        str(number): expected_inlines(document.footnotes[label])
-        for label, number in list(notes.items())
-    }
+    body_math = expected_math
+    expected_notes: dict[str, tuple] = {}
+    note_math: dict[str, list[tuple[str, Node]]] = {}
+    note_sources: dict[str, Node] = {}
+    for label, number in list(notes.items()):
+        ident = str(number)
+        expected_math = []
+        content = document.footnotes[label]
+        if content:
+            note_sources[ident] = content[0]
+        expected_notes[ident] = expected_inlines(content, in_note=True)
+        note_math[ident] = expected_math
     actual_notes = {}
     if note_part in roots:
+        note_links = _hyperlink_targets(roots, note_part)
         for item in roots[note_part]:
             ident = item.get(f"{{{W}}}id")
             if item.tag == f"{{{W}}}{note_kind}" and ident and not item.get(f"{{{W}}}type"):
-                tokens = _read_inlines(item, {})
+                tokens = _read_inlines(item, note_links)
                 if tokens and isinstance(tokens[0], str):
                     tokens = _merge_text((tokens[0].removeprefix(" "), *tokens[1:]))
                 actual_notes[ident] = tokens
+                if ident in note_math:
+                    findings.extend(_equation_findings(note_math[ident], item, note_part))
     for ident in sorted(set(expected_notes) | set(actual_notes)):
         if expected_notes.get(ident) != actual_notes.get(ident):
             findings.append(
-                VerificationFinding(
-                    "VERIFY303", f"Changed or missing {note_kind} {ident}.", note_part
+                _finding(
+                    "VERIFY303",
+                    f"Changed or missing {note_kind} {ident}.",
+                    note_sources.get(ident),
+                    part=note_part,
                 )
             )
     main = roots[BODY].find("w:body", NS)
-    rendered_math = main.findall(f".//{{{M}}}oMath") if main is not None else []
-    if len(rendered_math) == body_math_count:
-        for (latex, node), equation in zip(
-            expected_math[:body_math_count], rendered_math, strict=True
-        ):
-            normalized = normalize_equation(latex).text
-            if re.fullmatch(
-                r"[A-Za-z0-9{}_^+*/().= \t-]+", normalized
-            ) and not source_tokens_preserved(normalized, equation):
-                findings.append(
-                    _finding(
-                        "VERIFY303", "Native equation lost a source identifier or numeral.", node
-                    )
-                )
-    actual = _read_body(roots)
+    if main is not None:
+        findings.extend(_equation_findings(body_math, main, BODY))
+    actual, section_ends = _read_body(roots)
     findings.extend(_chart_findings(roots))
+    for part in (BODY, note_part):
+        if part in roots:
+            findings.extend(_image_findings(roots, part))
     expected_keys = [unit.key for unit in expected]
     actual_keys = [unit.key for unit in actual]
     if expected_keys == actual_keys:
+        if not any(finding.code == "VERIFY304" for finding in findings):
+            changed = _section_finding(sections, section_ends, len(expected))
+            if changed is not None:
+                findings.append(changed)
         return VerificationResult(len(expected), tuple(findings))
     if max(len(expected), len(actual)) > 4000:
         # shortcut: diagnose the first difference for very long files, until a bounded diff is needed.
@@ -376,7 +460,7 @@ def compare_document(
         findings.append(
             _finding(
                 "VERIFY303",
-                f"Unit {first + 1}: expected {_describe(wanted)}, found {_describe(found)}.",
+                f"Unit {first + 1}. {_replacement_message(wanted, found)}",
                 wanted[0].source if wanted else None,
             )
         )
@@ -401,18 +485,81 @@ def compare_document(
             findings.append(
                 _finding(
                     "VERIFY303",
-                    f"Expected {_describe(expected[start:end])}, found {_describe(actual[actual_start:actual_end])}.",
+                    _replacement_message(expected[start:end], actual[actual_start:actual_end]),
                     expected[start].source,
                 )
             )
     return VerificationResult(len(expected), tuple(findings))
 
 
-def _finding(code: str, message: str, node: Node | None = None) -> VerificationFinding:
+def _equation_findings(
+    expected: list[tuple[str, Node]], container: etree._Element, part: str
+) -> Iterator[VerificationFinding]:
+    if not expected:
+        return
+    rendered = container.findall(f".//{{{M}}}oMath")
+    if len(rendered) != len(expected):
+        # The ordered content check reports missing or added math objects.
+        return
+    for (latex, node), equation in zip(expected, rendered, strict=True):
+        try:
+            normalized = normalize_equation(latex).text
+            validate_omml(equation)
+        except UnsupportedLatexError as exc:
+            yield _finding("VERIFY303", str(exc), node, part=part)
+        else:
+            required = {
+                _NATIVE_MATH[command]
+                for command in _TEX_COMMAND.findall(normalized)
+                if command in _NATIVE_MATH
+            }
+            if not source_tokens_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation lost a source identifier or numeral.",
+                    node,
+                    part=part,
+                )
+            elif not source_matrices_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation lost an alignment array or matrix layout.",
+                    node,
+                    part=part,
+                )
+            elif not explicit_nary_limits_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation changed a large operator's explicit limit placement.",
+                    node,
+                    part=part,
+                )
+            elif not source_phantoms_preserved(normalized, equation):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation changed phantom or smash spacing.",
+                    node,
+                    part=part,
+                )
+            elif required and not required.issubset(
+                etree.QName(element).localname for element in visible_omml(equation)
+            ):
+                yield _finding(
+                    "VERIFY303",
+                    "Native equation lost a fraction or radical structure.",
+                    node,
+                    part=part,
+                )
+
+
+def _finding(
+    code: str, message: str, node: Node | None = None, *, part: str = BODY
+) -> VerificationFinding:
     source = node.source if node else None
     return VerificationFinding(
         code,
         message,
+        part,
         source_file=source.file if source else None,
         line=source.line if source else None,
     )
@@ -426,18 +573,43 @@ def _describe(units: list[_Unit]) -> str:
     return f"{first.kind} {repr(first.content)[:150]}{extra}"
 
 
+def _replacement_message(expected: list[_Unit], actual: list[_Unit]) -> str:
+    if len(expected) == len(actual) == 1 and expected[0].kind == actual[0].kind == "table":
+        columns, rows = expected[0].content
+        found_columns, found_rows = actual[0].content
+        if columns != found_columns:
+            return f"Expected {columns} table columns, found {found_columns}."
+        if len(rows) != len(found_rows):
+            return f"Expected {len(rows)} table rows, found {len(found_rows)}."
+        for index, (row, found_row) in enumerate(zip(rows, found_rows, strict=True), 1):
+            header, cells = row
+            found_header, found_cells = found_row
+            if header != found_header:
+                return f"Table row {index} repeat-header setting changed."
+            if len(cells) != len(found_cells):
+                return f"Table row {index} has {len(found_cells)} cells, expected {len(cells)}."
+            column = 1
+            for cell, found_cell in zip(cells, found_cells, strict=True):
+                if cell[:2] != found_cell[:2]:
+                    return f"Table row {index}, column {column} span or merge changed."
+                if cell[2] != found_cell[2]:
+                    wanted_text = repr(cell[2])[:150]
+                    found_text = repr(found_cell[2])[:150]
+                    return (
+                        f"Table row {index}, column {column} content changed. "
+                        f"Expected {wanted_text}, found {found_text}."
+                    )
+                column += cell[0]
+    return f"Expected {_describe(expected)}, found {_describe(actual)}."
+
+
 def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFinding]:
     charts = roots[BODY].xpath(".//c:chart", namespaces={"c": C})
-    relationships = roots.get(_RELS)
-    chart_targets = (
-        {
-            relation.get("Id"): relation.get("Target", "")
-            for relation in relationships
-            if relation.get("Type") == CHART_REL
-        }
-        if relationships is not None
-        else {}
-    )
+    chart_targets = {
+        relation.get("Id"): relation.get("Target", "")
+        for relation in _part_relationships(roots, BODY)
+        if relation.get("Type") == CHART_REL
+    }
     findings = []
     for chart in charts:
         rid = chart.get(f"{{{R}}}id")
@@ -468,6 +640,39 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
     return findings
 
 
+def _part_relationships(roots: dict[str, etree._Element], part: str) -> Iterator[etree._Element]:
+    path = PurePosixPath(part)
+    relationships = roots.get(str(path.parent / "_rels" / (path.name + ".rels")))
+    if relationships is not None:
+        yield from relationships
+
+
+def _hyperlink_targets(roots: dict[str, etree._Element], part: str) -> dict:
+    return {
+        rel.get("Id"): rel.get("Target")
+        for rel in _part_relationships(roots, part)
+        if rel.get("Type") == RELATIONSHIP_TYPE.HYPERLINK
+        and (rel.get("TargetMode") or "").lower() == "external"
+    }
+
+
+def _image_findings(roots: dict[str, etree._Element], part: str) -> Iterator[VerificationFinding]:
+    embedded_ids = {
+        relation.get("Id")
+        for relation in _part_relationships(roots, part)
+        if relation.get("Id")
+        and relation.get("Type") == RELATIONSHIP_TYPE.IMAGE
+        and relation.get("Target")
+        and (relation.get("TargetMode") or "").lower() != "external"
+    }
+    for picture in roots[part].iter(qn("pic:pic")):
+        blip = picture.find(f"./{qn('pic:blipFill')}/{qn('a:blip')}")
+        if blip is None or blip.get(qn("r:embed")) not in embedded_ids:
+            yield VerificationFinding(
+                "VERIFY303", "Picture is missing an embedded image binding.", part
+            )
+
+
 def _merge_text(tokens) -> tuple:
     merged: list = []
     text: list[str] = []
@@ -485,36 +690,132 @@ def _merge_text(tokens) -> tuple:
     return tuple(merged)
 
 
-def _plain_text(nodes) -> str:
-    pieces = []
-    for node in nodes:
-        if isinstance(node, inline.Text):
-            pieces.append(node.text)
-        elif isinstance(node, inline.InlineCode):
-            pieces.append(node.code)
-        elif isinstance(node, (inline.HardBreak, inline.SoftBreak)):
-            pieces.append(" ")
-        elif isinstance(node, inline.InlineMath):
-            pieces.append(node.source_text)
-        elif isinstance(node, inline.Image):
-            pieces.append(node.alt)
-        elif hasattr(node, "children"):
-            pieces.append(_plain_text(node.children))
-    return clean_xml_text("".join(pieces))
-
-
-def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
-    relationships = roots.get(_RELS)
-    links = (
-        {rel.get("Id"): rel.get("Target") for rel in relationships}
-        if relationships is not None
-        else {}
+def _layout_cell_tokens(text: str) -> tuple:
+    return _merge_text(
+        ("break",) if part in {"\n", "\r"} else part
+        for part in re.split(r"([\r\n])", clean_xml_text(text))
     )
+
+
+def _plain_grid_content(rows: list[list[str]]) -> tuple:
+    return len(rows[0]), tuple(
+        (False, tuple((1, None, _layout_cell_tokens(cell)) for cell in row)) for row in rows
+    )
+
+
+def _expected_text_layout(node: block.CodeBlock, cell_limit: int) -> list[_Unit] | None:
+    kind = text_layout_kind(node)
+    if kind is None:
+        return None
+    if kind == "structured":
+        rows, weights, placements = parse_layout_table(node, cell_limit)
+        columns = len(weights)
+        cells = tuple(
+            (
+                False,
+                tuple(
+                    (
+                        entry.span,
+                        entry.merge,
+                        _layout_cell_tokens(row[entry.column]) if entry.cell is not None else (),
+                    )
+                    for entry in grid
+                ),
+            )
+            for row, grid in zip(rows, iter_grid_rows(columns, placements), strict=True)
+        )
+        return [_Unit("table", (columns, cells), node)]
+    if kind == "ruled":
+        return [_Unit("table", _plain_grid_content(parse_ruled_rows(node.code)), node)]
+
+    fields, addresses, signatures = parse_text_form(node.code)
+    field_tokens: list = []
+    for index, field in enumerate(fields):
+        if index:
+            field_tokens.append(("paragraph-break",))
+        field_tokens.extend(_layout_cell_tokens(field))
+    photo = ("table", *_plain_grid_content([[FORM_PHOTO_LABEL]]))
+    form = (2, ((False, ((1, None, tuple(field_tokens)), (1, None, (photo,)))),))
+    units = [_Unit("table", form, node)]
+    if addresses:
+        units.append(_Unit("table", _plain_grid_content(addresses), node))
+    units.extend(
+        _Unit("paragraph", _layout_cell_tokens(signature), node) for signature in signatures
+    )
+    return units
+
+
+def _plain_text(nodes) -> str:
+    return clean_xml_text(
+        "".join(
+            item.alt if isinstance(item, inline.Image) else item
+            for item in inline.link_content(nodes)
+        )
+    )
+
+
+def _section_finding(
+    expected: list[_SectionStart], actual: list[tuple[int, str, str]], unit_count: int
+) -> VerificationFinding | None:
+    for index, (section, found) in enumerate(zip_longest(expected, actual)):
+        if section is None or found is None:
+            return _finding(
+                "VERIFY303",
+                f"Expected {len(expected)} Word sections, found {len(actual)}.",
+                section.source if section else None,
+            )
+        following = expected[index + 1] if index + 1 < len(expected) else None
+        end = following.offset if following else unit_count
+        actual_end, orientation, break_type = found
+        if actual_end != end:
+            detail = f"expected the end after body unit {end}, found it after {actual_end}"
+            source = following.source if following else section.source
+        elif orientation != section.orientation:
+            detail = f"expected {section.orientation} orientation, found {orientation}"
+            source = section.source
+        elif index and break_type != "nextPage":
+            detail = f"expected a next-page break, found {break_type}"
+            source = section.source
+        else:
+            continue
+        return _finding("VERIFY303", f"Word section {index + 1}: {detail}.", source)
+    return None
+
+
+def _section_end(offset: int, properties: etree._Element) -> tuple[int, str, str]:
+    page = properties.find("w:pgSz", NS)
+    section_type = properties.find("w:type", NS)
+    break_type = (
+        section_type.get(f"{{{W}}}val", "nextPage") if section_type is not None else "nextPage"
+    )
+    if page is None:
+        return offset, "missing page size", break_type
+    orientation = page.get(f"{{{W}}}orient", "portrait")
+    try:
+        width, height = int(page.get(f"{{{W}}}w", "")), int(page.get(f"{{{W}}}h", ""))
+    except ValueError:
+        return offset, "invalid page dimensions", break_type
+    if min(width, height) <= 0 or orientation != ("landscape" if width > height else "portrait"):
+        return offset, "orientation inconsistent with page dimensions", break_type
+    return offset, orientation, break_type
+
+
+def _read_body(
+    roots: dict[str, etree._Element],
+) -> tuple[list[_Unit], list[tuple[int, str, str]]]:
+    links = _hyperlink_targets(roots, BODY)
     body = roots[BODY].find(f"{{{W}}}body")
     if body is None:
-        return []
+        return [], []
     result = []
+    section_ends = []
+    pending = None
     for child in body:
+        if pending is not None:
+            section_ends.append(_section_end(len(result), pending))
+            pending = None
+        if child.tag == f"{{{W}}}sectPr":
+            section_ends.append(_section_end(len(result), child))
         if child.tag == f"{{{W}}}tbl":
             instructions = child.xpath(".//w:instrText/text()", namespaces=NS)
             if any("SEQ Equation" in instruction for instruction in instructions):
@@ -528,31 +829,20 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
                     )
                 )
                 continue
-            rows = []
-            for row in child.findall("w:tr", NS):
-                cells = []
-                for cell in row.findall("w:tc", NS):
-                    span = cell.find("w:tcPr/w:gridSpan", NS)
-                    merge = cell.find("w:tcPr/w:vMerge", NS)
-                    cells.append(
-                        (
-                            _word_span(span),
-                            merge.get(f"{{{W}}}val", "continue") if merge is not None else None,
-                            _read_inlines(cell, links),
-                        )
-                    )
-                header = row.find("w:trPr/w:tblHeader", NS)
-                repeated = header is not None and header.get(f"{{{W}}}val", "1") not in {
-                    "0",
-                    "false",
-                    "off",
-                }
-                rows.append((repeated, tuple(cells)))
-            columns = len(child.findall("w:tblGrid/w:gridCol", NS))
-            result.append(_Unit("table", (columns, tuple(rows))))
+            result.append(_Unit("table", _read_table_content(child, links)))
         elif child.tag == f"{{{W}}}p":
+            pending = child.find("w:pPr/w:sectPr", NS)
             tokens = _read_inlines(child, links)
             before, after = child.getprevious(), child.getnext()
+            if (
+                len(child) == 0
+                and before is not None
+                and before.tag == f"{{{W}}}tbl"
+                and after is not None
+                and after.tag == f"{{{W}}}sectPr"
+            ):
+                # Word adds an empty final paragraph when saving a document ending in a table.
+                continue
             if (
                 not tokens
                 and before is not None
@@ -596,9 +886,9 @@ def _read_body(roots: dict[str, etree._Element]) -> list[_Unit]:
                 result.append(_Unit("task", (checkbox.get(f"{{{NS['w14']}}}val") == "1", tokens)))
             elif level is not None:
                 result.append(_Unit("list", (int(level.get(f"{{{W}}}val", "0")), tokens)))
-            elif tokens or child.find("w:pPr/w:sectPr", NS) is None:
+            elif tokens or pending is None:
                 result.append(_Unit("paragraph", tokens))
-    return result
+    return result, section_ends
 
 
 def _word_span(element) -> int:
@@ -610,6 +900,46 @@ def _word_span(element) -> int:
         return 0
 
 
+def _read_table_content(table: etree._Element, links: dict) -> tuple:
+    rows = []
+    for row in table.findall("w:tr", NS):
+        cells = []
+        for cell in row.findall("w:tc", NS):
+            span = cell.find("w:tcPr/w:gridSpan", NS)
+            merge = cell.find("w:tcPr/w:vMerge", NS)
+            cells.append(
+                (
+                    _word_span(span),
+                    merge.get(f"{{{W}}}val", "continue") if merge is not None else None,
+                    _read_cell_content(cell, links),
+                )
+            )
+        header = row.find("w:trPr/w:tblHeader", NS)
+        repeated = header is not None and header.get(f"{{{W}}}val", "1") not in {
+            "0",
+            "false",
+            "off",
+        }
+        rows.append((repeated, tuple(cells)))
+    columns = len(table.findall("w:tblGrid/w:gridCol", NS))
+    return columns, tuple(rows)
+
+
+def _read_cell_content(cell: etree._Element, links: dict) -> tuple:
+    tokens = []
+    previous_paragraph = False
+    for child in cell:
+        if child.tag == f"{{{W}}}p":
+            if previous_paragraph:
+                tokens.append(("paragraph-break",))
+            tokens.extend(_read_inlines(child, links))
+            previous_paragraph = True
+        elif child.tag == f"{{{W}}}tbl":
+            tokens.append(("table", *_read_table_content(child, links)))
+            previous_paragraph = False
+    return _merge_text(tokens)
+
+
 def _read_inlines(parent: etree._Element, links: dict) -> tuple:
     tokens = []
     ref_field = False
@@ -619,12 +949,22 @@ def _read_inlines(parent: etree._Element, links: dict) -> tuple:
             font = run.find("w:rPr/w:rFonts", NS) if run is not None else None
             text = node.text or ""
             if (
+                text == INLINE_MATH_SEPARATOR
+                and run is not None
+                and run.find("w:rPr/w:noProof", NS) is not None
+            ):
+                before, after = run.getprevious(), run.getnext()
+                if (
+                    before is not None
+                    and after is not None
+                    and before.tag == after.tag == f"{{{M}}}oMath"
+                ):
+                    continue
+            if (
                 font is not None
                 and font.get(f"{{{W}}}ascii", "").casefold() == LEGACY_BANGLA_FONT.casefold()
             ):
-                from bijoy2unicode.converter import Unicode
-
-                text = Unicode().convertBijoyToUnicode(text.replace("\u00f8", "\u00ad"))
+                text = decode_bijoy(text)
             tokens.append(text)
         elif node.tag == f"{{{W}}}br":
             tokens.append(("page-break",) if node.get(f"{{{W}}}type") == "page" else ("break",))
@@ -635,7 +975,7 @@ def _read_inlines(parent: etree._Element, links: dict) -> tuple:
         elif node.tag == f"{{{W}}}hyperlink":
             anchor = node.get(f"{{{W}}}anchor")
             href = "#" + anchor if anchor else links.get(node.get(f"{{{R}}}id"))
-            tokens.append(("link", href, "".join(str(t) for t in _read_inlines(node, links))))
+            tokens.append(("link", href, _read_inlines(node, links)))
         elif node.tag == f"{{{W}}}drawing":
             if node.find(f".//{{{C}}}chart") is not None:
                 tokens.append(("chart",))

@@ -213,7 +213,7 @@ def test_redirect_limit_and_external_svg_references_are_blocked(tmp_path: Path):
         assert redirect.value.diagnostic.code == "RESOURCE210"
 
         with pytest.raises(MddocxError) as external:
-            resolver._convert_svg(svg)
+            resolver.resolve(svg.name)
         assert external.value.diagnostic.code == "IMAGE207"
     finally:
         resolver.close()

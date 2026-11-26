@@ -1,5 +1,94 @@
 # Changelog
 
+## Unreleased
+
+- Speed up long reports by writing planned paragraph properties through the shared
+  ordered XML helpers and skipping elements outside the schema-order checks.
+
+## 1.5.0rc3
+
+- Preserve the dimensions and visibility of LaTeX phantom and smash commands in
+  editable Word equations. Offline verification reports changes to these properties.
+- Keep Bangla image descriptions in Unicode without triggering a missing-font warning
+  when the document has no Bangla text runs. Preserve escaped punctuation in image
+  descriptions across supported Markdown parser versions.
+- Embed standalone direct image links as clickable pictures in Markdown and HTML
+  table cells, footnotes, and endnotes.
+- Preserve side and stacked limits on native Word integrals and large operators.
+  Honor LaTeX limits and nolimits in the Python fallback and detect changed explicit
+  limit placement during verification.
+- Verify ruled text tables and detected forms, including continued cells, editable photo
+  boxes, address grids, and signature text. Report the row and column for changed cells.
+- Preserve the Bangla reph in SutonnyMJ output and reconstruct it during verification.
+- Verify plain and indented code listings, including listings inside lists and block quotes.
+- Preserve wrapped inline code, indented code, and quoted or list-nested code
+  fences containing math delimiters. Render display equations inside lists and quotes
+  without inserting synthetic fence lines before later content.
+- Render inline equations in Word footnotes, endnotes, and definition lists. Keep
+  escaped dollars as text and preserve escaped punctuation and entities in Markdown tables.
+- Batch common boxed formulas, Greek symbols, spacing, and text annotations in
+  MathJax to speed up equation-heavy reports while preserving editable Word output.
+- Render escaped inline and display equations from ChatGPT Markdown exports as editable
+  Word math, including formulas inside tables, subscripts, percentages, and matrices.
+- Write formatted Markdown image labels as plain Word descriptions and embed standalone
+  image links with formatted labels.
+- Keep adjacent inline equations distinct inside Markdown emphasis and after saving in Word.
+- Preserve literal math delimiters inside image paths, link destinations, and HTML image attributes.
+- Write merged Word cells directly so long HTML and `layout-table` spans convert
+  without recursive merging. Keep horizontal borders visible around shaded merged
+  headers. Offline verification now checks explicit `layout-table` cells and spans.
+- Keep TeX in HTML table cells as editable Word math while preserving code and link
+  targets. Honor HTML footer order and resolve `rowspan="0"` within each row group.
+- Render LaTeX `\multicolumn` as editable Word math for nested and disjoint spans.
+  Offline verification checks span widths and alignment and accepts the default math
+  properties Word omits when saving a document.
+- Preserve vertical rules, full-width solid `\hline` rules, frames, repeated column
+  declarations, and decimal separators in editable LaTeX arrays. Verification detects
+  removed rules and frame edges. Dashed, partial, and repeated horizontal rules use
+  the math failure policy.
+- Embed pictures and retain hyperlinks in footnotes and endnotes. Preserve notes already
+  present in a Word template, verify note relationships, and report failures at the note
+  definition. Notes now use the same strict math policy as the body.
+- Embed clickable pictures in Word hyperlinks from Markdown and HTML, including table
+  cells. Verify the click destination and embedded picture offline and use the picture's
+  alternative text when auditing its link label.
+- Expand leading equation-local `\newcommand` definitions with bounded substitution and
+  verify the resulting native equation, including default arguments.
+- Retain native delimiters and invisible fraction rules in AMS `\genfrac` expressions.
+- Batch simple `math-check` equations through the bundled renderer and include note equations.
+- Honor heading typefaces and emphasis from themes and Word templates while retaining inline
+  code and script-specific fonts.
+- Resolve each paragraph style once per document to speed up long reports while preserving
+  live style changes made by extensions. Remove the redundant per-cell width write.
+- Apply captions and sizing to standalone image links, fit pictures within table cells,
+  and detect missing or external-only picture bindings during offline verification.
+- Apply the same image detection in the shell and compiler when setting permitted image hosts.
+- Render aligned equation pairs and nested matrices as native Word math through the Python
+  fallback, with editable text labels and explicit top or bottom alignment.
+- Preserve matrix column alignment when Word lays out the equation.
+- Detect when a structured alignment or matrix has been flattened in a generated equation.
+- Verify Word section boundaries, break types, and portrait or landscape orientation offline.
+- Preserve every CSV column in native tables, including values under repeated headers and fields
+  beyond the header row. Keep a single Word line break for each source line break.
+- Verify imported CSV and JSON tables offline against their local data.
+- Give Report-theme tables compact cell paragraph spacing for multipage reports.
+- Convert common mhchem reactions and physical units into editable Word equations.
+- Preserve the left and right scripts and limits of `\sideset` with the Python math engine.
+- Avoid empty portrait pages next to automatically rotated wide tables.
+- Preserve equation grouping braces and cancellation strokes as native Word math.
+- Keep the normal equation render path within one bounded cache.
+- Preserve native heading, list, and caption styles inside block quotes and resolve links
+  to nested headings and captions.
+- Detect changed identifiers, numerals, fractions, and radicals in native equations during
+  offline verification, including equations in footnotes and endnotes.
+
+- Add the `report` theme and explicit portrait or landscape section directives.
+- Embed direct, standalone image links through the existing resource policy. Keep adjacent
+  inline figures and avoid repeated downloads of the same image during conversion.
+- Keep ragged equation arrays, prescripts, hidden operands, and stretchy delimiters as
+  native Word objects. Batch large sets of simple equations in bounded groups.
+- Account for merged cells when checking whether table rows are ragged.
+
 ## 1.5.0rc2
 
 - Limit automatic shell discovery and guided pickers to files directly in the current folder.

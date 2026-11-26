@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 import json
 from pathlib import Path
 from typing import Any, Literal
 
-from mddocx.ast.base import Document
+from mddocx.ast.base import Document, iter_nodes
 from mddocx.ast.block import MathBlock
 from mddocx.ast.inline import InlineMath
 from mddocx.config import MetadataConfig
 from mddocx.parser import MarkdownParser
-from mddocx.parser.compatibility import MathSyntaxIssue, find_math_syntax_issues
+from mddocx.parser.compatibility import MathSyntaxIssue
 
 from .converter import DefaultMathConverter
 
@@ -113,11 +114,11 @@ def inspect_math(
     report = MathPreflightReport(
         engine=converter.engine_name,
         source_file=source_file,
-        syntax_issues=find_math_syntax_issues(markdown),
+        syntax_issues=sorted(parser.math_syntax_issues, key=lambda issue: issue.line),
     )
-    for node in _walk(document.children):
-        if not isinstance(node, (InlineMath, MathBlock)):
-            continue
+    equations = list(_equation_nodes(document))
+    converter.prepare_batch([(node.source_text, isinstance(node, MathBlock)) for node in equations])
+    for node in equations:
         display = isinstance(node, MathBlock)
         source = getattr(node, "source", None)
         error: str | None
@@ -157,20 +158,10 @@ def inspect_math_file(path: str | Path) -> MathPreflightReport:
 
 
 def iter_equations(document: Document) -> list[tuple[str, bool]]:
-    return [
-        (node.source_text, isinstance(node, MathBlock))
-        for node in _walk([document.children, *document.footnotes.values()])
-        if isinstance(node, (InlineMath, MathBlock))
-    ]
+    return [(node.source_text, isinstance(node, MathBlock)) for node in _equation_nodes(document)]
 
 
-def _walk(value):
-    if isinstance(value, (list, tuple)):
-        for item in value:
-            yield from _walk(item)
-        return
-    yield value
-    for name in ("children", "items", "rows", "cells", "term", "definition"):
-        child = getattr(value, name, None)
-        if child:
-            yield from _walk(child)
+def _equation_nodes(document: Document) -> Iterator[InlineMath | MathBlock]:
+    for node in iter_nodes(document):
+        if isinstance(node, (InlineMath, MathBlock)):
+            yield node

@@ -153,4 +153,4 @@ def test_guided_theme_menu_hides_the_separate_bangla_theme(tmp_path: Path, monke
 
     monkeypatch.setattr(console, "choose", choose)
     assert console.cmd_render([]) == 0
-    assert offered == [["academic", "default", "minimal", "modern"]]
+    assert offered == [["academic", "default", "minimal", "modern", "report"]]

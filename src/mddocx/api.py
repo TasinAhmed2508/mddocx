@@ -26,7 +26,6 @@ from .metadata import (
 from .normalize import Normalizer
 from .output import validate_output_path, write_docx
 from .parser import MarkdownParser
-from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
 from .render import DocxRenderer
 from .reproducibility import make_reproducible_docx
@@ -137,7 +136,6 @@ class MarkdownWord:
             enforce_input_limit(markdown, self.config.limits)
             sanitized = sanitize_markdown_metadata(markdown, self.config.metadata)
             self._report_metadata_sanitization(sanitized.report, str(input_path))
-            self._report_math_syntax_issues(sanitized.markdown, str(input_path))
             ast = self.normalizer.normalize(
                 self.parser.parse(
                     sanitized.markdown, source_file=str(input_path), sanitize_metadata=False
@@ -163,7 +161,6 @@ class MarkdownWord:
             sanitized = sanitize_markdown_metadata(markdown, self.config.metadata)
             self._report_metadata_sanitization(sanitized.report, source_file)
             markdown = sanitized.markdown
-            self._report_math_syntax_issues(markdown, source_file)
             ast: Document | None = None
             cache: AstCache | None = None
             cache_key: str | None = None
@@ -197,7 +194,10 @@ class MarkdownWord:
                 if (
                     cache is not None
                     and cache_key is not None
-                    and not any(item.code.startswith("TABLE") for item in self.diagnostics)
+                    and not any(
+                        item.code.startswith("TABLE") or item.code == "MATH101"
+                        for item in self.diagnostics
+                    )
                 ):
                     try:
                         cache.save(cache_key, ast)
@@ -291,16 +291,6 @@ class MarkdownWord:
                 "META102",
                 "AI/chat export metadata was detected and preserved by configuration.",
                 source_file,
-            )
-
-    def _report_math_syntax_issues(self, markdown: str, source_file: str | None) -> None:
-        for issue in find_math_syntax_issues(markdown):
-            self.reporter.warn(
-                "MATH101",
-                issue.message,
-                source_file,
-                issue.line,
-                "Close the explicit math delimiter/fence or escape it when literal text is intended.",
             )
 
     def _record_error(self, exc: MddocxError) -> None:

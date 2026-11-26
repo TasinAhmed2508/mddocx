@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from markdown_it.rules_block.state_block import StateBlock
+
+from .compatibility import shield_inline_math
 
 _PIPE_SEPARATOR = re.compile(r":?-+:?")
 _SPAN = re.compile(r"-{3,}")
 _BORDER = re.compile(r"-{10,}")
-_HTML_START = re.compile(r"<table(?:\s|>)", re.I)
+_HTML_START = re.compile(r"<table(?:\s|>|$)", re.I)
 _HTML_CLOSE = re.compile(r"</table\s*>\s*$", re.I)
 _HTML_TABLE_TAG = re.compile(r"<(/?)table(?=[\s>])[^>]*>", re.I)
 _BLOCK_START = re.compile(
@@ -49,6 +52,23 @@ def _pipe_cells(text: str) -> list[str] | None:
     return [re.sub(r"(\x60+)(.*?)\1", lambda m: m[0].replace(r"\|", "|"), c) for c in cells]
 
 
+def _html_table_end(line: Callable[[int], str], start: int, end: int) -> int:
+    depth = 0
+    cursor = start
+    broken_end = None
+    while cursor < end:
+        current = line(cursor)
+        if broken_end is not None and _HTML_START.match(current):
+            return broken_end
+        if broken_end is None and cursor > start and re.match(r"#{1,6}\s|~~~|\x60{3,}", current):
+            broken_end = cursor
+        depth += sum(-1 if match[1] else 1 for match in _HTML_TABLE_TAG.finditer(current))
+        cursor += 1
+        if depth <= 0 and _HTML_CLOSE.search(current):
+            return cursor
+    return broken_end if broken_end is not None else cursor
+
+
 def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
     if state.is_code_block(start):
         return False
@@ -62,16 +82,7 @@ def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
     if _HTML_START.match(first):
         if silent:
             return False
-        cursor = start
-        depth = 0
-        while cursor < end:
-            current = line(cursor)
-            if cursor > start and re.match(r"#{1,6}\s|~~~|\x60{3,}", current):
-                break
-            depth += sum(-1 if match[1] else 1 for match in _HTML_TABLE_TAG.finditer(current))
-            cursor += 1
-            if depth <= 0 and _HTML_CLOSE.search(current):
-                break
+        cursor = _html_table_end(line, start, end)
         token = state.push("mddocx_html_table", "table", 0)
         token.map = [start, cursor]
         token.content = state.getLines(start, cursor, state.blkIndent, False)
@@ -80,10 +91,16 @@ def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
     if start + 1 >= end or not first:
         return False
 
-    header = None if _BLOCK_START.match(first) else _pipe_cells(first)
     separator = line(start + 1)
-    marks = _pipe_cells(separator) or [separator]
-    if header and len(header) == len(marks) and all(_PIPE_SEPARATOR.fullmatch(m) for m in marks):
+    marks = (_pipe_cells(separator) or [separator]) if "-" in separator else []
+    header = (
+        _pipe_cells(shield_inline_math(first))
+        if marks
+        and all(_PIPE_SEPARATOR.fullmatch(m) for m in marks)
+        and not _BLOCK_START.match(first)
+        else None
+    )
+    if header and len(header) == len(marks):
         if silent:
             return True
         rows = [(start, header)]
@@ -92,7 +109,7 @@ def table_block(state: StateBlock, start: int, end: int, silent: bool) -> bool:
             current = line(cursor)
             if not current or (_BLOCK_START.match(current) and not current.startswith("|")):
                 break
-            cells = _pipe_cells(current)
+            cells = _pipe_cells(shield_inline_math(current))
             if not cells:
                 break
             # A new header plus delimiter row starts a fresh table.

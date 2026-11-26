@@ -52,7 +52,7 @@
     },
     {
       "id": "tables",
-      "syntax": "GFM pipe tables, aligned fixed-width tables, and HTML tables with row and column spans",
+      "syntax": "GFM pipe tables, aligned fixed-width tables, HTML table row groups and spans, and explicit layout-table fences",
       "ast": "Table, TableRow and TableCell",
       "ooxml": "native w:tbl with fixed widths, alignment, repeated headers, gridSpan, and vMerge",
       "malformed_diagnostic": "TABLE201 for preserved extra cells, TABLE202 for literal HTML fallback, TABLE401–403 for invalid Word grids",
@@ -60,13 +60,28 @@
       "optional_renderer": "automated visual smoke",
       "tests": [
         "tests/test_layout_regressions.py",
-        "tests/test_technical_report.py"
+        "tests/test_technical_report.py",
+        "tests/test_table_and_setup_rc2.py"
       ],
-      "verify": "Row and cell dimensions and text"
+      "verify": "Row order, repeated headers, cell spans and content, links, pictures, native math, explicit layout-table grids, and detected ruled tables and forms"
+    },
+    {
+      "id": "word-sections",
+      "syntax": "Section break comments with optional orientation and automatic landscape tables",
+      "ast": "SectionBreak and Table page layout",
+      "ooxml": "w:sectPr, w:type, and w:pgSz",
+      "malformed_diagnostic": "VERIFY303 for changed Word section boundaries, break types, or orientation",
+      "word365": "Word rendering checked for landscape tables with portrait restoration",
+      "optional_renderer": "actual pagination requires a separate visual check",
+      "tests": [
+        "tests/test_layout_regressions.py",
+        "tests/test_verification.py"
+      ],
+      "verify": "Word section boundaries, next-page breaks, and portrait or landscape orientation"
     },
     {
       "id": "math",
-      "syntax": "$...$, $$...$$, \\(...\\), \\[...\\] and math/latex/tex fences",
+      "syntax": "$...$, $$...$$, \\(...\\), \\[...\\] and math/latex/tex fences, including common \\ce and \\pu notation with bundled MathJax",
       "ast": "InlineMath and MathBlock",
       "ooxml": "native m:oMath and m:oMathPara/OMML",
       "malformed_diagnostic": "MATH101 for unmatched explicit delimiters; MATH201 for conversion fallback",
@@ -76,13 +91,15 @@
         "tests/test_ai_math_compatibility.py",
         "tests/test_smart_math_pipeline.py",
         "tests/test_equation_conformance_corpus.py",
+        "tests/test_report_math_and_sections.py",
+        "tests/test_verification.py",
         "tests/fixtures/ai_markdown/chatgpt_sphere_equations.md"
       ],
-      "verify": "Presence of native OMML"
+      "verify": "Native OMML structure, source identifiers and numerals, fractions, radicals, matrix layouts, solid array rules and frame edges, column spans and alignment, and single-character array inserts"
     },
     {
       "id": "images-and-figures",
-      "syntax": "Markdown images using local paths, HTTPS URLs, or Base64 data:image URIs, plus documented captions/attributes",
+      "syntax": "Markdown images, standalone direct image links in paragraphs, table cells, and notes, clickable pictures, and figure attributes",
       "ast": "Image and ImageBlock",
       "ooxml": "native DrawingML image, docPr alternative text, caption and bookmark",
       "malformed_diagnostic": "RESOURCE/IMAGE/A11Y diagnostic families",
@@ -93,7 +110,7 @@
         "tests/test_resilient_resources.py",
         "tests/test_release_contract.py"
       ],
-      "verify": "Native drawing presence and alternative text"
+      "verify": "Native drawing presence, alternative text, embedded picture bindings, and click destinations in the body and notes"
     },
     {
       "id": "equation-figure-table-references",
@@ -128,16 +145,17 @@
       "id": "notes",
       "syntax": "[^id] references and definitions; footnote/endnote configuration",
       "ast": "FootnoteReference and document footnote definitions",
-      "ooxml": "native footnotes.xml or endnotes.xml parts and relationships",
-      "malformed_diagnostic": "NOTE201 for unresolved notes",
-      "word365": "implemented; structural regression tested",
+      "ooxml": "native footnotes.xml or endnotes.xml with their own image and hyperlink relationships",
+      "malformed_diagnostic": "FOOTNOTE201 for unresolved notes",
+      "word365": "native note pictures and hyperlinks checked in Word",
       "optional_renderer": "supported",
       "tests": [
         "tests/test_technical_report.py",
         "tests/test_diagnostic_locations.py",
-        "tests/test_fidelity_corpora.py"
+        "tests/test_fidelity_corpora.py",
+        "tests/test_verification.py"
       ],
-      "verify": "Native note links and supported note body text"
+      "verify": "Native note references, text, equations, pictures, and hyperlinks"
     },
     {
       "id": "charts-and-data",
@@ -150,20 +168,21 @@
       "tests": [
         "tests/test_technical_report.py"
       ],
-      "verify": "Native ChartML and workbook relationships"
+      "verify": "Native ChartML and workbook relationships, imported CSV/JSON data table rows, cells, and headers"
     },
     {
       "id": "callouts-comments-code",
-      "syntax": "GitHub/colon callouts, CriticMarkup comments and fenced code",
+      "syntax": "GitHub/colon callouts, CriticMarkup comments, and fenced or indented code",
       "ast": "Callout, Comment and CodeBlock",
       "ooxml": "styled paragraphs/tables, native comments part and editable code runs",
       "malformed_diagnostic": "unsupported containers remain literal source",
       "word365": "implemented",
       "optional_renderer": "supported with theme differences",
       "tests": [
-        "tests/test_technical_report.py"
+        "tests/test_technical_report.py",
+        "tests/test_verification.py"
       ],
-      "verify": "See offline verification scope in the README"
+      "verify": "Code listing text and order, including indented and nested listings"
     },
     {
       "id": "rtl-unicode-xml",

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Twips
+from docx.table import _Cell
 from lxml import etree
 
 from mddocx.ast.block import ImageBlock
@@ -32,8 +34,14 @@ def render_image_block(renderer: DocxRenderer, node: ImageBlock) -> None:
         else None
     )
     if caption and renderer.config.references.figure_caption_position == "above":
-        citations.render_caption(renderer, "Figure", caption, node.identifier)
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+        citations.render_caption(
+            renderer,
+            "Figure",
+            caption,
+            node.identifier,
+            keep_with_next=renderer.config.figures.caption_keep_with_figure,
+        )
+    p = renderer._add_paragraph("MD Normal")
     renderer._apply_planned_paragraph_layout(p, node)
     p.alignment = {"left": WD_ALIGN_PARAGRAPH.LEFT, "right": WD_ALIGN_PARAGRAPH.RIGHT}.get(
         node.align or renderer.config.figures.default_align, WD_ALIGN_PARAGRAPH.CENTER
@@ -49,7 +57,7 @@ def render_image_block(renderer: DocxRenderer, node: ImageBlock) -> None:
         source=node.source,
     )
     if caption and renderer.config.references.figure_caption_position == "below":
-        citations.render_caption(renderer, "Figure", caption, node.identifier)
+        citations.render_caption(renderer, "Figure", caption, node.identifier, keep_with_next=False)
 
 
 def add_image(
@@ -61,6 +69,8 @@ def add_image(
     width_percent: float | None = None,
     decorative: bool = False,
     source=None,
+    *,
+    link_fallback: bool = True,
 ):
     result = renderer.resolver.resolve_image(
         ResourceRequest(
@@ -85,9 +95,15 @@ def add_image(
             raise MddocxError(result.diagnostic)
         renderer.reporter.emit(result.diagnostic)
         label = alt or title or src
-        if getattr(renderer.config.resources, "image_failure", "clickable_fallback") == "literal":
-            paragraph.add_run(clean_xml_text(label))
-        elif urlparse(src).scheme.lower() in {"http", "https"}:
+        try:
+            public_url = urlparse(src).scheme.lower() in {"http", "https"}
+        except ValueError:
+            public_url = False
+        if (
+            link_fallback
+            and public_url
+            and renderer.config.resources.image_failure == "clickable_fallback"
+        ):
             add_hyperlink(paragraph, clean_xml_text(label), src)
         else:
             paragraph.add_run(clean_xml_text(label))
@@ -121,15 +137,22 @@ def add_image_path(
 ):
     run = paragraph.add_run()
     shape = run.add_picture(str(path))
-    sec = renderer.document.sections[-1]
-    usable = sec.page_width - sec.left_margin - sec.right_margin
+    if paragraph.part is renderer._note_part:
+        usable = renderer._note_width
+    else:
+        sec = renderer.document.sections[-1]
+        usable = sec.page_width - sec.left_margin - sec.right_margin
+    cell = paragraph._parent
+    if isinstance(cell, _Cell) and cell.width is not None:
+        padding = Twips(2 * renderer.config.table.cell_padding_twips)
+        usable = min(usable, max(1, cell.width - padding))
     requested_percent = (
         width_percent
         if width_percent is not None
         else renderer.config.figures.default_width_percent
     )
     requested_percent = min(requested_percent, renderer.config.images.max_width_percent)
-    max_width = int(usable * max(0.05, min(1.0, requested_percent / 100.0)))
+    max_width = max(1, int(usable * max(0.05, min(1.0, requested_percent / 100.0))))
     if shape.width > max_width or (
         renderer.config.images.allow_upscale and shape.width < max_width
     ):

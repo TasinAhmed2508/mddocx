@@ -6,6 +6,7 @@ from docx.oxml.ns import qn
 from mddocx import MarkdownWord, RenderConfig
 from mddocx.parser import MarkdownParser
 from mddocx.ast.block import CodeBlock, Paragraph
+from mddocx.ooxml.bangla import decode_bijoy
 from mddocx.parser.compatibility import normalize_export_citations
 from mddocx.ooxml.text import configure_xml_run
 
@@ -74,6 +75,16 @@ def test_form_has_native_photo_box_and_address_columns():
     assert doc.tables[0]._tbl.getnext().tag == qn("w:p")
     assert doc.tables[0]._tbl.getnext().getnext() is doc.tables[1]._tbl
     assert not any(p.style.name == "MD Code" for p in doc.paragraphs)
+
+
+def test_sutonny_reph_preserves_cluster_and_vowel_positions():
+    words = "ধর্ম বর্তমান সর্বোচ্চ"
+    doc = Document(BytesIO(MarkdownWord(_legacy_config()).render_string(f"Report {words}")))
+    runs = doc.paragraphs[0].runs
+    assert runs[0].text == "Report " and runs[0].font.name != "SutonnyMJ"
+    glyphs = [run.text for run in runs if run.font.name == "SutonnyMJ"]
+    assert glyphs == ["ag©", "eZ©gvb", "m‡e©v”P"]
+    assert " ".join(decode_bijoy(value) for value in glyphs) == words
 
 
 def test_layout_table_merges_preserve_stair_and_roof_geometry():

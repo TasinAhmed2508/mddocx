@@ -10,7 +10,7 @@ from mddocx import Compiler, LayoutStageResult
 from mddocx.ast.base import Document, SourcePosition
 from mddocx.ast.block import Heading, MathBlock, Paragraph, Table, TableCell, TableRow
 from mddocx.ast.inline import Text
-from mddocx.ast.codec import document_from_json, document_to_json
+from mddocx.ast.codec import AST_SCHEMA_VERSION, document_from_json, document_to_json
 from mddocx.diagnostics import DiagnosticReporter, MddocxError
 from mddocx.normalize import Normalizer
 
@@ -152,6 +152,6 @@ def test_ast_serialization_is_versioned_and_rejects_incompatible_cache():
 
     assert document_from_json(encoded) == document
     with pytest.raises(ValueError, match="schema version"):
-        document_from_json(encoded.replace('"version":3', '"version":999'))
+        document_from_json(encoded.replace(f'"version":{AST_SCHEMA_VERSION}', '"version":999'))
     with pytest.raises(ValueError, match="schema identifier"):
         document_from_json('{"__node__":"Document","children":[]}')

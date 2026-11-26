@@ -448,7 +448,13 @@ def _parser_verify() -> argparse.ArgumentParser:
     parser.add_argument("--bengali-font", help="Font selection used for conversion")
     parser.add_argument("--theme", choices=sorted(THEMES), default="default")
     parser.add_argument("--template", type=Path)
+    parser.add_argument("--page-size", choices=("A4", "Letter"), default="A4")
+    parser.add_argument("--orientation", choices=("portrait", "landscape"), default="portrait")
+    parser.add_argument("--auto-landscape-tables", action="store_true")
     parser.add_argument("--notes", choices=("footnote", "endnote"), default="footnote")
+    parser.add_argument("--code-line-numbers", action="store_true")
+    parser.add_argument("--code-language-labels", action="store_true")
+    parser.add_argument("--no-mermaid", action="store_true")
     parser.add_argument("--no-crossrefs", action="store_true")
     parser.add_argument("--equation-numbering", choices=("document", "section"), default="document")
     parser.add_argument("--caption-numbering", choices=("document", "section"), default="document")
@@ -461,7 +467,13 @@ def _main_verify(argv: list[str]) -> int:
     config = RenderConfig(
         theme=args.theme,
         template=args.template,
+        page=PageConfig(size=args.page_size, orientation=args.orientation),
+        table=TableConfig(auto_landscape=args.auto_landscape_tables),
         notes=NotesConfig(style=args.notes),
+        code=CodeConfig(
+            line_numbers=args.code_line_numbers, show_language_label=args.code_language_labels
+        ),
+        mermaid=MermaidConfig(enabled=not args.no_mermaid),
         references=ReferenceConfig(
             enabled=not args.no_crossrefs,
             captions=not args.no_crossrefs,

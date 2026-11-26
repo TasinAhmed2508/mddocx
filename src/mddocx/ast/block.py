@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 from .base import Node
 
 
@@ -166,4 +167,4 @@ class PageBreak(Node):
 
 @dataclass(slots=True)
 class SectionBreak(Node):
-    pass
+    orientation: Literal["portrait", "landscape"] | None = None

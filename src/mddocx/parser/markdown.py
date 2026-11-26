@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from html import unescape
+from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
-from mddocx.ast.base import Document, SourcePosition
+from mddocx.ast.base import Document, SourcePosition, iter_nodes
 from mddocx.ast.block import (
     BlockQuote,
     BulletList,
@@ -45,15 +46,22 @@ from mddocx.ast.inline import (
     CrossReference,
     Citation,
     Comment,
+    link_content,
 )
 from .compatibility import (
+    MathSyntaxIssue,
+    display_math_block,
+    is_math_fence,
+    math_aware_fence,
     normalize_export_citations,
     extract_footnote_definitions,
-    normalize_math_syntax,
     normalize_bibliography_directives,
     normalize_definition_lists,
     normalize_callout_containers,
     protect_escaped_footnote_references,
+    restore_inline_math_text,
+    shield_inline_math,
+    shield_inline_tokens,
     split_footnote_references,
     split_text_math,
     split_comment_markup,
@@ -64,12 +72,15 @@ from mddocx.extensions.base import call_configure_markdown, parse_custom_block, 
 from mddocx.diagnostics import Diagnostic, DiagnosticReporter, MddocxError
 from mddocx.recovery import recovery_block
 from mddocx.config import MetadataConfig
-from mddocx.metadata import MetadataSanitizationReport, sanitize_markdown_metadata
+from mddocx.metadata import sanitize_markdown_metadata
+
+_IMAGE_LINK_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".svg", ".webp"}
 
 
 class MarkdownParser:
     _HTML_IMG_RE = re.compile(r"^\s*<img\b(?P<attrs>[^>]*)/?>\s*$", re.I | re.S)
     _HTML_IMG_FIND_RE = re.compile(r"<img\b[^>]*?/?>", re.I | re.S)
+    _HTML_ANCHOR_RE = re.compile(r"^<a\b(?P<attrs>[^>]*)>$", re.I | re.S)
     _HTML_ATTR_RE = re.compile(
         r"(?P<name>[A-Za-z_:][\w:.-]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)",
         re.S,
@@ -87,14 +98,59 @@ class MarkdownParser:
         match = cls._HTML_IMG_RE.match(value)
         if not match:
             return None
-        attrs = {
-            item.group("name").lower(): unescape(item.group("value"))
-            for item in cls._HTML_ATTR_RE.finditer(match.group("attrs"))
-        }
+        attrs = cls._html_attributes(match.group("attrs"))
         src = attrs.get("src", "").strip()
         if not src:
             return None
         return Image(src=src, alt=attrs.get("alt", ""), title=attrs.get("title"))
+
+    @classmethod
+    def _html_attributes(cls, value: str) -> dict[str, str]:
+        return {
+            item.group("name").lower(): unescape(item.group("value"))
+            for item in cls._HTML_ATTR_RE.finditer(value)
+        }
+
+    def _html_image_link(self, tokens: list[Token], start: int) -> tuple[Link, int] | None:
+        match = self._HTML_ANCHOR_RE.fullmatch(tokens[start].content)
+        if match is None:
+            return None
+        attributes = self._html_attributes(match.group("attrs"))
+        href = self.md.normalizeLink(attributes.get("href", "").strip())
+        if not href or not self.md.validateLink(href):
+            return None
+        has_image = False
+        for end in range(start + 1, len(tokens)):
+            token = tokens[end]
+            if token.type in {"link_open", "link_close"}:
+                break
+            if token.type != "html_inline":
+                continue
+            if re.fullmatch(r"</a\s*>", token.content, re.I):
+                if has_image:
+                    children, _ = self._inline_range(tokens[start + 1 : end], 0, None)
+                    return Link(
+                        href=href, title=attributes.get("title"), children=children
+                    ), end + 1
+                break
+            if self._html_image(token.content) is None:
+                break
+            has_image = True
+        return None
+
+    def _html_image_link_block(self, token: Token) -> Paragraph | None:
+        text = token.content.strip()
+        if not re.match(r"<a\b", text, re.I):
+            return None
+        children: list[Token] = []
+        self.md.inline.parse(text, self.md, self._parse_env, children)
+        linked = self._html_image_link(children, 0) if children else None
+        if linked is None or linked[1] != len(children):
+            return None
+        source = self._pos(token)
+        link = linked[0]
+        self._attach_inline_source([link], source)
+        return Paragraph(children=[link], source=source)
 
     @classmethod
     def _html_images(cls, value: str) -> list[Image]:
@@ -118,13 +174,17 @@ class MarkdownParser:
         self.max_table_cells = max_table_cells
         self.extensions = extensions
         self.metadata_config = metadata_config or MetadataConfig()
-        self.last_metadata_report = MetadataSanitizationReport(
-            policy=self.metadata_config.ai_export
-        )
         self.md = MarkdownIt("commonmark").enable("table").enable("strikethrough")
         from .tables import table_block
 
         self.md.block.ruler.at("table", table_block, {"alt": ["paragraph", "reference"]})
+        self.md.block.ruler.at(
+            "fence", math_aware_fence, {"alt": ["paragraph", "reference", "blockquote", "list"]}
+        )
+        self.md.block.ruler.before(
+            "paragraph", "mddocx_display_math", display_math_block, {"alt": ["paragraph"]}
+        )
+        self.md.core.ruler.before("inline", "mddocx_inline_math", shield_inline_tokens)
         call_configure_markdown(self.extensions, self.md)
         self.source_file: str | None = None
 
@@ -141,33 +201,40 @@ class MarkdownParser:
         sanitize_metadata: bool = True,
     ) -> Document:
         self.source_file = source_file
+        self.math_syntax_issues: list[MathSyntaxIssue] = []
         if sanitize_metadata:
-            sanitized = sanitize_markdown_metadata(markdown, self.metadata_config)
-            markdown = sanitized.markdown
-            self.last_metadata_report = sanitized.report
-        else:
-            self.last_metadata_report = MetadataSanitizationReport(
-                policy=self.metadata_config.ai_export
-            )
+            markdown = sanitize_markdown_metadata(markdown, self.metadata_config).markdown
         metadata, body, line_offset = split_front_matter(markdown, source_file=self.source_file)
         body = normalize_export_citations(body, strip=self.metadata_config.ai_export != "keep")
         body, footnote_sources = extract_footnote_definitions(body)
         body = protect_escaped_footnote_references(body)
-        normalized = normalize_math_syntax(
-            normalize_bibliography_directives(
-                normalize_definition_lists(normalize_callout_containers(body))
-            )
+        normalized = normalize_bibliography_directives(
+            normalize_definition_lists(normalize_callout_containers(body))
         )
-        self._parse_env = {}
-        tokens = self.md.parse(normalized, self._parse_env)
         self._line_offset = line_offset + base_line_offset
+        self._parse_env = {
+            "mddocx_math_issues": self.math_syntax_issues,
+            "mddocx_line_offset": self._line_offset,
+        }
+        tokens = self.md.parse(normalized, self._parse_env)
         children, _ = self._parse_blocks(tokens, 0, None)
         children = self._postprocess_blocks(children)
         footnotes: dict[str, list] = {}
-        for label, note_source in footnote_sources.items():
-            inline_tokens = self.md.parseInline(protect_escaped_footnote_references(note_source))
-            inline = inline_tokens[0] if inline_tokens else None
-            footnotes[label] = self._inline(inline.children or []) if inline is not None else []
+        for label, (note_source, line) in footnote_sources.items():
+            position = SourcePosition(source_file, line + self._line_offset, 1)
+            footnotes[label] = self._image_only_fragment(
+                self._parse_inline_fragment(
+                    protect_escaped_footnote_references(note_source), position
+                )
+            )
+        for issue in sorted(self.math_syntax_issues, key=lambda item: item.line):
+            self.reporter.warn(
+                "MATH101",
+                issue.message,
+                source_file,
+                issue.line,
+                "Close the explicit math delimiter/fence or escape it when literal text is intended.",
+            )
         return Document(
             children=children,
             metadata=metadata,
@@ -210,74 +277,45 @@ class MarkdownParser:
                 i += 3
             elif t.type == "paragraph_open":
                 inline = tokens[i + 1]
-                content = self._inline(inline.children or [], self._pos(t))
-                # Promote a standalone image (optionally followed by an attribute list) to a block node.
-                if (
-                    content
-                    and isinstance(content[0], Image)
-                    and all(isinstance(x, (Image, Text)) for x in content)
-                ):
-                    im = content[0]
-                    identifier, attrs = self._extract_trailing_attrs(content[1:])
-                    leftover = "".join(x.text for x in content[1:] if isinstance(x, Text)).strip()
-                    if not leftover:
-                        width = attrs.get("width")
-                        width_percent = (
-                            float(width[:-1])
-                            if width
-                            and width.endswith("%")
-                            and width[:-1].replace(".", "", 1).isdigit()
-                            else None
-                        )
-                        nodes.append(
-                            ImageBlock(
-                                src=im.src,
-                                alt=im.alt,
-                                title=im.title,
-                                identifier=identifier,
-                                caption=attrs.get("caption"),
-                                width_percent=width_percent,
-                                align=attrs.get("align"),
-                                decorative=attrs.get("decorative", "false").lower()
-                                in {"1", "true", "yes"},
-                                source=self._pos(t),
-                            )
-                        )
-                    else:
-                        nodes.append(Paragraph(children=content, source=self._pos(t)))
-                else:
-                    nodes.append(Paragraph(children=content, source=self._pos(t)))
+                source = self._pos(t)
+                content = self._inline(inline.children or [], source)
+                image = self._standalone_image(content, source)
+                nodes.append(
+                    image if image is not None else Paragraph(children=content, source=source)
+                )
                 i += 3
+            elif t.type == "mddocx_display_math":
+                identifier, attrs = self._parse_attrs_text(t.info)
+                nodes.append(
+                    MathBlock(
+                        source_text=t.content.strip(),
+                        identifier=identifier,
+                        caption=attrs.get("caption"),
+                        source=self._pos(t),
+                    )
+                )
+                i += 1
             elif t.type in {"fence", "code_block"}:
                 info = (t.info or "").strip()
-                if info == "mddocx-math":
+                if is_math_fence(info):
                     nodes.append(MathBlock(source_text=t.content.strip(), source=self._pos(t)))
                 elif info == "mddocx-bibliography":
                     nodes.append(BibliographyBlock(source=self._pos(t)))
                 elif info == "mddocx-definition":
                     items = []
+                    position = self._pos(t)
                     for line in t.content.splitlines():
                         if "\t" not in line:
                             continue
                         term, definition = line.split("\t", 1)
-                        term_tokens = self.md.parseInline(term)
-                        def_tokens = self.md.parseInline(definition)
-                        term_nodes = (
-                            self._inline(term_tokens[0].children or [], self._pos(t))
-                            if term_tokens
-                            else [Text(text=term)]
-                        )
-                        def_nodes = (
-                            self._inline(def_tokens[0].children or [], self._pos(t))
-                            if def_tokens
-                            else [Text(text=definition)]
-                        )
                         items.append(
                             DefinitionItem(
-                                term=term_nodes, definition=def_nodes, source=self._pos(t)
+                                term=self._parse_inline_fragment(term, position),
+                                definition=self._parse_inline_fragment(definition, position),
+                                source=position,
                             )
                         )
-                    nodes.append(DefinitionList(items=items, source=self._pos(t)))
+                    nodes.append(DefinitionList(items=items, source=position))
                 else:
                     language, identifier, attrs = self._parse_fence_info(info)
                     kind = (language or "").lower()
@@ -363,8 +401,12 @@ class MarkdownParser:
                 directive = t.content.strip().lower()
                 if directive == "<!-- pagebreak -->":
                     nodes.append(PageBreak(source=self._pos(t)))
-                elif directive == "<!-- sectionbreak -->":
-                    nodes.append(SectionBreak(source=self._pos(t)))
+                elif section := re.fullmatch(
+                    r"<!--\s*sectionbreak(?:\s+orientation=(portrait|landscape))?\s*-->", directive
+                ):
+                    nodes.append(SectionBreak(orientation=section[1], source=self._pos(t)))
+                elif t.type == "html_block" and (linked := self._html_image_link_block(t)):
+                    nodes.append(linked)
                 elif images := self._html_images(t.content):
                     nodes.extend(
                         ImageBlock(
@@ -689,6 +731,129 @@ class MarkdownParser:
                 parts.append(MarkdownParser._plain_text(node.children))
         return "".join(parts)
 
+    def _standalone_image(self, content: list, source: SourcePosition) -> ImageBlock | None:
+        if not content:
+            return None
+        first = content[0]
+        tail = content[1:]
+        if not all(isinstance(node, Text) for node in tail):
+            return None
+        if isinstance(first, Text):
+            if tail or not first.text.lstrip().startswith(("http://", "https://")):
+                return None
+            url, *attribute_text = first.text.split(maxsplit=1)
+            image = self._linked_image(Text(text=url))
+            tail = [Text(text=text) for text in attribute_text]
+        else:
+            image = first if isinstance(first, Image) else self._linked_image(first)
+            # Prose links keep their original text when they are not promoted to figures.
+            if tail and isinstance(first, Link):
+                tail[-1] = Text(text=tail[-1].text)
+        if image is None:
+            return None
+        identifier, attrs = self._extract_trailing_attrs(tail)
+        if any(node.text.strip() for node in tail):
+            return None
+        width = attrs.get("width", "")
+        return ImageBlock(
+            src=image.src,
+            alt=image.alt,
+            title=image.title,
+            identifier=identifier,
+            caption=attrs.get("caption"),
+            width_percent=(
+                float(width[:-1])
+                if width.endswith("%") and width[:-1].replace(".", "", 1).isdigit()
+                else None
+            ),
+            align=attrs.get("align"),
+            decorative=attrs.get("decorative", "false").lower() in {"1", "true", "yes"},
+            source=source,
+        )
+
+    @staticmethod
+    def _linked_image(node) -> Image | None:
+        if isinstance(node, Link):
+            url = node.href
+        elif isinstance(node, Text):
+            url = node.text.strip()
+            if not url.startswith(("http://", "https://")) or any(c.isspace() for c in url):
+                return None
+        else:
+            return None
+        try:
+            parsed = urlsplit(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                return None
+        except ValueError:
+            return None
+        if PurePosixPath(unquote(parsed.path)).suffix.lower() not in _IMAGE_LINK_SUFFIXES:
+            return None
+        alt, title = "", None
+        if isinstance(node, Link):
+            # A label can contain styling, while a linked picture keeps its own click target.
+            if any(
+                not isinstance(
+                    child,
+                    (
+                        Text,
+                        InlineCode,
+                        InlineMath,
+                        Emphasis,
+                        Strong,
+                        Strikethrough,
+                        SoftBreak,
+                        HardBreak,
+                    ),
+                )
+                for child in iter_nodes(node.children)
+            ):
+                return None
+            alt = "".join(value for value in link_content(node.children) if isinstance(value, str))
+            title = node.title
+        return Image(src=url, alt=alt if alt != url else "", title=title, source=node.source)
+
+    def _image_only_fragment(self, nodes: list) -> list:
+        """Embed an image link that occupies a table cell or note by itself."""
+        content = (
+            nodes
+            if len(nodes) < 2
+            else [node for node in nodes if not isinstance(node, Text) or node.text.strip()]
+        )
+        if len(content) != 1 or (image := self._linked_image(content[0])) is None:
+            return nodes
+        original = content[0]
+        return [
+            Link(
+                href=image.src,
+                title=image.title,
+                children=[image],
+                source=original.source,
+            )
+        ]
+
+    @staticmethod
+    def _image_description(token: Token) -> str:
+        if token.children is None:
+            return restore_inline_math_text(token.content)
+        parts = []
+        for child in token.children:
+            if child.type in {"text", "text_special"}:
+                text = restore_inline_math_text(child.content)
+                parts.extend(
+                    f"[^{value}]" if kind == "footnote" else value
+                    for kind, value in split_footnote_references(text)
+                )
+            elif child.type == "code_inline":
+                parts.append(child.content)
+            elif child.type == "image":
+                parts.append(MarkdownParser._image_description(child))
+            elif child.type in {"softbreak", "hardbreak"} or (
+                child.type == "html_inline" and re.fullmatch(r"<br\s*/?>", child.content, re.I)
+            ):
+                parts.append(" ")
+        return "".join(parts)
+
     _COMBINED_REF_RE = re.compile(
         r"\[(?P<prefix>Figure|Table|Equation|Listing|Section)\s+@(?P<target>[A-Za-z0-9_.:-]+)\]",
         re.I,
@@ -771,12 +936,15 @@ class MarkdownParser:
                 )
             contents = []
             for column in range(width):
-                parsed: list[Token] = []
-                if column < len(cells):
-                    self.md.inline.parse(cells[column], self.md, self._parse_env, parsed)
                 contents.append(
                     TableCell(
-                        children=self._inline(parsed, position),
+                        children=(
+                            self._image_only_fragment(
+                                self._parse_inline_fragment(cells[column], position)
+                            )
+                            if column < len(cells)
+                            else []
+                        ),
                         alignment=alignments[column] if column < len(alignments) else None,
                         header=index == 0,
                         source=position,
@@ -814,7 +982,7 @@ class MarkdownParser:
                 if current_cells is not None:
                     current_cells.append(
                         TableCell(
-                            children=cell_children,
+                            children=self._image_only_fragment(cell_children),
                             alignment=align,
                             header=is_header,
                             source=self._pos(t),
@@ -831,6 +999,13 @@ class MarkdownParser:
                 current_cells = None
             i += 1
         return Table(rows=rows, source=self._pos(opener)), i + 1
+
+    def _parse_inline_fragment(self, text: str, position: SourcePosition) -> list:
+        text = shield_inline_math(
+            text, start_line=position.line or 1, issues=self.math_syntax_issues
+        )
+        tokens = self.md.parseInline(text, self._parse_env)
+        return self._inline(tokens[0].children or [], position) if tokens else []
 
     def _inline(self, tokens: list[Token], source: SourcePosition | None = None) -> list:
         nodes, _ = self._inline_range(tokens, 0, None)
@@ -904,10 +1079,14 @@ class MarkdownParser:
                         Link(href=t.attrGet("href") or "", title=t.attrGet("title"), children=inner)
                     )
             elif t.type == "image":
-                alt = t.content or ""
+                alt = self._image_description(t)
                 nodes.append(Image(src=t.attrGet("src") or "", alt=alt, title=t.attrGet("title")))
                 i += 1
             elif t.type == "html_inline":
+                if linked := self._html_image_link(tokens, i):
+                    link, i = linked
+                    nodes.append(link)
+                    continue
                 if re.fullmatch(r"<br\s*/?>", t.content, flags=re.I):
                     nodes.append(HardBreak())
                 else:

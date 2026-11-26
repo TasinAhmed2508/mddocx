@@ -14,7 +14,6 @@ from .layout import LayoutPlan
 from .limits import enforce_ast_limits, enforce_input_limit
 from .metadata import sanitize_markdown_metadata
 from .normalize import Normalizer, SemanticIndex, build_semantic_index
-from .parser.compatibility import find_math_syntax_issues
 from .profiling import RenderStats
 from .source import SourceDocument, acquire_markdown_source
 from .validation import validated_docx_parts
@@ -117,17 +116,6 @@ class Compiler:
                     source_file,
                 )
             )
-        diagnostics.extend(
-            Diagnostic(
-                "warning",
-                "MATH101",
-                issue.message,
-                source_file,
-                issue.line,
-                "Close the explicit math delimiter/fence or escape it when literal text is intended.",
-            )
-            for issue in find_math_syntax_issues(sanitized.markdown)
-        )
         return DocumentStageResult(document, tuple(diagnostics))
 
     def parse_file(self, input_path: str | Path) -> DocumentStageResult:
@@ -274,6 +262,8 @@ class Compiler:
         config = validate_render_config(
             _apply_front_matter(deepcopy(self.config), normalized.metadata, True)
         )
+        if config.base_dir is None:
+            config.base_dir = source_text.base_dir
         enforce_ast_limits(normalized, config.limits)
         blob = output if isinstance(output, bytes) else Path(output).read_bytes()
         roots = validated_docx_parts(blob, config.validation)

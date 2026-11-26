@@ -6,7 +6,6 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-import re
 import sys
 import time
 from typing import Callable, Literal
@@ -14,9 +13,12 @@ from urllib.parse import urlparse
 
 from .. import __version__
 from ..accessibility import audit_docx_accessibility
+from ..ast.base import Document, iter_nodes
+from ..ast.block import ImageBlock
+from ..ast.inline import Image
 from ..compiler import Compiler
 from ..benchmark import run_performance_gate
-from ..config import RenderConfig, ResourcePolicy, MetadataConfig
+from ..config import RenderConfig, MetadataConfig
 from ..data import load_tabular_data
 from ..diagnostics import MddocxError
 from ..doctor import run_doctor
@@ -45,10 +47,6 @@ from .opening import open_path
 from .tokenize import split_command
 from .workspace import display_path, inspect_workspace, list_workspace_files
 
-_MD_REMOTE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?(https://[^)\s>]+)>?", re.IGNORECASE)
-_HTML_REMOTE_IMAGE_RE = re.compile(
-    r"<img\b[^>]*\bsrc=[\"\'](https://[^\"\']+)[\"\']", re.IGNORECASE
-)
 _GUIDED_THEMES = [name for name in sorted(THEMES) if name != "bengali-document"]
 _COMMANDS = (
     "menu",
@@ -410,7 +408,13 @@ class InteractiveConsole:
             themes = _GUIDED_THEMES
             theme = themes[self.choose("Theme:", themes, themes.index("default") + 1) - 1]
         theme = theme or "default"
-        remote_hosts = _remote_hosts(source)
+        metadata_policy = ns.ai_metadata
+        config = RenderConfig(theme=theme, metadata=MetadataConfig(ai_export=metadata_policy))
+        compiler = Compiler(config)
+        source_text = compiler.acquire_file(source).text
+        remote_hosts = _remote_hosts(
+            compiler.parse_string(source_text, source_file=str(source)).document
+        )
         allow_remote = (
             self.preferences.allow_remote_resources
             if ns.allow_remote_resources is None
@@ -421,41 +425,27 @@ class InteractiveConsole:
             self.println("Remote resources detected:")
             for host in remote_hosts:
                 self.println(f"  - {host}")
-            if guided and self.confirm("Allow these HTTPS hosts for this render?", default=False):
+            if guided and self.confirm("Allow these image hosts for this render?", default=False):
                 allow_remote = True
                 allowed_domains = tuple(remote_hosts)
         elif remote_hosts and allow_remote:
             allowed_domains = tuple(remote_hosts)
-        metadata_policy = ns.ai_metadata
-        try:
-            source_text = source.read_text(encoding="utf-8-sig")
-            metadata_preview = sanitize_markdown_metadata(
-                source_text, MetadataConfig(ai_export=metadata_policy)
-            )
-            if metadata_preview.report.detected_export_metadata:
-                if metadata_policy == "keep":
-                    self.println(
-                        "AI/chat export metadata detected; it will be preserved (--ai-metadata keep)."
-                    )
-                else:
-                    self.println(
-                        f"AI/chat export metadata detected: {metadata_preview.report.removed_lines} line(s), "
-                        f"{len(metadata_preview.report.removed_front_matter_keys)} front-matter field(s) will be removed."
-                    )
-        except OSError:
-            pass
-        config = RenderConfig(
-            theme=theme,
-            resources=ResourcePolicy(
-                allow_remote_resources=allow_remote,
-                allowed_domains=allowed_domains,
-            ),
-            metadata=MetadataConfig(ai_export=metadata_policy),
-        )
+        metadata_preview = sanitize_markdown_metadata(source_text, config.metadata)
+        if metadata_preview.report.detected_export_metadata:
+            if metadata_policy == "keep":
+                self.println(
+                    "AI/chat export metadata detected; it will be preserved (--ai-metadata keep)."
+                )
+            else:
+                self.println(
+                    f"AI/chat export metadata detected: {metadata_preview.report.removed_lines} line(s), "
+                    f"{len(metadata_preview.report.removed_front_matter_keys)} front-matter field(s) will be removed."
+                )
+        compiler.config.resources.allow_remote_resources = allow_remote
+        compiler.config.resources.allowed_domains = allowed_domains
         output.parent.mkdir(parents=True, exist_ok=True)
         self.println(f"Rendering {display_path(source, self.workspace)}")
         self.println("  [..] Compiling Markdown into native Word structures")
-        compiler = Compiler(config)
         started = time.perf_counter()
         result = compiler.compile_file(source, output)
         elapsed = time.perf_counter() - started
@@ -1017,18 +1007,17 @@ class InteractiveConsole:
         return 0
 
 
-def _remote_hosts(source: Path) -> list[str]:
-    try:
-        text = source.read_text(encoding="utf-8-sig")
-    except OSError:
-        return []
+def _remote_hosts(document: Document) -> list[str]:
     hosts: set[str] = set()
-    urls = [m.group(1) for m in _MD_REMOTE_IMAGE_RE.finditer(text)]
-    urls.extend(m.group(1) for m in _HTML_REMOTE_IMAGE_RE.finditer(text))
-    for url in urls:
-        host = urlparse(url).hostname
-        if host:
-            hosts.add(host.lower())
+    for node in iter_nodes(document):
+        if not isinstance(node, (Image, ImageBlock)):
+            continue
+        try:
+            url = urlparse(node.src)
+        except ValueError:
+            continue
+        if url.scheme in {"http", "https"} and url.hostname:
+            hosts.add(url.hostname.rstrip("."))
     return sorted(hosts)
 
 

@@ -201,7 +201,9 @@ def test_invalid_configuration_fails_at_the_compiler_boundary():
 def test_template_style_mapping_uses_existing_semantic_targets(tmp_path: Path):
     template = WordDocument()
     template.styles.add_style("Company Body", WD_STYLE_TYPE.PARAGRAPH)
-    template.styles.add_style("Company Heading", WD_STYLE_TYPE.PARAGRAPH)
+    heading_style = template.styles.add_style("Company Heading", WD_STYLE_TYPE.PARAGRAPH)
+    heading_style.font.name = "Georgia"
+    heading_style.font.bold = True
     template_path = tmp_path / "company.docx"
     template.save(template_path)
     config = RenderConfig(
@@ -218,7 +220,27 @@ def test_template_style_mapping_uses_existing_semantic_targets(tmp_path: Path):
     reopened = WordDocument(BytesIO(blob))
 
     assert reopened.paragraphs[0].style.name == "Company Heading"
+    assert reopened.paragraphs[0].style.font.name == "Georgia"
+    assert reopened.paragraphs[0].style.font.bold is True
+    assert reopened.paragraphs[0].runs[0].font.name is None
+    assert reopened.paragraphs[0].runs[0].bold is None
     assert reopened.paragraphs[1].style.name == "Company Body"
+
+
+def test_extension_can_change_paragraph_styles_during_render():
+    from mddocx.ast.block import Paragraph
+
+    class SwitchBodyStyle:
+        def render_block(self, renderer, node):
+            if isinstance(node, Paragraph) and node.children[0].text == "Second paragraph.":
+                renderer.config.style_map.mapping["MD Normal"] = "Title"
+            return False
+
+    config = RenderConfig(extensions=(SwitchBodyStyle(),))
+    blob = MarkdownWord(config).render_string("First paragraph.\n\nSecond paragraph.")
+    paragraphs = WordDocument(BytesIO(blob)).paragraphs
+
+    assert [paragraph.style.name for paragraph in paragraphs] == ["MD Normal", "Title"]
 
 
 def test_missing_mapped_template_style_is_actionable(tmp_path: Path):

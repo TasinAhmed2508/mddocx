@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 import re
 
+from mddocx.ast.base import Node
 from mddocx.ast.block import (
+    BlockQuote,
+    BulletList,
+    Callout,
     Heading,
     ImageBlock,
     Table,
@@ -11,7 +16,18 @@ from mddocx.ast.block import (
     CodeBlock,
     ChartBlock,
     DataTableBlock,
+    OrderedList,
 )
+
+
+def _reference_blocks(nodes: list[Node]) -> Iterator[Node]:
+    for node in nodes:
+        yield node
+        if isinstance(node, (BlockQuote, Callout)):
+            yield from _reference_blocks(node.children)
+        elif isinstance(node, (BulletList, OrderedList)):
+            for item in node.items:
+                yield from _reference_blocks(item.children)
 
 
 @dataclass(slots=True)
@@ -76,12 +92,15 @@ class ReferenceRegistry:
         plain_text,
         equation_number_format: str = "document",
         caption_number_format: str = "document",
+        listing_numbering: bool = True,
     ) -> "ReferenceRegistry":
         reg = cls()
+        if not listing_numbering:
+            reg._counts.pop("Listing")
         section = 0
         equation_in_section = 0
         caption_in_section = {"Figure": 0, "Table": 0, "Listing": 0}
-        for node in document.children:
+        for node in _reference_blocks(document.children):
             if isinstance(node, Heading):
                 title = plain_text(node.children)
                 if node.level == 1:
@@ -136,7 +155,9 @@ class ReferenceRegistry:
                     reg.register(node.identifier, "Equation", node.caption or "")
             elif isinstance(node, CodeBlock):
                 kind = "Figure" if (node.language or "").lower() == "mermaid" else "Listing"
-                if node.identifier and caption_number_format == "section":
+                if kind == "Listing" and not listing_numbering:
+                    reg.register(node.identifier, kind, node.caption or "Code listing")
+                elif node.identifier and caption_number_format == "section":
                     caption_in_section[kind] += 1
                     reg.register(
                         node.identifier,

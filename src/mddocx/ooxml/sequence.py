@@ -286,6 +286,7 @@ def local_name(tag: object) -> str | None:
     return _local_name(tag) if isinstance(tag, str) else None
 
 
+@lru_cache(maxsize=128)
 def _ranks(tag: str | None) -> dict[str, int] | None:
     if tag is None:
         return None

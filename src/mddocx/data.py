@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import csv
 import json
 from pathlib import Path
 from typing import Any
 
+from mddocx.ast.base import Node, SourcePosition
+from mddocx.ast.block import DataTableBlock, Table, TableCell, TableRow
+from mddocx.ast.inline import HardBreak, Text
+from mddocx.config import RenderConfig
 from mddocx.diagnostics import Diagnostic, MddocxError
+from mddocx.table_grid import check_grid_size
 
 
 @dataclass(slots=True)
@@ -14,14 +20,79 @@ class TabularData:
     columns: list[str]
     rows: list[list[Any]]
 
-    def column(self, name: str) -> list[Any]:
+    def column_index(self, name: str) -> int:
         try:
             idx = self.columns.index(name)
         except ValueError as exc:
             raise MddocxError(
                 Diagnostic("error", "DATA204", f"Unknown data column: {name}")
             ) from exc
+        if name in self.columns[idx + 1 :]:
+            raise MddocxError(Diagnostic("error", "DATA204", f"Ambiguous data column: {name}"))
+        return idx
+
+    def column(self, name: str) -> list[Any]:
+        idx = self.column_index(name)
         return [row[idx] if idx < len(row) else None for row in self.rows]
+
+
+def resolve_data_path(
+    base_dir: str | Path | None, source_path: str, source: SourcePosition | None = None
+) -> Path:
+    base = Path(base_dir or ".").expanduser().resolve()
+    target = (base / source_path).expanduser().resolve()
+    if not target.is_relative_to(base):
+        raise MddocxError(
+            Diagnostic(
+                "error",
+                "DATA209",
+                "Data source escapes the document base directory.",
+                source.file if source else None,
+                source.line if source else None,
+            )
+        )
+    return target
+
+
+def load_data_table(node: DataTableBlock, config: RenderConfig) -> Table:
+    path = resolve_data_path(config.base_dir, node.source_path, node.source)
+    data = load_tabular_data(
+        path, max_rows=config.data.max_rows, max_columns=config.data.max_columns
+    )
+    columns = node.columns or data.columns
+    check_grid_size(len(columns), len(data.rows) + 1, config.limits.max_table_cells, node.source)
+    indices: Sequence[int] = range(len(columns))
+    if node.columns:
+        try:
+            indices = [data.column_index(name) for name in columns]
+        except MddocxError as exc:
+            raise MddocxError(
+                Diagnostic(
+                    "error",
+                    "DATA208",
+                    exc.diagnostic.message,
+                    node.source.file if node.source else None,
+                    node.source.line if node.source else None,
+                )
+            ) from exc
+    rows = []
+    if columns:
+        rows.append(
+            TableRow(cells=[_data_cell(name, header=True) for name in columns], header=True)
+        )
+        rows.extend(
+            TableRow(cells=[_data_cell(raw[index]) for index in indices]) for raw in data.rows
+        )
+    return Table(rows=rows, identifier=node.identifier, caption=node.caption, source=node.source)
+
+
+def _data_cell(value: Any, *, header: bool = False) -> TableCell:
+    text = "" if value is None else str(value)
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    children: list[Node] = [Text(text=lines[0])]
+    for line in lines[1:]:
+        children.extend((HardBreak(), Text(text=line)))
+    return TableCell(children=children, header=header)
 
 
 def load_tabular_data(path: Path, *, max_rows: int = 10_000, max_columns: int = 100) -> TabularData:
@@ -39,26 +110,38 @@ def load_tabular_data(path: Path, *, max_rows: int = 10_000, max_columns: int = 
 
 
 def _load_csv(path: Path, *, max_rows: int, max_columns: int) -> TabularData:
+    rows: list[list[Any]] = []
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.reader(handle)
-            rows = list(reader)
+            header = next(reader, [])
+            width = len(header)
+            if width > max_columns:
+                raise MddocxError(
+                    Diagnostic("error", "DATA205", f"Data source exceeds {max_columns} columns.")
+                )
+            for row in reader:
+                if len(rows) >= max_rows:
+                    raise MddocxError(
+                        Diagnostic("error", "DATA206", f"Data source exceeds {max_rows} rows.")
+                    )
+                width = max(width, len(row))
+                if width > max_columns:
+                    raise MddocxError(
+                        Diagnostic(
+                            "error", "DATA205", f"Data source exceeds {max_columns} columns."
+                        )
+                    )
+                rows.append(row)
     except (OSError, UnicodeError, csv.Error) as exc:
         raise MddocxError(
             Diagnostic("error", "DATA203", f"Unable to read CSV data: {path.name}")
         ) from exc
-    if not rows:
-        return TabularData([], [])
-    columns = [str(v).strip() or f"Column {i + 1}" for i, v in enumerate(rows[0])]
-    if len(columns) > max_columns:
-        raise MddocxError(
-            Diagnostic("error", "DATA205", f"Data source exceeds {max_columns} columns.")
-        )
-    body = rows[1 : max_rows + 1]
-    if len(rows) - 1 > max_rows:
-        raise MddocxError(Diagnostic("error", "DATA206", f"Data source exceeds {max_rows} rows."))
-    normalized = [list(row) + [""] * max(0, len(columns) - len(row)) for row in body]
-    return TabularData(columns, [row[: len(columns)] for row in normalized])
+    header.extend([""] * (width - len(header)))
+    columns = [name.strip() or f"Column {index + 1}" for index, name in enumerate(header)]
+    for row in rows:
+        row.extend([""] * (width - len(row)))
+    return TabularData(columns, rows)
 
 
 def _load_json(path: Path, *, max_rows: int, max_columns: int) -> TabularData:

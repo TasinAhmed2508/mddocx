@@ -18,7 +18,7 @@ def render_list(renderer: DocxRenderer, node, level: int = 0) -> None:
         numbered = False
         for child in item.children:
             if isinstance(child, Paragraph) and not numbered:
-                p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                p = renderer._add_paragraph("MD Normal")
                 if item.task_checked is None:
                     renderer.numbering.apply(p, num_id, level)
                 else:
@@ -40,7 +40,7 @@ def render_list(renderer: DocxRenderer, node, level: int = 0) -> None:
             else:
                 renderer._render_block(child, list_level=level)
         if not numbered:
-            p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+            p = renderer._add_paragraph("MD Normal")
             if item.task_checked is None:
                 renderer.numbering.apply(p, num_id, level)
             else:

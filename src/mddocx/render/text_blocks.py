@@ -31,17 +31,18 @@ if TYPE_CHECKING:
 
 
 def render_heading(renderer: DocxRenderer, node: Heading) -> None:
-    p = renderer.document.add_paragraph(style=renderer._style(f"MD Heading {node.level}"))
+    p = renderer._add_paragraph(f"MD Heading {node.level}")
     renderer._apply_planned_paragraph_layout(p, node)
     if (
         renderer._heading_num_id is not None
         and node.level <= renderer.config.heading_numbering.max_level
     ):
         renderer.numbering.apply(p, renderer._heading_num_id, node.level - 1)
-    renderer._render_inlines(p, node.children)
-    renderer._apply_text_direction(p._p, renderer._plain_inline_text(node.children))
+    renderer._render_inlines(p, node.children, inherit_style=True)
+    plain = renderer._plain_inline_text(node.children)
+    renderer._apply_text_direction(p._p, plain)
     if renderer.config.heading_bookmarks:
-        plain = renderer._plain_inline_text(node.children) or f"Heading {renderer._bookmark_id}"
+        plain = plain or f"Heading {renderer._bookmark_id}"
         target = (
             renderer.references.get(node.identifier)
             if node.identifier and renderer.references
@@ -65,7 +66,7 @@ def render_heading(renderer: DocxRenderer, node: Heading) -> None:
             or renderer.config.references.caption_number_format == "section"
         )
     ):
-        counter_p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+        counter_p = renderer._add_paragraph("MD Normal")
         counter_p.paragraph_format.space_before = 0
         counter_p.paragraph_format.space_after = 0
         counter_p.paragraph_format.line_spacing = 0.01
@@ -78,18 +79,15 @@ def render_heading(renderer: DocxRenderer, node: Heading) -> None:
                 add_hidden_field(counter_p, rf" SEQ {label} \r 0 ", "0")
 
 
-def render_paragraph(renderer: DocxRenderer, node: Paragraph) -> None:
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+def render_paragraph(renderer: DocxRenderer, node: Paragraph, *, style: str = "MD Normal") -> None:
+    p = renderer._add_paragraph(style)
     renderer._render_inlines(p, node.children)
     renderer._apply_text_direction(p._p, renderer._plain_inline_text(node.children))
 
 
 def render_block_quote(renderer: DocxRenderer, node: BlockQuote) -> None:
     for child in node.children:
-        before = len(renderer.document.paragraphs)
-        renderer._render_block(child)
-        for p in renderer.document.paragraphs[before:]:
-            p.style = renderer._style("MD Quote")
+        renderer._render_block(child, paragraph_style="MD Quote")
 
 
 def render_callout(renderer: DocxRenderer, node: Callout) -> None:
@@ -99,10 +97,8 @@ def render_callout(renderer: DocxRenderer, node: Callout) -> None:
     first_paragraph = True
     for child in node.children or [Paragraph(children=[])]:
         if isinstance(child, Paragraph):
-            p = renderer.document.add_paragraph(
-                style=renderer._style(style_name)
-                if style_name in renderer.document.styles
-                else renderer._style("MD Quote")
+            p = renderer._add_paragraph(
+                style_name if style_name in renderer.document.styles else "MD Quote"
             )
             if first_paragraph:
                 r = p.add_run(
@@ -114,10 +110,8 @@ def render_callout(renderer: DocxRenderer, node: Callout) -> None:
             first_paragraph = False
         elif isinstance(child, (BulletList, OrderedList)):
             if first_paragraph:
-                p = renderer.document.add_paragraph(
-                    style=renderer._style(style_name)
-                    if style_name in renderer.document.styles
-                    else renderer._style("MD Quote")
+                p = renderer._add_paragraph(
+                    style_name if style_name in renderer.document.styles else "MD Quote"
                 )
                 r = p.add_run(clean_xml_text(node.title or label))
                 r.bold = True
@@ -129,16 +123,16 @@ def render_callout(renderer: DocxRenderer, node: Callout) -> None:
 
 def render_definition_list(renderer: DocxRenderer, node: DefinitionList) -> None:
     for item in node.items:
-        tp = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+        tp = renderer._add_paragraph("MD Normal")
         tp.paragraph_format.keep_with_next = True
         renderer._render_inlines(tp, item.term, bold=True)
-        dp = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+        dp = renderer._add_paragraph("MD Normal")
         dp.paragraph_format.left_indent = Mm(8)
         renderer._render_inlines(dp, item.definition)
 
 
 def render_horizontal_rule(renderer: DocxRenderer) -> None:
-    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+    p = renderer._add_paragraph("MD Normal")
     set_paragraph_bottom_border(p)
 
 
@@ -146,11 +140,12 @@ def render_page_break(renderer: DocxRenderer) -> None:
     renderer.document.add_page_break()
 
 
-def render_section_break(renderer: DocxRenderer) -> None:
+def render_section_break(renderer: DocxRenderer, node) -> None:
     sec = renderer.document.add_section(WD_SECTION.NEW_PAGE)
     sections.configure_section(
         renderer,
         sec,
+        orientation=node.orientation,
         preserve_page=bool(
             renderer.config.template and renderer.config.preserve_template_page_setup
         ),

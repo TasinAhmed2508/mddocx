@@ -5,16 +5,18 @@ import binascii
 import hashlib
 import socket
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from mddocx.config import ImageConfig, ResourcePolicy
 from mddocx.diagnostics import Diagnostic, MddocxError
+from mddocx.output import atomic_write_bytes
 from .media import MediaInfo
 from .models import ResourceFallback, ResourceRequest, ResourceResolution, ResolvedImage
 from .network import validate_remote_url
-from .preparation import convert_svg, prepare_image
+from .preparation import prepare_image
 
 
 _IMAGE_MIMES = {
@@ -53,6 +55,7 @@ class ResourceResolver:
         self.images = images or ImageConfig()
         self._temp = tempfile.TemporaryDirectory(prefix="mddocx-")
         self.temp_dir = Path(self._temp.name)
+        self._remote_images: dict[str, ResolvedImage] = {}
         self.cache_dir = (
             Path(policy.cache_directory).expanduser().resolve() if policy.cache_directory else None
         )
@@ -72,9 +75,11 @@ class ResourceResolver:
     def resolve_image(self, request: ResourceRequest) -> ResourceResolution:
         """Resolve an image without making ordinary conversion failures fatal."""
         try:
-            path, source_url, from_cache = self._acquire(request.source)
-            path, info = self._prepare_image_info(path, source_hint=request.source)
-            return ResolvedImage(
+            cached = self._remote_images.get(request.source)
+            if cached is not None and self.policy.allow_remote_resources:
+                return replace(cached, from_cache=True)
+            path, info, source_url, from_cache = self._acquire(request.source)
+            result = ResolvedImage(
                 path=path,
                 source_url=source_url,
                 media_type=info.media_type,
@@ -84,6 +89,9 @@ class ResourceResolver:
                 frame_count=info.frames,
                 from_cache=from_cache,
             )
+            if source_url is not None and self.policy.cache_remote_resources:
+                self._remote_images[request.source] = replace(result)
+            return result
         except MddocxError as exc:
             diagnostic = exc.diagnostic
             diagnostic.source_file = request.source_file
@@ -96,13 +104,21 @@ class ResourceResolver:
                 request.source, self._fallback_reason(diagnostic.code), diagnostic
             )
 
-    def _acquire(self, source: str) -> tuple[Path, str | None, bool]:
-        parsed = urlparse(source)
+    def _acquire(self, source: str) -> tuple[Path, MediaInfo, str | None, bool]:
+        try:
+            parsed = urlparse(source)
+        except ValueError as exc:
+            raise MddocxError(
+                Diagnostic("error", "RESOURCE208", "Malformed image resource URL.")
+            ) from exc
         if parsed.scheme.lower() == "data":
-            return self._resolve_data_uri(source), None, False
-        if parsed.scheme or parsed.netloc:
+            path = self._resolve_data_uri(source)
+        elif parsed.scheme or parsed.netloc:
             return self._resolve_remote(source)
-        return self._resolve_local(source), None, False
+        else:
+            path = self._resolve_local(source)
+        prepared, info = self._prepare_image(path)
+        return prepared, info, None, False
 
     @staticmethod
     def _fallback_reason(code: str) -> str:
@@ -161,7 +177,7 @@ class ResourceResolver:
         target = self.temp_dir / f"{hashlib.sha256(data).hexdigest()}{suffix}"
         if not target.exists():
             target.write_bytes(data)
-        return self._prepare_image(target, source_hint=mime)
+        return target
 
     def _resolve_local(self, source: str) -> Path:
         candidate = (self.base_dir / source).resolve()
@@ -177,9 +193,9 @@ class ResourceResolver:
             raise MddocxError(
                 Diagnostic("error", "RESOURCE205", "Resource exceeds configured size limit.")
             )
-        return self._prepare_image(candidate, source_hint=source)
+        return candidate
 
-    def _resolve_remote(self, source: str) -> tuple[Path, str, bool]:
+    def _resolve_remote(self, source: str) -> tuple[Path, MediaInfo, str, bool]:
         if not self.policy.allow_remote_resources:
             raise MddocxError(
                 Diagnostic(
@@ -197,12 +213,12 @@ class ResourceResolver:
         if self.cache_dir and self.policy.cache_remote_resources:
             matches = list(self.cache_dir.glob(f"{cache_key}.*"))
             if matches:
-                # Cache contains only content that passed full validation previously.
-                return matches[0], source, True
+                prepared, info = self._prepare_image(matches[0])
+                return prepared, info, source, True
 
         handler = _SafeRedirectHandler(self)
         opener = build_opener(handler)
-        req = Request(source, headers={"User-Agent": "mddocx/0.4 (+https image fetch)"})
+        req = Request(source, headers={"User-Agent": "mddocx-native (image fetch)"})
         try:
             with opener.open(req, timeout=self.policy.timeout_seconds) as response:
                 final_url = response.geturl()
@@ -237,7 +253,7 @@ class ResourceResolver:
                 Diagnostic("error", "RESOURCE207", f"Unable to download remote resource: {source}")
             ) from exc
         try:
-            prepared, info = self._prepare_image_info(target, source_hint=source)
+            prepared, info = self._prepare_image(target)
         except MddocxError:
             target.unlink(missing_ok=True)
             raise
@@ -253,20 +269,12 @@ class ResourceResolver:
             validated_key = hashlib.sha256(validators.encode("utf-8")).hexdigest()[:16]
             cached = self.cache_dir / f"{cache_key}.{validated_key}{info.suffix}"
             if not cached.exists():
-                cached.write_bytes(prepared.read_bytes())
+                atomic_write_bytes(cached, prepared.read_bytes())
             prepared = cached
-        return prepared, final_url, False
+        return prepared, info, final_url, False
 
     def _validate_remote_url(self, url: str) -> None:
         validate_remote_url(url, self.policy)
 
-    def _prepare_image(self, path: Path, source_hint: str) -> Path:
-        return self._prepare_image_info(path, source_hint)[0]
-
-    def _prepare_image_info(self, path: Path, source_hint: str) -> tuple[Path, MediaInfo]:
+    def _prepare_image(self, path: Path) -> tuple[Path, MediaInfo]:
         return prepare_image(path, temp_dir=self.temp_dir, policy=self.policy, images=self.images)
-
-    def _convert_svg(self, path: Path) -> Path:
-        return convert_svg(
-            path, self.temp_dir, self.images, max_bytes=self.policy.max_resource_size
-        )

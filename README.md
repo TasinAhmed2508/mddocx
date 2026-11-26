@@ -210,8 +210,10 @@ Run mddocx --help for the complete command reference.
 
 GFM pipe tables, consistently aligned fixed-width tables, and complete HTML tables convert to
 editable Word tables. HTML table captions, header groups, alignment, line breaks, and merged
-cells are supported. Extra pipe cells widen the table and produce a diagnostic. Missing cells
-are padded. Unsupported HTML tables remain visible as source text with a diagnostic.
+cells are supported. HTML footers follow body rows, and `rowspan="0"` merges to the end of
+its own row group. TeX delimiters in HTML cell text produce editable equations. Code and link
+targets keep their literal text. Extra pipe cells widen the table and produce a diagnostic.
+Missing cells are padded. Unsupported HTML tables remain visible as source text with a diagnostic.
 
 ## Verify, recover, and watch
 
@@ -224,14 +226,24 @@ are padded. Unsupported HTML tables remain visible as source text with a diagnos
     mddocx completions powershell
 
 Verification compares normalized Markdown and DOCX parts offline. It checks ordered body text,
-heading levels and bookmarks, hard breaks, list nesting and task status, table cells, hyperlink
-targets, image alt text, native equation presence and identifiers in simple equations,
-footnotes and endnotes, simple captions and
-reference fields, and native chart/workbook relationships. It returns **0** for a match, **3**
-for differences or incomplete coverage, and **2** for invalid input or package errors. Visual
-pagination, equation equivalence, drawing content, workbook cell values, and generated structures
-such as Mermaid panels, template content, and bibliographies require their own checks. The
-machine-readable report identifies constructs the verifier cannot compare.
+heading levels and bookmarks, hard breaks, list nesting and task status, table cells from
+Markdown, CSV/JSON, and detected text layouts, including nested form photo cells, hyperlink
+targets, image alt text, native equation structure and source
+identifiers and numerals, alignment arrays and matrices, plain and labeled code listings,
+footnotes and endnotes, simple captions and reference fields, native chart/workbook
+relationships, and Word section boundaries, break types, and orientation. It returns **0**
+for a match, **3** for differences or incomplete coverage, and **2** for invalid input or
+package errors. Visual pagination, algebraic equivalence, drawing content, workbook cell
+values, and generated structures such as Mermaid panels, template content, and bibliographies
+require their own checks. The machine-readable
+report identifies constructs the verifier cannot compare.
+
+Pass the same layout options you used to convert the file, including
+`--auto-landscape-tables`, `--orientation`, and `--page-size` when applicable.
+For example, run `mddocx verify report.md report.docx --auto-landscape-tables --json`
+for a report converted with automatic landscape tables.
+Use the same `--code-line-numbers`, `--code-language-labels`, and `--no-mermaid` switches
+when they were used for conversion.
 
 Conversion is strict by default under the existing image, math, and diagram policies.
 Explicit recovery replaces a malformed chart or data-table declaration or an unsupported
@@ -280,9 +292,16 @@ inspect canonical AST and layout decisions without duplicating compiler internal
 ### AI-generated equations
 
 Common inline forms (`\\(...\\)` and `$...$`), display forms (`\\[...\\]` and `$$...$$`),
-and `math`, `latex`, or `tex` fenced blocks are converted to editable Word equations. Math-like
-text inside code spans and ordinary code fences is preserved as code, and common currency forms
-are preserved as text.
+and `math`, `latex`, or `tex` fenced blocks are converted to editable Word equations. The
+bundled MathJax engine also supports `\ce` reactions and `\pu` units with common chemistry
+arrows. Math-like text inside code spans and ordinary code fences is preserved as code, and
+common currency forms are preserved as text.
+
+Declare local macros at the start of the equation that uses them, for example
+`\newcommand{\rate}[1]{\frac{#1}{60}}\rate{x}`. Leading `\newcommand` definitions
+with positional arguments and an optional first-argument default work with the Python
+math engine too. AMS `\genfrac` can produce editable fractions with custom delimiters
+and a hidden rule.
 
 When an equation uses syntax that the active math engine cannot convert, mddocx preserves its
 source as editable text and emits a `MATH201` warning. Use `--strict-math` when every equation must
@@ -332,10 +351,38 @@ Document settings can be defined at the top of a Markdown file:
     footer: Confidential
     ---
 
+## Report layout
+
+Use `--theme report` for navy headings, more defined heading spacing, and compact tables
+with blue headers.
+Use `--auto-landscape-tables` to fit wide grids in a landscape section and resume the prior
+orientation afterward. For a deliberate section boundary, put
+`<!-- sectionbreak orientation=landscape -->` or `<!-- sectionbreak orientation=portrait -->`
+on its own line.
+
+### Linked images
+
+Use `![Description](https://example.org/chart.jpg)` to embed a remote figure. A direct
+HTTP(S) image URL on its own line or a standalone link such as
+`[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.
+Markdown formatting in image labels becomes plain Word alternative text, with TeX source
+for math in the label.
+An image URL or labeled image link on its own in a Markdown or HTML table cell, footnote,
+or endnote embeds a picture that links back to the original URL. Links in prose keep their text.
+Append figure attributes to a standalone link to set its size or caption, for example
+`[Chart description](https://example.org/chart.jpg) {width=70% caption="Quarterly output"}`.
+To make the picture clickable, wrap an explicit image in a Markdown link, as in
+`[![Chart description](chart.jpg)](https://example.org/report)`. mddocx embeds the picture
+and writes the click destination as a Word hyperlink. This form also works with
+document bookmarks, inside table cells, and in footnote and endnote definitions.
+For files served from extensionless URLs, use the explicit image syntax. The resource
+resolver checks the downloaded content before embedding and uses the configured fallback
+if the image is unavailable. Images inside table cells fit within the cell padding.
+
 ## Privacy and security defaults
 
-- Bounded public HTTP(S) image resources are allowed by default. Failed image syntax becomes a
-  clickable fallback; ordinary Markdown links are never downloaded.
+- Bounded public HTTP(S) image resources are allowed by default. Failed figures become
+  clickable fallbacks. Other hyperlinks remain links.
 - Base64 image data URIs are decoded locally, never sent over the network, and remain subject to
   the configured per-resource size limit and image validation.
 - HTTPS image downloads can be explicitly enabled and restricted by domain.
@@ -428,6 +475,7 @@ Rows must have equal numbers of string cells; widths are positive relative weigh
 Merge coordinates are zero-based `[row, column]` pairs with inclusive endpoints.
 Covered cells must be empty, and merge rectangles cannot overlap. This preserves
 content and makes scan-specific structure explicit rather than guessing from text.
+`mddocx verify` checks the grid, merged spans, and cell text in the resulting Word table.
 
 ````markdown
 ```layout-table

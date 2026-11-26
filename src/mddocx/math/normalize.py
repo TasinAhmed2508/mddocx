@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from .macros import expand_newcommands
 from .models import NormalizedEquation
 
 _ALIASES = {
@@ -12,6 +13,7 @@ _ALIASES = {
 }
 _INVISIBLE = {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
 _TAG = re.compile(r"(?<!\\)\\tag\*?\s*\{([^{}]*)\}\s*$")
+_PRESCRIPT = re.compile(r"(?<!\\)\\prescript(?![A-Za-z])")
 
 
 def normalize_equation(source: str) -> NormalizedEquation:
@@ -29,12 +31,20 @@ def normalize_equation(source: str) -> NormalizedEquation:
     if cleaned != text:
         text = cleaned
         repairs.append("removed invisible formatting characters")
+    expanded = expand_newcommands(text)
+    if expanded != text:
+        text = expanded
+        repairs.append("expanded equation-local macros")
     for old, new in _ALIASES.items():
         pattern = re.compile(re.escape(old) + r"(?![A-Za-z])")
         replaced = pattern.sub(lambda _: new, text)
         if replaced != text:
             text = replaced
             repairs.append(f"normalized {old} to {new}")
+    rewritten = _rewrite_prescripts(text)
+    if rewritten != text:
+        text = rewritten
+        repairs.append("normalized prescript")
     label = None
     match = _TAG.search(text)
     if match:
@@ -47,6 +57,43 @@ def normalize_equation(source: str) -> NormalizedEquation:
         text += "}" * missing
         repairs.append(f"balanced {missing} missing closing brace(s)")
     return NormalizedEquation(source, text, tuple(repairs), label)
+
+
+def _rewrite_prescripts(text: str) -> str:
+    cursor = 0
+    pieces: list[str] = []
+    for match in _PRESCRIPT.finditer(text):
+        if match.start() < cursor:
+            continue
+        start = match.end()
+        groups: list[str] = []
+        for _ in range(3):
+            while start < len(text) and text[start].isspace():
+                start += 1
+            if start == len(text) or text[start] != "{":
+                break
+            depth, escaped = 1, False
+            for end in range(start + 1, len(text)):
+                char = text[end]
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        groups.append(text[start + 1 : end])
+                        start = end + 1
+                        break
+            else:
+                break
+        if len(groups) == 3:
+            sup, sub, base = groups
+            pieces.extend([text[cursor : match.start()], f"{{}}_{{{sub}}}^{{{sup}}}{{{base}}}"])
+            cursor = start
+    return "".join(pieces) + text[cursor:]
 
 
 def _strip_one_delimiter(text: str) -> str:

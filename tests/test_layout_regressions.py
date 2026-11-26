@@ -4,6 +4,7 @@ from io import BytesIO
 from zipfile import ZipFile
 
 from lxml import etree
+import pytest
 
 from mddocx import Compiler, MarkdownWord, RenderConfig, TableConfig, inspect_docx_bytes
 
@@ -43,6 +44,39 @@ Portrait content continues.
     assert [item.code for item in compiler.diagnostics] == ["TABLE301"]
 
 
+@pytest.mark.parametrize(
+    "before, after, expected, table_count",
+    [
+        ("", "", ["landscape"], 1),
+        ("Intro.\n\n", "", ["portrait", "landscape"], 1),
+        ("", "\n\n# After", ["landscape", "portrait"], 1),
+        (
+            "",
+            "\n\n<!-- sectionbreak orientation=portrait -->\n\n# After",
+            ["landscape", "portrait"],
+            1,
+        ),
+        ("", "\n\n{wide}", ["landscape", "landscape"], 2),
+        ("", "\n\n| Narrow |\n| --- |\n| A |", ["landscape", "portrait"], 2),
+    ],
+)
+def test_automatic_landscape_does_not_leave_empty_portrait_sections(
+    tmp_path, before, after, expected, table_count
+):
+    wide = "| A | B |\n| --- | --- |\n| first | second |"
+    config = RenderConfig(table=TableConfig(auto_landscape=True, landscape_min_columns=2))
+    source = tmp_path / "table.md"
+    source.write_text(before + wide + after.format(wide=wide), encoding="utf-8")
+    payload = MarkdownWord(config).render_string(source.read_text(encoding="utf-8"))
+    root = _document_xml(payload)
+    sections = root.xpath(".//w:sectPr/w:pgSz", namespaces=NS)
+    landscape_name = f"{{{NS['w']}}}orient"
+    assert [page.get(landscape_name, "portrait") for page in sections] == expected
+    assert len(root.findall(".//w:body/w:tbl", NS)) == table_count
+    verification = Compiler(config).verify(source, payload)
+    assert verification.ok, verification.findings
+
+
 def test_layout_plan_exposes_the_reason_before_ooxml_rendering():
     markdown = """| A | B | C | D | E | F |
 |---|---|---|---|---|---|
@@ -60,6 +94,26 @@ def test_layout_plan_exposes_the_reason_before_ooxml_rendering():
     assert len(decision.column_widths_mm) == 6
     assert sum(decision.column_widths_mm) <= decision.available_width_mm + 0.01
     assert result.stats.plan_ms >= 0
+
+
+def test_verification_keeps_landscape_until_an_explicit_portrait_section(tmp_path):
+    source = tmp_path / "report.md"
+    source.write_text(
+        "# Before\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n"
+        "This text stays in landscape.\n\n"
+        "<!-- sectionbreak orientation=portrait -->\n\n# Portrait resumes\n",
+        encoding="utf-8",
+    )
+    config = RenderConfig(
+        table=TableConfig(
+            auto_landscape=True, landscape_min_columns=2, restore_portrait_after_landscape=False
+        )
+    )
+    compiler = Compiler(config)
+    docx = source.with_suffix(".docx")
+    compiler.compile_file(source, docx)
+    result = compiler.verify(source, docx)
+    assert result.ok, result.findings
 
 
 def test_table_header_repeats_and_rows_cannot_split():

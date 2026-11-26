@@ -39,6 +39,13 @@ def main() -> None:
         "mixed": build_benchmark_markdown(20),
         "wide_table": table,
         "unique_math": "\n\n".join(f"Equation $x^{i}+1$." for i in range(1, 21)),
+        "technical_math": "\n\n".join(
+            rf"$$\boxed{{\varepsilon_{{{i}}}\approx\frac{{{i}}}{{32}}\quad\text{{relative error}}}}$$"
+            for i in range(1, 81)
+        ),
+        "large_operator_math": "\n\n".join(
+            rf"$$\int_0^{{{i}}} x\,dx+\sum\nolimits_{{j=1}}^{{{i}}} j$$" for i in range(1, 33)
+        ),
         "repeated_math": "\n\n".join(["Equation $x^2+1$."] * 40),
         "package_parts": (
             "Claim.[^note]\n\n[^note]: A native note.\n\n"

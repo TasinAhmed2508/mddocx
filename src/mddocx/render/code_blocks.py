@@ -69,7 +69,7 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
             if diagram_caption and renderer.config.references.figure_caption_position == "above":
                 citations.render_caption(renderer, "Figure", diagram_caption, node.identifier)
             for index, path in enumerate(paths):
-                p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                p = renderer._add_paragraph("MD Normal")
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 p.paragraph_format.keep_together = True
                 if index:
@@ -92,11 +92,11 @@ def render_code_block(renderer: DocxRenderer, node: CodeBlock) -> None:
             ):
                 if not items:
                     continue
-                heading = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                heading = renderer._add_paragraph("MD Normal")
                 heading.paragraph_format.keep_with_next = True
                 heading.add_run(title).bold = True
                 for item in items:
-                    p = renderer.document.add_paragraph(style=renderer._style("MD Normal"))
+                    p = renderer._add_paragraph("MD Normal")
                     text = item
                     run = p.add_run(clean_xml_text(text))
                     renderer._configure_run(run, text)
@@ -138,7 +138,7 @@ def write_fenced_code(renderer: DocxRenderer, node: CodeBlock) -> None:
     highlighted = set(renderer.config.code.highlight_lines) | set(node.highlight_lines)
     language = (node.language or "text").strip() or "text"
     if show_label and language.lower() not in {"text", "plain", "plaintext"}:
-        lp = renderer.document.add_paragraph(style=renderer._style("MD Code Label"))
+        lp = renderer._add_paragraph("MD Code Label")
         lp.add_run(clean_xml_text(language))
 
     lexer = None
@@ -157,7 +157,7 @@ def write_fenced_code(renderer: DocxRenderer, node: CodeBlock) -> None:
     lines = node.code.splitlines() or [""]
     width = len(str(len(lines)))
     for line_no, raw_line in enumerate(lines, 1):
-        p = renderer.document.add_paragraph(style=renderer._style("MD Code"))
+        p = renderer._add_paragraph("MD Code")
         renderer._apply_planned_paragraph_layout(p, node)
         p.paragraph_format.space_before = 0
         p.paragraph_format.space_after = 0

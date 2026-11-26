@@ -122,9 +122,10 @@
       "optional_renderer": "fields supported with rendering differences",
       "tests": [
         "tests/test_diagnostic_locations.py",
-        "tests/test_technical_report.py"
+        "tests/test_technical_report.py",
+        "tests/test_verification.py"
       ],
-      "verify": "Presence of native OMML"
+      "verify": "Native numbered equations, caption text and numbering fields, chapter counter resets, paired bookmarks, and cross-reference targets and switches"
     },
     {
       "id": "citations-bibliography",

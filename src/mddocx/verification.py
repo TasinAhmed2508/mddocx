@@ -41,6 +41,7 @@ from .math.validation import (
 )
 from .ooxml.bangla import LEGACY_BANGLA_FONT, decode_bijoy
 from .ooxml.charts import C, CHART_REL, PACKAGE_REL
+from .ooxml.fields import WordField, read_field_content, read_field_instructions
 from .ooxml.text import INLINE_MATH_SEPARATOR, clean_xml_text
 from .references import ReferenceRegistry
 from .table_grid import iter_grid_rows, repeatable_header_rows, table_grid
@@ -58,6 +59,14 @@ _NATIVE_MATH = {
     "tbinom": "f",
     "sqrt": "rad",
 }
+
+
+def _sequence_fields(label: str, number, section_scoped: bool) -> tuple[tuple[str, ...], ...]:
+    sequence = ("SEQ", label, r"\*", "ARABIC")
+    if section_scoped and isinstance(number, str) and "." in number:
+        reset = (r"\r", "1") if number.split(".", 1)[1] == "1" else ()
+        return (("STYLEREF", "MD Heading 1", r"\n"), sequence + reset + (r"\s", "1"))
+    return (sequence,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +202,7 @@ def compare_document(
                     and (target.title or "").lower().startswith(prefix.lower())
                 ):
                     tokens.append(prefix + " ")
-                tokens.append(("ref", target.bookmark))
+                tokens.append(("ref", target.bookmark, r"\h"))
             else:
                 incomplete(f"Inline {type(node).__name__} coverage is incomplete.", node)
         return _merge_text(tokens)
@@ -203,12 +212,24 @@ def compare_document(
             expected.extend(units)
             return
         target = references.get(node.identifier) if node.identifier else None
-        field_label = (
-            "" if label == "Listing" and not config.references.listing_numbering else label
-        )
+        fields: tuple[tuple[str, ...], ...] = ()
+        visible = clean_xml_text(text)
+        if label != "Listing" or config.references.listing_numbering:
+            fields = _sequence_fields(
+                label,
+                target.number if target else None,
+                config.references.caption_number_format == "section",
+            )
+            display = getattr(config.references, f"{label.lower()}_label")
+            visible = (
+                display
+                + " "
+                + ("." if len(fields) == 2 else "")
+                + (" — " + visible if text else "")
+            )
         caption = _Unit(
             "caption",
-            (field_label, clean_xml_text(text), target.bookmark if target else None),
+            (_merge_text((visible,)), target.bookmark if target else None, fields),
             node,
         )
         if getattr(config.references, f"{label.lower()}_caption_position") == "above":
@@ -224,6 +245,17 @@ def compare_document(
                 expected.append(
                     _Unit("heading", (node.level, bookmark, expected_inlines(node.children)), node)
                 )
+                if node.level == 1 and config.references.enabled:
+                    resets = []
+                    if config.references.equation_number_format == "section":
+                        resets.append("Equation")
+                    if config.references.caption_number_format == "section":
+                        resets.extend(("Figure", "Table", "Listing"))
+                    if resets:
+                        reset_fields = (("SEQ", "Section", r"\*", "ARABIC"),) + tuple(
+                            ("SEQ", label, r"\r", "0") for label in resets
+                        )
+                        expected.append(_Unit("section counters", reset_fields, node))
             elif isinstance(node, block.Paragraph):
                 expected.append(_Unit("paragraph", expected_inlines(node.children), node))
             elif isinstance(node, (block.BulletList, block.OrderedList)):
@@ -339,15 +371,21 @@ def compare_document(
                     and config.references.equation_numbering
                 ):
                     target = references.get(node.identifier)
+                    fields = _sequence_fields(
+                        "Equation",
+                        target.number if target else None,
+                        config.references.equation_number_format == "section",
+                    )
                     expected.append(
-                        _Unit("numbered equation", (target.bookmark if target else None,), node)
+                        _Unit(
+                            "numbered equation", (target.bookmark if target else None, fields), node
+                        )
                     )
                 else:
                     expected.append(_Unit("paragraph", (("math",),), node))
                 if node.caption:
-                    expected.append(
-                        _Unit("caption", ("", clean_xml_text(node.caption), None), node)
-                    )
+                    text = _merge_text((clean_xml_text(node.caption),))
+                    expected.append(_Unit("caption", (text, None, ()), node))
             elif isinstance(node, block.CodeBlock):
                 title = (
                     (node.caption or ("Code listing" if node.identifier else None))
@@ -375,9 +413,9 @@ def compare_document(
                 if label and language.lower() not in {"text", "plain", "plaintext"}:
                     units.append(_Unit("paragraph", (clean_xml_text(language),), node))
                 for index, line in enumerate(lines, 1):
-                    prefix = f"{index:>{len(str(len(lines)))}}  " if numbers else ""
+                    line_number = f"{index:>{len(str(len(lines)))}}  " if numbers else ""
                     units.append(
-                        _Unit("paragraph", _merge_text((prefix + clean_xml_text(line),)), node)
+                        _Unit("paragraph", _merge_text((line_number + clean_xml_text(line),)), node)
                     )
                 captioned(units, "Listing", title, node)
             elif isinstance(node, block.PageBreak):
@@ -574,6 +612,22 @@ def _describe(units: list[_Unit]) -> str:
 
 
 def _replacement_message(expected: list[_Unit], actual: list[_Unit]) -> str:
+    if len(expected) == len(actual) == 1 and expected[0].kind == actual[0].kind:
+        kind = expected[0].kind
+        field_index = {"caption": 2, "numbered equation": 1}.get(kind)
+        if field_index is not None:
+            wanted, found = expected[0].content[field_index], actual[0].content[field_index]
+        elif kind == "section counters":
+            wanted, found = expected[0].content, actual[0].content
+        else:
+            wanted = found = ()
+        for before, after in zip_longest(wanted, found):
+            if before != after:
+                before_text = " ".join(before)[:150] if before else "no field"
+                after_text = " ".join(after)[:150] if after else "no field"
+                return (
+                    f"Word {kind} instructions changed. Expected {before_text}, found {after_text}."
+                )
     if len(expected) == len(actual) == 1 and expected[0].kind == actual[0].kind == "table":
         columns, rows = expected[0].content
         found_columns, found_rows = actual[0].content
@@ -616,8 +670,7 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
         target = chart_targets.get(rid, "")
         target = target.lstrip("/") if target.startswith("/") else "word/" + target
         chart_root = roots.get(target)
-        plot = chart_root.find(f".//{{{C}}}plotArea") if chart_root is not None else None
-        if plot is None or plot.find(f".//{{{C}}}ser") is None:
+        if chart_root is None or chart_root.find(f".//{{{C}}}plotArea//{{{C}}}ser") is None:
             findings.append(
                 VerificationFinding("VERIFY303", "Missing native ChartML plot or series.", target)
             )
@@ -807,7 +860,17 @@ def _read_body(
     body = roots[BODY].find(f"{{{W}}}body")
     if body is None:
         return [], []
-    result = []
+    starts = {}
+    bookmarks = {}
+    for marker in body.iter(qn("w:bookmarkStart"), qn("w:bookmarkEnd")):
+        ident = marker.get(qn("w:id"))
+        if ident is None:
+            continue
+        if marker.tag == qn("w:bookmarkStart"):
+            starts[ident] = marker
+        elif (start := starts.pop(ident, None)) is not None:
+            bookmarks[start] = start.get(qn("w:name"))
+    result: list[_Unit] = []
     section_ends = []
     pending = None
     for child in body:
@@ -817,22 +880,31 @@ def _read_body(
         if child.tag == f"{{{W}}}sectPr":
             section_ends.append(_section_end(len(result), child))
         if child.tag == f"{{{W}}}tbl":
-            instructions = child.xpath(".//w:instrText/text()", namespaces=NS)
-            if any("SEQ Equation" in instruction for instruction in instructions):
+            fields = tuple(read_field_instructions(child))
+            if any(words[:2] == ("SEQ", "Equation") for words in fields):
                 mark = child.find(".//w:bookmarkStart", NS)
-                name = mark.get(f"{{{W}}}name") if mark is not None else None
+                name = bookmarks.get(mark)
                 equations = child.xpath(".//m:oMath", namespaces=NS)
                 result.append(
                     _Unit(
                         "numbered equation",
-                        (name,) if len(equations) == 1 else (name, len(equations)),
+                        (name, fields) if len(equations) == 1 else (name, fields, len(equations)),
                     )
                 )
                 continue
             result.append(_Unit("table", _read_table_content(child, links)))
         elif child.tag == f"{{{W}}}p":
             pending = child.find("w:pPr/w:sectPr", NS)
-            tokens = _read_inlines(child, links)
+            style = child.find("w:pPr/w:pStyle", NS)
+            name = style.get(f"{{{W}}}val", "") if style is not None else ""
+            hidden_fields = child.find("w:r/w:rPr/w:vanish", NS) is not None and (
+                child.find("w:r/w:instrText", NS) is not None
+                or child.find("w:fldSimple", NS) is not None
+            )
+            instructions: list[tuple[str, ...]] | None = (
+                [] if name == "MDCaption" or hidden_fields else None
+            )
+            tokens = _read_inlines(child, links, fields=instructions)
             before, after = child.getprevious(), child.getnext()
             if (
                 len(child) == 0
@@ -852,34 +924,21 @@ def _read_body(
                 spacing = child.find("w:pPr/w:spacing", NS)
                 if spacing is not None and spacing.get(f"{{{W}}}line") == "20":
                     continue
-            style = child.find("w:pPr/w:pStyle", NS)
-            name = style.get(f"{{{W}}}val", "") if style is not None else ""
             heading = _HEADING.fullmatch(name)
             level = child.find("w:pPr/w:numPr/w:ilvl", NS)
             checkbox = child.find(".//w14:checked", NS)
             if heading:
                 marker = child.find(f"{{{W}}}bookmarkStart")
-                bookmark = marker.get(f"{{{W}}}name") if marker is not None else None
+                bookmark = bookmarks.get(marker)
                 result.append(_Unit("heading", (int(heading[1]), bookmark, tokens)))
             elif name == "MDCaption":
-                instructions = child.xpath(".//w:instrText/text()", namespaces=NS)
-                labels = [
-                    instruction.split()[1]
-                    for instruction in instructions
-                    if len(instruction.split()) > 1 and instruction.lstrip().startswith("SEQ ")
-                ]
-                label = labels[-1] if labels else ""
-                text = "".join(token for token in tokens if isinstance(token, str))
                 mark = child.find("w:bookmarkStart", NS)
-                bookmark = mark.get(f"{{{W}}}name") if mark is not None else None
                 result.append(
-                    _Unit("caption", (label, text.split(" — ", 1)[-1] if label else text, bookmark))
+                    _Unit("caption", (tokens, bookmarks.get(mark), tuple(instructions or ())))
                 )
-            elif (
-                child.xpath(".//w:rPr/w:vanish", namespaces=NS)
-                and child.find(".//w:instrText", NS) is not None
-            ):
-                continue
+            elif hidden_fields:
+                if instructions and any(words[:1] == ("SEQ",) for words in instructions):
+                    result.append(_Unit("section counters", tuple(instructions)))
             elif checkbox is not None:
                 if tokens and isinstance(tokens[0], str):
                     tokens = (tokens[0].removeprefix(" "), *tokens[1:])
@@ -940,11 +999,23 @@ def _read_cell_content(cell: etree._Element, links: dict) -> tuple:
     return _merge_text(tokens)
 
 
-def _read_inlines(parent: etree._Element, links: dict) -> tuple:
-    tokens = []
-    ref_field = False
-    for node in parent:
-        if node.tag == f"{{{W}}}t":
+def _read_inlines(
+    parent: etree._Element, links: dict, *, fields: list[tuple[str, ...]] | None = None
+) -> tuple:
+    return _merge_text(_read_inline_content(read_field_content(parent), links, fields))
+
+
+def _read_inline_content(items, links, fields=None) -> list:
+    tokens: list = []
+    for node in items:
+        if isinstance(node, WordField):
+            if fields is not None:
+                fields.append(node.words)
+            elif node.words[:1] == ("REF",):
+                tokens.append(("ref", *node.words[1:]))
+            else:
+                tokens.extend(_read_inline_content(node.result, links))
+        elif node.tag == f"{{{W}}}t":
             run = node.getparent()
             font = run.find("w:rPr/w:rFonts", NS) if run is not None else None
             text = node.text or ""
@@ -985,17 +1056,6 @@ def _read_inlines(parent: etree._Element, links: dict) -> tuple:
         elif node.tag in {f"{{{W}}}footnoteReference", f"{{{W}}}endnoteReference"}:
             kind = etree.QName(node).localname.removesuffix("Reference")
             tokens.append(("note", kind, node.get(f"{{{W}}}id")))
-        elif node.tag == f"{{{W}}}r":
-            instruction = node.findtext(f"{{{W}}}instrText", "")
-            match = re.match(r"\s*REF\s+(\S+)", instruction, re.I)
-            end = node.find(f"{{{W}}}fldChar")
-            if match:
-                tokens.append(("ref", match[1]))
-                ref_field = True
-            elif end is not None and end.get(f"{{{W}}}fldCharType") == "end":
-                ref_field = False
-            elif not ref_field:
-                tokens.extend(_read_inlines(node, links))
         elif node.tag in {f"{{{W}}}p", f"{{{M}}}oMathPara"}:
-            tokens.extend(_read_inlines(node, links))
-    return _merge_text(tokens)
+            tokens.extend(_read_inlines(node, links, fields=fields))
+    return tokens

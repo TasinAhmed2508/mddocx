@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Verify caption and equation numbering instructions, chapter counter resets, and
+  cross-reference switches. Read split and simple Word fields and check that
+  heading, caption, and equation bookmarks have matching end markers.
 - Speed up long reports by writing planned paragraph properties through the shared
   ordered XML helpers and skipping elements outside the schema-order checks.
 

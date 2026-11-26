@@ -11,6 +11,7 @@ from zipfile import BadZipFile, ZipFile
 
 from lxml import etree
 
+from .ooxml.fields import read_field_instructions
 from .schema_order import find_schema_order_violations
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -271,17 +272,15 @@ def _inspect_parts(
     report.duplicate_bookmark_names = len(bookmark_names) - len(bookmark_targets)
     report.dangling_internal_hyperlinks = sum(1 for a in anchors if a and a not in bookmark_targets)
     report.comment_references = len(document.xpath(".//w:commentReference", namespaces=NS))
-    field_nodes = [n for root in content_roots for n in root.xpath(".//w:instrText", namespaces=NS)]
-    report.fields = len(field_nodes)
-    report.seq_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("SEQ "))
-    report.ref_fields = sum(1 for n in field_nodes if (n.text or "").strip().startswith("REF "))
+    fields = [words for root in content_roots for words in read_field_instructions(root)]
+    report.fields = len(fields)
+    report.seq_fields = sum(words[:1] == ("SEQ",) for words in fields)
     ref_targets = []
-    for n in field_nodes:
-        text = (n.text or "").strip()
-        if text.startswith("REF "):
-            parts = text.split()
-            if len(parts) >= 2:
-                ref_targets.append(parts[1])
+    for words in fields:
+        if words[:1] == ("REF",):
+            report.ref_fields += 1
+            if len(words) >= 2:
+                ref_targets.append(words[1])
     report.dangling_ref_fields = sum(1 for name in ref_targets if name not in bookmark_targets)
     report.images_missing_alt = sum(
         not item.get("descr", "").strip() and item.find(".//adec:decorative[@val='1']", NS) is None

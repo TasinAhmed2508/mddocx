@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
 import re
 
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from lxml import etree
 
 from mddocx.ooxml.sequence import insert_ordered
 
@@ -23,13 +26,104 @@ _FIELD_SWITCHES = {
         for name in ("PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "AUTHOR", "DOCPROPERTY")
     },
 }
+_FIELD_TOKEN = re.compile(r'"[^"]*"|\S+')
+_RUN, _CHAR, _CODE, _SIMPLE = map(qn, ("w:r", "w:fldChar", "w:instrText", "w:fldSimple"))
+
+
+@dataclass(frozen=True, slots=True)
+class WordField:
+    words: tuple[str, ...]
+    result: list[etree._Element | WordField]
+
+
+@dataclass(slots=True)
+class _OpenField:
+    instruction: list[str] = field(default_factory=list)
+    result: list[etree._Element | WordField] = field(default_factory=list)
+    separated: bool = False
+
+
+def _field_words(instruction: str) -> tuple[str, ...]:
+    words = _FIELD_TOKEN.findall(instruction)
+    if not words or any(ord(char) < 32 or ord(char) == 127 for char in instruction):
+        return ()
+
+    def normalize(word: str) -> str:
+        if word.startswith("\\"):
+            return word.lower()
+        return (
+            word[1:-1] if len(word) >= 2 and word.startswith('"') and word.endswith('"') else word
+        )
+
+    return (words[0].upper(), *(normalize(word) for word in words[1:]))
+
+
+def read_field_content(parent: etree._Element) -> Iterator[etree._Element | WordField]:
+    """Group paragraph fields and preserve the order of content outside them."""
+    yield from _group_fields(
+        node for child in parent for node in (child if child.tag == _RUN else (child,))
+    )
+
+
+def read_field_instructions(root: etree._Element) -> Iterator[tuple[str, ...]]:
+    """Read instructions across a complete Word story, including multi-paragraph fields."""
+    walker = etree.iterwalk(root, events=("start",), tag=(_CHAR, _CODE, _SIMPLE))
+
+    def field_nodes() -> Iterator[etree._Element]:
+        for _, node in walker:
+            if node.tag == _SIMPLE:
+                walker.skip_subtree()
+            yield node
+
+    pending = [iter(_group_fields(field_nodes()))]
+    while pending:
+        item = next(pending[-1], None)
+        if item is None:
+            pending.pop()
+        elif isinstance(item, WordField):
+            yield item.words
+            if item.result:
+                pending.append(iter(item.result))
+
+
+def _group_fields(nodes: Iterable[etree._Element]) -> Iterator[etree._Element | WordField]:
+    stack: list[_OpenField] = []
+    for node in nodes:
+        item: etree._Element | WordField = node
+        if node.tag == _CHAR:
+            kind = node.get(qn("w:fldCharType"))
+            if kind == "begin":
+                stack.append(_OpenField())
+            elif kind == "separate" and stack:
+                stack[-1].separated = True
+            if kind != "end" or not stack:
+                continue
+            closed = stack.pop()
+            item = WordField(
+                _field_words("".join(closed.instruction)),
+                closed.result if closed.separated else [],
+            )
+        elif node.tag == _CODE and stack and not stack[-1].separated:
+            stack[-1].instruction.append(node.text or "")
+            continue
+        elif node.tag == _SIMPLE:
+            item = WordField(
+                _field_words(node.get(qn("w:instr"), "")), list(read_field_content(node))
+            )
+        if stack:
+            stack[-1].result.append(item)
+        else:
+            yield item
+    for unclosed in stack:
+        # An incomplete field does not define a reference or sequence.
+        yield from (item for item in unclosed.result if not isinstance(item, WordField))
 
 
 def field_instruction_issue(instruction: str) -> str | None:
     """Return the first problem in a field instruction emitted by mddocx."""
     if any(ord(char) < 32 or ord(char) == 127 for char in instruction):
         return "control character in field instruction"
-    tokens = re.findall(r'"[^"]*"|\S+', instruction)
+    tokens = _FIELD_TOKEN.findall(instruction)
     command = tokens[0].upper() if tokens else ""
     if command not in _FIELD_SWITCHES:
         return f"unsupported field command {command!r}"

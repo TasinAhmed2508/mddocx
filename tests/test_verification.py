@@ -6,7 +6,13 @@ from lxml import etree
 from PIL import Image
 import pytest
 
-from mddocx import Compiler, NotesConfig, RenderConfig, audit_docx_accessibility_bytes
+from mddocx import (
+    Compiler,
+    NotesConfig,
+    RenderConfig,
+    audit_docx_accessibility_bytes,
+    inspect_docx_bytes,
+)
 from mddocx.cli import main
 from mddocx.inspection import NS
 from mddocx.ooxml import bangla
@@ -397,6 +403,96 @@ def test_verify_reports_heading_bookmark_drift(tmp_path):
     )
     findings = compiler.verify(source, write_parts(parts)).findings
     assert findings[0].code == "VERIFY303" and findings[0].line == 1
+
+
+@pytest.fixture
+def section_reference_report(tmp_path):
+    source = tmp_path / "references.md"
+    source.write_text(
+        "# Report {#report}\n\n"
+        "| Item | Count |\n| --- | --- |\n| A | 1 |\n\n"
+        "Table: Counts {#counts}\n\n"
+        '$$\nx^2\n$$ {#eq-square caption="Square"}\n\n'
+        "See [Table @counts], [Equation @eq-square], and [Section @report].\n",
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.references.caption_number_format = "section"
+    config.references.equation_number_format = "section"
+    compiler = Compiler(config)
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    return compiler, source, blob
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "line"),
+    [
+        (rb"REF counts \h", b"REF counts", 13),
+        (rb"SEQ Table \* ARABIC", rb"SEQ Table \* ROMAN", 3),
+        (rb"SEQ Equation \* ARABIC", rb"SEQ Equation \* ROMAN", 9),
+        (rb"SEQ Table \r 0", rb"SEQ Table \r 8", 1),
+        (rb'STYLEREF "MD Heading 1" \n', rb'STYLEREF "MD Heading 2" \n', 3),
+    ],
+)
+def test_verify_reports_changed_numbering_and_reference_instructions(
+    section_reference_report, before, after, line
+):
+    compiler, source, blob = section_reference_report
+    parts = read_parts(blob)
+    assert before in parts["word/document.xml"]
+    parts["word/document.xml"] = parts["word/document.xml"].replace(before, after, 1)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.part, finding.line) == ("VERIFY303", "word/document.xml", line)
+
+
+@pytest.mark.parametrize("field_form", ["split instruction", "simple field", "unterminated"])
+def test_verify_reads_complete_reference_fields(section_reference_report, field_form):
+    compiler, source, blob = section_reference_report
+    parts = read_parts(blob)
+    document = etree.fromstring(parts["word/document.xml"])
+    instruction = next(
+        node for node in document.iter(qn("w:instrText")) if "REF counts" in node.text
+    )
+    run = instruction.getparent()
+    begin = run.getprevious()
+    separator = run.getnext()
+    result = separator.getnext()
+    end = result.getnext()
+    if field_form == "split instruction":
+        remainder = etree.Element(qn("w:r"))
+        etree.SubElement(remainder, qn("w:instrText")).text = r"unts \h "
+        instruction.text = " REF co"
+        run.addnext(remainder)
+    elif field_form == "simple field":
+        simple = etree.Element(qn("w:fldSimple"))
+        simple.set(qn("w:instr"), r' REF "counts" \h ')
+        begin.addprevious(simple)
+        simple.append(result)
+        for removed in (begin, run, separator, end):
+            removed.getparent().remove(removed)
+    else:
+        end.getparent().remove(end)
+    parts["word/document.xml"] = etree.tostring(document)
+    edited = write_parts(parts)
+    report = compiler.verify(source, edited)
+    if field_form == "unterminated":
+        assert not report.ok and report.findings[0].code == "VERIFY303"
+    else:
+        assert report.ok, report
+        assert inspect_docx_bytes(edited).ref_fields == inspect_docx_bytes(blob).ref_fields
+
+
+def test_verify_requires_the_end_of_a_caption_bookmark(section_reference_report):
+    compiler, source, blob = section_reference_report
+    parts = read_parts(blob)
+    document = etree.fromstring(parts["word/document.xml"])
+    start = document.find(".//w:bookmarkStart[@w:name='counts']", NS)
+    end = start.getparent().find(f"w:bookmarkEnd[@w:id='{start.get(qn('w:id'))}']", NS)
+    end.getparent().remove(end)
+    parts["word/document.xml"] = etree.tostring(document)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.line) == ("VERIFY303", 3)
 
 
 def test_quoted_heading_keeps_native_style_and_link_target(tmp_path):

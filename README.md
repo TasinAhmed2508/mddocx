@@ -230,7 +230,8 @@ heading levels and bookmarks, hard breaks, list nesting and task status, table c
 Markdown, CSV/JSON, and detected text layouts, including nested form photo cells, hyperlink
 targets, image alt text, native equation structure and source
 identifiers and numerals, alignment arrays and matrices, plain and labeled code listings,
-footnotes and endnotes, simple captions and reference fields, native chart/workbook
+footnotes and endnotes, caption text and numbering instructions, cross-reference targets
+and hyperlink switches, chapter counter resets, native chart/workbook
 relationships, and Word section boundaries, break types, and orientation. It returns **0**
 for a match, **3** for differences or incomplete coverage, and **2** for invalid input or
 package errors. Visual pagination, algebraic equivalence, drawing content, workbook cell

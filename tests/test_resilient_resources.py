@@ -16,6 +16,7 @@ from PIL import Image
 from mddocx import Compiler, MarkdownWord, NotesConfig, RenderConfig, audit_docx_accessibility_bytes
 from mddocx.config import ImageConfig, ResourcePolicy
 from mddocx.diagnostics import MddocxError
+from mddocx.ooxml import bangla
 from mddocx.ooxml.package import read_parts
 from mddocx.resources import ResourceFallback, ResourceRequest, ResourceResolver, ResolvedImage
 
@@ -292,7 +293,8 @@ def test_direct_image_links_obey_block_remote_flag(tmp_path):
         assert b"/plate.jpg" in package.read("word/_rels/document.xml.rels")
 
 
-def test_image_descriptions_use_label_text_and_keep_requested_click_targets(tmp_path):
+def test_image_descriptions_use_label_text_and_keep_requested_click_targets(tmp_path, monkeypatch):
+    monkeypatch.setattr(bangla, "installed_font_stems", frozenset)
     jpg = BytesIO()
     Image.new("RGB", (12, 8), "navy").save(jpg, format="JPEG")
     config = RenderConfig(resources=ResourcePolicy(allow_private_hosts=True))

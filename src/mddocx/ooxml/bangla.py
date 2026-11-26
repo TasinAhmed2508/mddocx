@@ -5,7 +5,7 @@ so conversion is limited to Bangla text runs in Word XML, never source files.
 
 Two things are checked before any part is rewritten:
 
-* whether the package contains Bangla text at all, so documents without it skip
+* whether the package contains Bangla text runs, so documents without them skip
   the XML rewrite entirely, and
 * whether the configured font is installed, because Bijoy-encoded runs are
   unreadable on a machine that lacks SutonnyMJ. ``fonts.bengali = "auto"`` lets
@@ -52,7 +52,7 @@ _FONT_SUFFIXES = frozenset({".ttf", ".otf", ".ttc", ".otc"})
 _MIN_COMPARABLE_NAME = 4
 
 # Bengali code points are U+0980-U+09FF, which UTF-8 encodes with these leads.
-# Scanning decompressed part bytes is far cheaper than parsing Word XML.
+# Skip XML parsing for parts without these bytes.
 _BENGALI_UTF8_LEADS = (b"\xe0\xa6", b"\xe0\xa7")
 
 FontReport = Callable[[str], None]
@@ -138,13 +138,18 @@ def resolve_bangla_font(font: str | None) -> tuple[str | None, str | None]:
     return font, f"{font} is not installed; Word will substitute another font for Bangla runs."
 
 
-def _contains_bangla_text(blob: bytes) -> bool:
+def _contains_bangla_runs(blob: bytes) -> bool:
     with ZipFile(BytesIO(blob)) as source:
         for info in source.infolist():
             if not (info.filename.startswith("word/") and info.filename.endswith(".xml")):
                 continue
             data = source.read(info.filename)
-            if any(lead in data for lead in _BENGALI_UTF8_LEADS):
+            if not any(lead in data for lead in _BENGALI_UTF8_LEADS):
+                continue
+            root = etree.fromstring(data)
+            if any(
+                BENGALI.search(text.text or "") for text in root.iterfind(f".//{{{W}}}r/{{{W}}}t")
+            ):
                 return True
     return False
 
@@ -252,7 +257,7 @@ def apply_bangla_font(blob: bytes, font: str | None, *, report: FontReport | Non
     """
     if not font:
         return blob
-    if not _contains_bangla_text(blob):
+    if not _contains_bangla_runs(blob):
         return blob
     font, warning = resolve_bangla_font(font)
     if warning and report is not None:

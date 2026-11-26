@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve the dimensions and visibility of LaTeX phantom and smash commands in
+  editable Word equations. Offline verification reports changes to these properties.
 - Keep Bangla image descriptions in Unicode without triggering a missing-font warning
   when the document has no Bangla text runs. Preserve escaped punctuation in image
   descriptions across supported Markdown parser versions.

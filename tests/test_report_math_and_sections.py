@@ -341,6 +341,59 @@ def test_mathml_prescripts_and_equation_row_labels_keep_semantics():
     assert [node.text for node in equation.iter(qn("m:t"))] == ["i", "2", "A", "j", "\u200b", "(7)"]
 
 
+@pytest.mark.parametrize("engine", ["mathjax-sidecar", "latex2mathml", "mddocx-basic"])
+def test_phantoms_and_smashes_preserve_native_spacing(engine, monkeypatch):
+    sidecar = MathJaxSidecar() if engine == "mathjax-sidecar" else SimpleNamespace(available=False)
+    if engine == "mathjax-sidecar" and not sidecar.available:
+        pytest.skip("MathJax runtime is unavailable")
+    converter = DefaultMathConverter(sidecar=sidecar)
+    if engine == "mddocx-basic":
+        monkeypatch.setattr(converter, "_external", None)
+    layouts = {
+        r"\phantom": [{"show": "0"}],
+        r"\hphantom": [{"zeroAsc": "1", "zeroDesc": "1"}, {"show": "0"}],
+        r"\vphantom": [{"zeroWid": "1"}, {"show": "0"}],
+        r"\smash": [{"zeroAsc": "1", "zeroDesc": "1"}],
+        r"\smash[t]": [{"zeroAsc": "1"}],
+        r"\smash[b]": [{"zeroDesc": "1"}],
+    }
+    for command, expected in layouts.items():
+        equation = converter.convert(command + r"{\frac{x}{y}}+z", display=True)
+        assert equation.semantic_valid and equation.engine == engine
+        actual = [
+            {etree.QName(flag).localname: flag.get(qn("m:val")) for flag in props}
+            for props in equation.omml.iter(qn("m:phantPr"))
+        ]
+        assert actual == expected
+        assert len(list(equation.omml.iter(qn("m:f")))) == 1
+    for command in (r"\smash[tb]", r"\smash[bt]"):
+        equation = converter.convert(command + r"{\frac{x}{y}}+z", display=True)
+        assert equation.semantic_valid
+        props = next(equation.omml.iter(qn("m:phantPr")))
+        assert [etree.QName(flag).localname for flag in props] == ["zeroAsc", "zeroDesc"]
+
+
+@pytest.mark.parametrize("removed_flag", ["show", "zeroWid", "zeroAsc", "zeroDesc"])
+def test_verify_detects_changed_phantom_or_smash_spacing(tmp_path, removed_flag):
+    source = tmp_path / "spacing.md"
+    source.write_text(
+        r"$z+\vphantom{\frac{x}{y}}+\smash[t]{\sqrt{u}}+\smash[b]{v}$",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert not result.diagnostics
+    assert compiler.verify(source, result.output_bytes).ok
+    parts = read_parts(result.output_bytes)
+    document = etree.fromstring(parts["word/document.xml"])
+    flag = next(document.iter(qn(f"m:{removed_flag}")))
+    flag.getparent().remove(flag)
+    parts["word/document.xml"] = etree.tostring(document)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert (finding.code, finding.line) == ("VERIFY303", 1)
+    assert "phantom or smash spacing" in finding.message
+
+
 @pytest.mark.parametrize("bundled", [False, True])
 def test_alignedat_keeps_two_pairs_and_top_baseline(bundled):
     sidecar = MathJaxSidecar() if bundled else SimpleNamespace(available=False)
@@ -497,6 +550,10 @@ def test_chemistry_and_units_compile_and_verify_as_native_word_math(tmp_path):
         assert not any(0xE000 <= ord(character) <= 0xF8FF for character in text)
         assert next(equation.iter(qn(structure)), None) is not None
         assert not list(equation.iter(qn("m:phant")))
+
+    combined = DefaultMathConverter().convert(r"\ce{H2O}+\smash[t]{2}")
+    (spacing,) = combined.omml.iter(qn("m:phantPr"))
+    assert [etree.QName(flag).localname for flag in spacing] == ["zeroAsc"]
     sulphate = next(equations[2].iter(qn("m:sSubSup")))
     assert "".join(sulphate.find(qn("m:e")).itertext()) == "SO"
     assert "".join(sulphate.find(qn("m:sub")).itertext()) == "4"

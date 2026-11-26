@@ -57,7 +57,8 @@ def attach_chemistry_scripts(root: etree._Element) -> bool:
                 )
                 scripts = etree.Element(_M + tag)
                 node.addprevious(scripts)
-                scripts.extend(part for part in (node, sub, sup) if part is not None)
+                scripts.append(node)
+                scripts.extend(_script_operand(part) for part in (sub, sup) if part is not None)
                 for obsolete in attached:
                     row.remove(obsolete)
                 changed = True
@@ -97,8 +98,23 @@ def _script_pair(node: etree._Element) -> tuple:
     return (node[1], None) if node.tag == _M + "msub" else (None, node[1])
 
 
+def _script_operand(node: etree._Element) -> etree._Element:
+    # Native scripts supply their own positioning after detaching the mhchem operand.
+    padded = _unwrap_rows(node)
+    while padded.tag == _M + "mpadded" and (
+        padded.attrib == {"height": "0"} or padded.get("lspace") == "-1width"
+    ):
+        if len(padded) != 1:
+            padded.tag = _M + "mrow"
+            padded.attrib.clear()
+            break
+        node = padded[0]
+        padded = _unwrap_rows(node)
+    return node
+
+
 def _isotope_scripts(node: etree._Element) -> tuple:
-    return tuple(
+    pads = (
         next(
             (pad for pad in script.iter(_M + "mpadded") if pad.get("lspace") == "-1width"),
             None,
@@ -107,3 +123,4 @@ def _isotope_scripts(node: etree._Element) -> tuple:
         else None
         for script in _script_pair(node)
     )
+    return tuple(_script_operand(pad) if pad is not None else None for pad in pads)

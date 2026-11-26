@@ -60,6 +60,18 @@ _GENFRAC_CONTROLS = re.compile(r"(?<!\\)\\genfrac(?![A-Za-z])\s*(?:\{(?:\\.|[^{}
 _EXPLICIT_NARY_LIMITS = re.compile(
     rf"(?<!\\)\\({'|'.join(NARY)})(?![A-Za-z])\s*\\(limits|nolimits)\s*(?=[_^])"
 )
+_PHANTOM_COMMAND = re.compile(
+    r"(?<!\\)\\(?:(phantom|hphantom|vphantom)(?![A-Za-z])"
+    r"|(smash)(?![A-Za-z])(?:\s*\[\s*(tb|bt|t|b)\s*\])?)"
+)
+_PHANTOM_FLAGS = ("zeroWid", "zeroAsc", "zeroDesc")
+_PHANTOM_LAYOUTS = {
+    "hphantom": ("zeroAsc", "zeroDesc"),
+    "vphantom": ("zeroWid",),
+    "smash": ("zeroAsc", "zeroDesc"),
+    "t": ("zeroAsc",),
+    "b": ("zeroDesc",),
+}
 
 
 def validate_mathml(mathml: str):
@@ -168,6 +180,31 @@ def semantic_tokens_preserved(mathml_root, omml: object) -> bool:
     expected = _node_tokens(mathml_root)
     actual = _node_tokens(omml)
     return not expected or _contains_tokens(expected, actual)
+
+
+def source_phantoms_preserved(latex: str, omml: etree._Element) -> bool:
+    if "phantom" not in latex and r"\smash" not in latex:
+        return True
+    expected: Counter[tuple[bool, tuple[str, ...]]] = Counter()
+    for phantom, smash, option in _PHANTOM_COMMAND.findall(latex):
+        if phantom:
+            expected[False, ()] += 1
+        if phantom != "phantom":
+            layout = option if option in {"t", "b"} else phantom or smash
+            expected[True, _PHANTOM_LAYOUTS[layout]] += 1
+    if not expected:
+        return True
+    actual = Counter()
+    for node in visible_omml(omml):
+        if node.tag != _M + "phant":
+            continue
+        props = node.find(_M + "phantPr")
+        if props is None:
+            continue
+        collapsed = tuple(name for name in _PHANTOM_FLAGS if _math_flag(props, name))
+        show = _math_flag(props, "show", default=True)
+        actual[show, collapsed] += 1
+    return expected <= actual
 
 
 def source_matrices_preserved(latex: str, omml: etree._Element) -> bool:
@@ -427,6 +464,8 @@ def _row_rule_positions(visible):
 def source_tokens_preserved(latex: str, mathml_root: object) -> bool:
     """Detect clear identifier/numeral loss by an external TeX parser."""
     source = _GENFRAC_CONTROLS.sub("", latex.strip())
+    if r"\smash" in source:
+        source = _PHANTOM_COMMAND.sub(lambda match: r"\smash" if match[3] else match[0], source)
     try:
         declarations = [
             (start, end, "".join(text for kind, text in columns if kind == "@"))

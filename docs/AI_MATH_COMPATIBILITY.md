@@ -41,6 +41,11 @@ display equations. Use
 the operator, limits, and operand editable, and `mddocx verify` checks explicit
 placement on named large operators.
 
+Use `\phantom`, `\hphantom`, and `\vphantom` to reserve space with hidden equation
+content. `\smash`, `\smash[t]`, and `\smash[b]` keep their content visible and
+exclude the selected vertical dimensions from line spacing. The content remains
+editable in Word, and offline verification checks the visibility and spacing flags.
+
 LaTeX arrays support `l`, `c`, and `r` columns, bounded repetition such as
 `*{2}{r}`, vertical rules, and intercolumn expressions such as `r@{.}l` for aligned
 decimal points. Vertical rules stay aligned across tall cells such as fractions. Mixed

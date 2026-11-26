@@ -553,6 +553,19 @@ class _Parser:
             return _e("mstyle", None, self.parse_required_arg(), mathvariant=variants[cmd])
         if cmd == "boxed":
             return _e("menclose", None, self.parse_required_arg(), notation="box")
+        if cmd in {"phantom", "hphantom", "vphantom"}:
+            phantom = _e("mphantom", None, self.parse_required_arg())
+            if cmd == "hphantom":
+                return _e("mpadded", None, phantom, height="0", depth="0")
+            if cmd == "vphantom":
+                return _e("mpadded", None, phantom, width="0")
+            return phantom
+        if cmd == "smash":
+            option = (self._read_bracket_raw() or "tb").strip()
+            if option not in {"t", "b", "tb", "bt"}:
+                raise ValueError("Expected [t], [b], [tb], or [bt] for LaTeX smash.")
+            sizes = {size: "0" for key, size in (("t", "height"), ("b", "depth")) if key in option}
+            return _e("mpadded", None, self.parse_required_arg(), **sizes)
         if cmd == "text":
             return _e("mtext", _TEXT_ESCAPE.sub(r"\1", self._read_braced_raw()))
         if cmd in ACCENTS:

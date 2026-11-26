@@ -26,6 +26,7 @@ from .validation import (
     semantic_fingerprint,
     semantic_tokens_preserved,
     source_matrices_preserved,
+    source_phantoms_preserved,
     source_tokens_preserved,
     validate_mathml,
     validate_omml,
@@ -262,6 +263,8 @@ class DefaultMathConverter:
                     raise UnsupportedLatexError(
                         f"{engine} output lost an alignment or matrix layout"
                     )
+                if not source_phantoms_preserved(normalized.text, omml):
+                    raise UnsupportedLatexError(f"{engine} output changed phantom or smash spacing")
                 fingerprint = semantic_fingerprint(root)
                 semantic_valid = semantic_tokens_preserved(root, omml)
                 if not semantic_valid and engine != "mddocx-basic":

@@ -102,14 +102,25 @@ class MathMLToOMML:
         if tag in {"annotation", "annotation-xml"}:
             return
         if tag == "mphantom":
-            phantom = OxmlElement("m:phant")
-            props = OxmlElement("m:phantPr")
-            show = OxmlElement("m:show")
-            show.set(qn("m:val"), "0")
-            props.append(show)
-            phantom.extend([props, self._argument("m:e", node, variant, contents=True)])
-            parent.append(phantom)
+            parent.append(self._phantom(self._argument("m:e", node, variant, contents=True)))
             return
+        if tag == "mpadded":
+            collapsed = tuple(
+                flag
+                for attribute, flag in (
+                    ("width", "zeroWid"),
+                    ("height", "zeroAsc"),
+                    ("depth", "zeroDesc"),
+                )
+                if self._is_absolute_zero(node.get(attribute, ""))
+            )
+            if collapsed and not any(
+                node.get(attribute) and not self._is_absolute_zero(node.get(attribute))
+                for attribute in ("width", "height", "depth", "lspace", "voffset")
+            ):
+                argument = self._argument("m:e", node, variant, contents=True)
+                parent.append(self._phantom(argument, collapsed, show=True))
+                return
         if tag in {"mi", "mn", "mo", "mtext", "ms"}:
             value = node.text or ""
             # ASCII vertical bar is inconsistently shaped in Word/LibreOffice math fonts.
@@ -679,17 +690,25 @@ class MathMLToOMML:
                     self._run(row[index], "\u2003", variant="normal")
 
     @staticmethod
-    def _matrix_measurement(items, collapsed):
+    def _is_absolute_zero(value: str) -> bool:
+        value = value.strip()
+        return bool(_ZERO_RULE.fullmatch(value)) and not value.startswith(("+", "-"))
+
+    @staticmethod
+    def _phantom(body, collapsed=(), *, show=False):
         phantom = OxmlElement("m:phant")
         settings = OxmlElement("m:phantPr")
-        for name in ("show", *collapsed):
+        for name in (("show",) if not show else ()) + collapsed:
             flag = OxmlElement(f"m:{name}")
             flag.set(qn("m:val"), "0" if name == "show" else "1")
             settings.append(flag)
-        body = OxmlElement("m:e")
-        body.extend(deepcopy(item) for item in items)
         phantom.extend((settings, body))
         return phantom
+
+    def _matrix_measurement(self, items, collapsed):
+        body = OxmlElement("m:e")
+        body.extend(deepcopy(item) for item in items)
+        return self._phantom(body, collapsed)
 
     def _append_matrix_columns(
         self, parent, rows, alignments, baseline, compact, groups, *, tight_rows=False

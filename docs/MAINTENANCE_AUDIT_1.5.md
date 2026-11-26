@@ -27,11 +27,36 @@ changes require their own qualification; do not reuse that result as their proof
 
 The template-bookmark changes passed 912 local nonvisual tests with two optional
 visual tests deselected. Ruff, formatting, the existing 11-file mypy gate, and the
-diagnostic-catalog check also passed. Their hosted qualification is pending.
+diagnostic-catalog check also passed. All 13 hosted CI jobs passed on `bab11c7` in
+[run 45880125278](https://github.com/TasinAhmed2508/mddocx/actions/runs/45880125278).
 
 Duplicate names are more than a package-cleanliness issue. Word retains one
 bookmark and ignores the others, as documented in
 [Microsoft's bookmark implementation notes](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/88454e96-31cb-4112-b7c2-e6b0f84a2637).
+
+## Local Windows installation check
+
+The workstation had two older installations. Its isolated console tool still ran
+1.5.0rc2, and the system Python had 1.3.1 editable metadata pointing at a removed
+checkout. The console tool and system Python were both updated from the qualified
+public 1.5.0rc4 wheel, with SHA-256
+`eeb369373eba00dc435e2e2bbd8ae3a908f3d40358ebf8eca9ccc640690a29e5`.
+
+The following checks passed from CMD and the installed packages, without a source
+checkout on `PYTHONPATH`:
+
+- `mddocx --version`, `mddocx-native --version`, and `python -m mddocx --version`
+  all report 1.5.0rc4.
+- `mddocx shell --no-menu` reaches its interactive prompt and exits cleanly.
+- The tool directory is present in the persistent user PATH.
+- `mddocx doctor` passes, including the bundled JavaScript runtime, SVG conversion,
+  and CSL support.
+- The retained ChatGPT sphere-equation fixture converts without diagnostics,
+  contains 22 native editable equations, and verifies offline across 43 units.
+  The original Downloads files were no longer present at their supplied paths.
+
+These installed-release checks do not qualify the newer integration-branch fixes
+as part of the unchanged rc4 release archives.
 
 ## Confirmed issue still open
 

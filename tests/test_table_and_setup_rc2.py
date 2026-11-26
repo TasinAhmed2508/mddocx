@@ -293,6 +293,47 @@ def test_invalid_html_preserves_source_and_v2_ast_uses_unit_spans():
 
 
 @pytest.mark.parametrize(
+    "markup",
+    [
+        "<table>Important note<tr><td>A</td></tr></table>",
+        "<table><tr>Important note<td>A</td></tr></table>",
+        "<table><tr><td>A</td>Important note</tr></table>",
+        "<table><tbody>Important note<tr><td>A</td></tr></tbody></table>",
+        "<table><tbody><tr><td>A</td></tr></tbody>Important note</table>",
+        "<table><colgroup>Important note<col></colgroup><tr><td>A</td></tr></table>",
+    ],
+)
+def test_html_table_preserves_text_outside_cells_with_diagnostic(tmp_path, markup):
+    source = tmp_path / "report.md"
+    source.write_text(f"# Before\n\n{markup}\n# After\n", encoding="utf-8")
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    (diagnostic,) = result.diagnostics
+    assert (diagnostic.code, diagnostic.source_file, diagnostic.line) == (
+        "TABLE202",
+        str(source),
+        3,
+    )
+    document = Document(BytesIO(result.output_bytes))
+    assert not document.tables
+    before, literal, after = document.paragraphs
+    assert (before.text, after.text) == ("Before", "After")
+    assert literal.text.strip() == markup
+    assert compiler.verify(source, result.output_bytes).ok
+
+
+def test_html_table_allows_whitespace_between_structural_tags():
+    source = (
+        "<table>\n<colgroup>\n<col>\n</colgroup>\n<thead>\n<tr>\n<th>Header</th>\n"
+        "</tr>\n</thead>\n<tbody>\n<tr>\n<td>Value</td>\n</tr>\n</tbody>\n</table>"
+    )
+    result = Compiler().compile_string(source)
+    assert not result.diagnostics
+    (table,) = Document(BytesIO(result.output_bytes)).tables
+    assert [row.cells[0].text for row in table.rows] == ["Header", "Value"]
+
+
+@pytest.mark.parametrize(
     "text",
     [
         '<table><tr><td colspan="4">Wide</td></tr></table>',

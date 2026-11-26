@@ -108,6 +108,11 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
         )
         if root.tag != "table" or root.find(".//table") is not None:
             raise ValueError("Nested or invalid HTML table.")
+        for element in root.iter():
+            if element.tag in {"table", "thead", "tbody", "tfoot", "tr", "colgroup", "col"} and (
+                (element.text or "").strip() or any((child.tail or "").strip() for child in element)
+            ):
+                raise ValueError("Text outside table cells or captions would be lost.")
         groups: list[tuple[str, list]] = []
         caption = None
         for group in root:

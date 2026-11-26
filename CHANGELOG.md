@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve malformed HTML tables as source text with `TABLE202` when text appears
+  outside cells or captions, rather than silently discarding that text.
 - Refetch and atomically repair invalid or oversized persistent image-cache entries.
   Keep cached SVG and WebP conversions separate when conversion settings or SVG
   resolution change.

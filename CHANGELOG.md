@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Keep Bangla image descriptions in Unicode without triggering a missing-font warning
-  when the document has no Bangla text runs.
+  when the document has no Bangla text runs. Preserve escaped punctuation in image
+  descriptions across supported Markdown parser versions.
 - Embed standalone direct image links as clickable pictures in Markdown and HTML
   table cells, footnotes, and endnotes.
 - Preserve side and stacked limits on native Word integrals and large operators.

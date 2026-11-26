@@ -838,7 +838,7 @@ class MarkdownParser:
             return restore_inline_math_text(token.content)
         parts = []
         for child in token.children:
-            if child.type == "text":
+            if child.type in {"text", "text_special"}:
                 text = restore_inline_math_text(child.content)
                 parts.extend(
                     f"[^{value}]" if kind == "footnote" else value

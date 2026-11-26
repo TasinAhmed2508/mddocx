@@ -20,6 +20,10 @@ is a wish list.
 - **Included in 1.5.0rc3:** the Report theme, native portrait and landscape transitions,
   merged-table and image-link improvements, and expanded native math and verification coverage.
   See the [changelog](../CHANGELOG.md#150rc3).
+- **Included in 1.5.0rc4:** faster long-report conversion, verification of Word numbering
+  instructions and native chart data, and preservation of chart ranges and missing points.
+  Invalid numeric chart inputs produce source-located diagnostics. See the
+  [changelog](../CHANGELOG.md#150rc4).
 - **Planned:** broader verification coverage, an expanded optional visual corpus, and the
   compatibility work for 2.x. Strict conversion remains the default with opt-in recovery.
 

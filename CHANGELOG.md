@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0rc4
 
 - Report invalid and non-finite chart values with source-located diagnostics before
   writing the document. Opt-in recovery annotates invalid series and preserves surrounding text.

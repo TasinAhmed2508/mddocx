@@ -222,8 +222,10 @@ class MarkdownParser:
         footnotes: dict[str, list] = {}
         for label, (note_source, line) in footnote_sources.items():
             position = SourcePosition(source_file, line + self._line_offset, 1)
-            footnotes[label] = self._parse_inline_fragment(
-                protect_escaped_footnote_references(note_source), position
+            footnotes[label] = self._image_only_fragment(
+                self._parse_inline_fragment(
+                    protect_escaped_footnote_references(note_source), position
+                )
             )
         for issue in sorted(self.math_syntax_issues, key=lambda item: item.line):
             self.reporter.warn(
@@ -811,6 +813,25 @@ class MarkdownParser:
             title = node.title
         return Image(src=url, alt=alt if alt != url else "", title=title, source=node.source)
 
+    def _image_only_fragment(self, nodes: list) -> list:
+        """Embed an image link that occupies a table cell or note by itself."""
+        content = (
+            nodes
+            if len(nodes) < 2
+            else [node for node in nodes if not isinstance(node, Text) or node.text.strip()]
+        )
+        if len(content) != 1 or (image := self._linked_image(content[0])) is None:
+            return nodes
+        original = content[0]
+        return [
+            Link(
+                href=image.src,
+                title=image.title,
+                children=[image],
+                source=original.source,
+            )
+        ]
+
     @staticmethod
     def _image_description(token: Token) -> str:
         if token.children is None:
@@ -918,7 +939,9 @@ class MarkdownParser:
                 contents.append(
                     TableCell(
                         children=(
-                            self._parse_inline_fragment(cells[column], position)
+                            self._image_only_fragment(
+                                self._parse_inline_fragment(cells[column], position)
+                            )
                             if column < len(cells)
                             else []
                         ),
@@ -959,7 +982,7 @@ class MarkdownParser:
                 if current_cells is not None:
                     current_cells.append(
                         TableCell(
-                            children=cell_children,
+                            children=self._image_only_fragment(cell_children),
                             alignment=align,
                             header=is_header,
                             source=self._pos(t),

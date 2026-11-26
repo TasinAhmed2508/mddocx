@@ -367,6 +367,8 @@ HTTP(S) image URL on its own line or a standalone link such as
 `[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.
 Markdown formatting in image labels becomes plain Word alternative text, with TeX source
 for math in the label.
+An image URL or labeled image link on its own in a Markdown or HTML table cell, footnote,
+or endnote embeds a picture that links back to the original URL. Links in prose keep their text.
 Append figure attributes to a standalone link to set its size or caption, for example
 `[Chart description](https://example.org/chart.jpg) {width=70% caption="Quarterly output"}`.
 To make the picture clickable, wrap an explicit image in a Markdown link, as in

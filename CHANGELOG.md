@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Embed standalone direct image links as clickable pictures in Markdown and HTML
+  table cells, footnotes, and endnotes.
 - Preserve side and stacked limits on native Word integrals and large operators.
   Honor LaTeX limits and nolimits in the Python fallback and detect changed explicit
   limit placement during verification.

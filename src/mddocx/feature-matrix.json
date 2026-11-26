@@ -99,7 +99,7 @@
     },
     {
       "id": "images-and-figures",
-      "syntax": "Markdown images, standalone direct image links, clickable pictures, and figure attributes",
+      "syntax": "Markdown images, standalone direct image links in paragraphs, table cells, and notes, clickable pictures, and figure attributes",
       "ast": "Image and ImageBlock",
       "ooxml": "native DrawingML image, docPr alternative text, caption and bookmark",
       "malformed_diagnostic": "RESOURCE/IMAGE/A11Y diagnostic families",

@@ -80,6 +80,7 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
                 nodes.append(
                     Link(
                         href=parser.md.normalizeLink(href),
+                        title=child.get("title"),
                         children=inlines(child, math=False),
                         source=pos,
                     )
@@ -147,7 +148,7 @@ def parse_html_table(parser: MarkdownParser, token: Token) -> Table | Paragraph:
                         align = css[1].lower()
                     cells.append(
                         TableCell(
-                            children=inlines(cell, trim=True),
+                            children=parser._image_only_fragment(inlines(cell, trim=True)),
                             alignment=align if align in {"left", "center", "right"} else None,
                             header=cell.tag == "th",
                             source=position(cell),

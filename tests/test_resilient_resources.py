@@ -178,6 +178,79 @@ def test_direct_image_links_embed_and_other_links_do_not_fetch(tmp_path):
         assert f"{origin}/guide".encode() in package.read("word/_rels/document.xml.rels")
 
 
+@pytest.mark.parametrize("style", ["footnote", "endnote"])
+def test_standalone_image_links_embed_in_cells_and_notes(tmp_path, style):
+    asset = BytesIO()
+    Image.new("RGB", (640, 100), "#315c91").save(asset, format="JPEG")
+    path = "/inspection.JPG?raw=1"
+    config = RenderConfig(
+        resources=ResourcePolicy(allow_private_hosts=True),
+        notes=NotesConfig(style=style),
+    )
+    compiler = Compiler(config)
+    source = tmp_path / "inspection.md"
+    with _server({path: (200, "image/jpeg", asset.getvalue())}) as (origin, counts):
+        url = origin + path
+        guide = origin + "/guide"
+        source.write_text(
+            f"| Image | Reference |\n| --- | --- |\n"
+            f'| [**Sensor** plot]({url} "Inspection") | [Instructions]({guide}) |\n'
+            f"| {url} | See [raw file]({origin}/as-text.jpg) for the original. |\n\n"
+            f'<table>\n<tr><td> <a href="{url}" title="Thermal plot">Thermal</a> </td></tr>\n'
+            "</table>\n\n"
+            f"Evidence is available.[^plate]\n\n[^plate]: [Detail]({url})\n",
+            encoding="utf-8",
+        )
+        output = compiler.compile_file(source, source.with_suffix(".docx"))
+        assert compiler.verify(source, output.output_bytes).ok
+    assert counts == {path: 1}
+
+    parts = read_parts(output.output_bytes)
+    body = etree.fromstring(parts["word/document.xml"])
+    notes = etree.fromstring(parts[f"word/{style}s.xml"])
+    for container, descriptions in [(body, ["Sensor plot", None, "Thermal"]), (notes, ["Detail"])]:
+        pictures = list(container.iter(qn("wp:docPr")))
+        assert [picture.get("descr") for picture in pictures] == descriptions
+        assert all(
+            next(picture.iterancestors(qn("w:hyperlink")), None) is not None for picture in pictures
+        )
+    for part in ("document", f"{style}s"):
+        links = etree.fromstring(parts[f"word/_rels/{part}.xml.rels"])
+        assert any(rel.get("Target") == url for rel in links)
+    assert guide.encode() in parts["word/_rels/document.xml.rels"]
+    assert b"for the original." in parts["word/document.xml"]
+    assert b'w:tooltip="Thermal plot"' in parts["word/document.xml"]
+    document = Document(BytesIO(output.output_bytes))
+    first_cell = document.tables[0].cell(1, 0)
+    assert int(next(body.iter(qn("wp:extent"))).get("cx")) < first_cell.width
+
+
+@pytest.mark.parametrize("allow_remote", [False, True])
+def test_unavailable_image_link_in_cell_keeps_clickable_label(tmp_path, allow_remote):
+    policy = ResourcePolicy(
+        allow_remote_resources=allow_remote,
+        allow_private_hosts=True,
+    )
+    compiler = Compiler(RenderConfig(resources=policy))
+    with _server({"/not-an-image.jpg": (200, "text/html", b"<p>A web page</p>")}) as (
+        origin,
+        counts,
+    ):
+        url = f"{origin}/not-an-image.jpg"
+        source = f"| Inspection |\n| --- |\n| [Original page]({url}) |\n"
+        result = compiler.compile_string(source, base_dir=tmp_path)
+    assert counts == ({"/not-an-image.jpg": 1} if allow_remote else {})
+    assert [finding.code for finding in result.diagnostics] == [
+        "RESOURCE206" if allow_remote else "RESOURCE201"
+    ]
+    parts = read_parts(result.output_bytes)
+    body = etree.fromstring(parts["word/document.xml"])
+    (link,) = body.iter(qn("w:hyperlink"))
+    assert "".join(link.itertext()) == "Original page"
+    assert url.encode() in parts["word/_rels/document.xml.rels"]
+    assert not list(body.iter(qn("w:drawing")))
+
+
 def test_literal_math_characters_in_image_links_survive_conversion(tmp_path):
     jpg = BytesIO()
     Image.new("RGB", (12, 8), "navy").save(jpg, format="JPEG")

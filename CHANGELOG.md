@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0rc3
 
 - Preserve the dimensions and visibility of LaTeX phantom and smash commands in
   editable Word equations. Offline verification reports changes to these properties.

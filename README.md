@@ -387,7 +387,7 @@ if the image is unavailable. Images inside table cells fit within the cell paddi
   clickable fallbacks. Other hyperlinks remain links.
 - Base64 image data URIs are decoded locally, never sent over the network, and remain subject to
   the configured per-resource size limit and image validation.
-- HTTPS image downloads can be explicitly enabled and restricted by domain.
+- Restrict image downloads to selected hosts with `resources.allowed_domains`.
 - Use `--block-remote-resources` for a single noninteractive conversion, or
   `--allow-remote-resources` to override a saved shell block for one render.
 - Local resource paths cannot escape the document or project directory.

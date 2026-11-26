@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Align the compatibility and resource-policy documentation with the default behavior
+  for bounded public image downloads, the domain allow-list, and the explicit network block.
+
 ## 1.5.0rc4
 
 - Report invalid and non-finite chart values with source-located diagnostics before

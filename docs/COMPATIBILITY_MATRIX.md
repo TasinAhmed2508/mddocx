@@ -14,7 +14,7 @@ policy.
 | DOCX format | OOXML / WordprocessingML |
 | Equations | native OMML |
 | Charts | native ChartML + embedded XLSX |
-| Network | disabled by default |
+| Network | bounded public HTTP(S) image downloads allowed by default; `--block-remote-resources` disables them |
 | Office suite | not required |
 | Java, browser, external converter | not required |
 | Output verification | in-process, in this package |

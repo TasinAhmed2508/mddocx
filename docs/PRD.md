@@ -1730,7 +1730,10 @@ Never execute arbitrary embedded shell commands.
 
 **SEC-04**
 
-Remote resources disabled by default.
+Bounded public HTTP(S) image downloads are allowed by default. Other hyperlinks remain
+links. Callers can block downloads with `resources.allow_remote_resources=False` or
+`--block-remote-resources`, and restrict permitted hosts with `resources.allowed_domains`.
+Private network addresses remain blocked unless explicitly enabled in configuration.
 
 **SEC-05**
 

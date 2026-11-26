@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Compare native chart types, series names, categories, cached values and workbook
+  data with inline or local CSV/JSON declarations during offline verification.
 - Verify caption and equation numbering instructions, chapter counter resets, and
   cross-reference switches. Read split and simple Word fields and check that
   heading, caption, and equation bookmarks have matching end markers.

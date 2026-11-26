@@ -231,11 +231,12 @@ Markdown, CSV/JSON, and detected text layouts, including nested form photo cells
 targets, image alt text, native equation structure and source
 identifiers and numerals, alignment arrays and matrices, plain and labeled code listings,
 footnotes and endnotes, caption text and numbering instructions, cross-reference targets
-and hyperlink switches, chapter counter resets, native chart/workbook
-relationships, and Word section boundaries, break types, and orientation. It returns **0**
+and hyperlink switches, chapter counter resets, native chart types, series names,
+categories, cached values, workbook ranges and data cells, and Word section boundaries,
+break types, and orientation. It returns **0**
 for a match, **3** for differences or incomplete coverage, and **2** for invalid input or
-package errors. Visual pagination, algebraic equivalence, drawing content, workbook cell
-values, and generated structures such as Mermaid panels, template content, and bibliographies
+package errors. Visual pagination, algebraic equivalence, drawing content,
+and generated structures such as Mermaid panels, template content, and bibliographies
 require their own checks. The machine-readable
 report identifies constructs the verifier cannot compare.
 

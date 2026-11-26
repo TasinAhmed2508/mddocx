@@ -1,9 +1,11 @@
 import json
+from io import BytesIO
 
 from docx import Document
 from docx.oxml.ns import qn
 from lxml import etree
 from PIL import Image
+from openpyxl import load_workbook
 import pytest
 
 from mddocx import (
@@ -493,6 +495,78 @@ def test_verify_requires_the_end_of_a_caption_bookmark(section_reference_report)
     parts["word/document.xml"] = etree.tostring(document)
     (finding,) = compiler.verify(source, write_parts(parts)).findings
     assert (finding.code, finding.line) == ("VERIFY303", 3)
+
+
+@pytest.mark.parametrize("kind", ["column", "bar", "line", "pie", "scatter"])
+def test_verify_chart_values_from_local_data(tmp_path, kind):
+    data = tmp_path / "values.csv"
+    data.write_text(
+        "Time,Count,Rate\n1,3,1.2345678901234567\n2,5,0.3333333333333333\n", encoding="utf-8"
+    )
+    source = tmp_path / "chart.md"
+    source.write_text(
+        f"~~~chart\ntype: {kind}\nsource: values.csv\ncategory: Time\n"
+        "secondary_series: [Rate]\n~~~\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    output = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, output.output_bytes).ok
+    data.write_text(
+        "Time,Count,Rate\n1,9,1.2345678901234567\n2,5,0.3333333333333333\n", encoding="utf-8"
+    )
+    result = compiler.verify(source, output.output_bytes)
+    assert not result.ok
+    assert any("values changed" in finding.message for finding in result.findings)
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["value", "category", "name", "formula", "index", "type", "workbook", "corrupt workbook"],
+)
+def test_verify_detects_chart_and_workbook_edits(tmp_path, change):
+    source = tmp_path / "chart.md"
+    source.write_text(
+        "# Chart\n\n~~~chart\ncategories: [A, B]\nseries: {Count: [2, 4]}\n~~~\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    parts = read_parts(blob)
+    chart_part = "word/charts/chart1.xml"
+    workbook_part = "word/embeddings/Microsoft_Excel_Worksheet1.xlsx"
+    if change in {"workbook", "corrupt workbook"}:
+        if change == "corrupt workbook":
+            parts[workbook_part] = b"broken workbook"
+        else:
+            workbook = load_workbook(BytesIO(parts[workbook_part]))
+            workbook.active["B2"] = 9
+            stream = BytesIO()
+            workbook.save(stream)
+            workbook.close()
+            parts[workbook_part] = stream.getvalue()
+    else:
+        root = etree.fromstring(parts[chart_part])
+        paths = {
+            "value": ".//{*}val/{*}numRef/{*}numCache/{*}pt/{*}v",
+            "category": ".//{*}cat/{*}strRef/{*}strCache/{*}pt/{*}v",
+            "name": ".//{*}tx/{*}strRef/{*}strCache/{*}pt/{*}v",
+            "formula": ".//{*}val/{*}numRef/{*}f",
+            "index": ".//{*}val/{*}numRef/{*}numCache/{*}pt",
+            "type": ".//{*}barDir",
+        }
+        item = root.find(paths[change])
+        if change == "index":
+            item.set("idx", "1")
+        elif change == "type":
+            item.set("val", "bar")
+        else:
+            item.text = "9" if change == "value" else "changed"
+        parts[chart_part] = etree.tostring(root)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert finding.code == "VERIFY303" and finding.line == 3
+    assert finding.part == (workbook_part if "workbook" in change else chart_part)
 
 
 def test_quoted_heading_keeps_native_style_and_link_target(tmp_path):

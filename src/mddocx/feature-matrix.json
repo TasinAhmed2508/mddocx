@@ -169,7 +169,7 @@
       "tests": [
         "tests/test_technical_report.py"
       ],
-      "verify": "Native ChartML and workbook relationships, imported CSV/JSON data table rows, cells, and headers"
+      "verify": "Native chart type, series names, categories, cached values, workbook ranges and data cells, plus imported CSV/JSON data table rows, cells, and headers"
     },
     {
       "id": "callouts-comments-code",

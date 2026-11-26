@@ -6,10 +6,13 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
 from itertools import zip_longest
+from io import BytesIO
 import json
 from pathlib import PurePosixPath
+import posixpath
 import re
 from typing import Literal
+from zipfile import ZipFile
 
 from docx.opc.constants import RELATIONSHIP_TYPE
 from docx.oxml.ns import qn
@@ -17,9 +20,11 @@ from lxml import etree
 
 from .ast import block, inline
 from .ast.base import Document, Node
+from .chart_data import prepare_chart_entry
+from .chart_verification import chart_data_issue, workbook_data_issue
 from .config import RenderConfig
 from .data import load_data_table
-from .diagnostics import Diagnostic
+from .diagnostics import Diagnostic, DiagnosticReporter
 from .inspection import M, NS, R, W
 from .layout import LayoutPlanner
 from .layout_table import (
@@ -112,7 +117,7 @@ class _SectionStart:
 
 
 def compare_document(
-    document: Document, roots: dict[str, etree._Element], config: RenderConfig
+    document: Document, roots: dict[str, etree._Element], config: RenderConfig, package: bytes
 ) -> VerificationResult:
     expected: list[_Unit] = []
     findings: list[VerificationFinding] = []
@@ -129,6 +134,7 @@ def compare_document(
     note_kind = config.notes.style
     note_part = f"word/{note_kind}s.xml"
     expected_math: list[tuple[str, Node]] = []
+    expected_charts: list[block.ChartBlock] = []
 
     def incomplete(reason: str, node: Node | None = None) -> None:
         findings.append(_finding("VERIFY304", reason, node))
@@ -357,6 +363,7 @@ def compare_document(
                 token = ("image", "") if decorative else ("image", clean_xml_text(node.alt))
                 captioned([_Unit("paragraph", (token,), node)], "Figure", title, node)
             elif isinstance(node, block.ChartBlock) and config.charts.enabled:
+                expected_charts.append(node)
                 title = (
                     (node.caption or node.title or ("Chart" if node.identifier else None))
                     if config.references.captions
@@ -476,7 +483,7 @@ def compare_document(
     if main is not None:
         findings.extend(_equation_findings(body_math, main, BODY))
     actual, section_ends = _read_body(roots)
-    findings.extend(_chart_findings(roots))
+    findings.extend(_chart_findings(roots, expected_charts, config, package))
     for part in (BODY, note_part):
         if part in roots:
             findings.extend(_image_findings(roots, part))
@@ -657,7 +664,12 @@ def _replacement_message(expected: list[_Unit], actual: list[_Unit]) -> str:
     return f"Expected {_describe(expected)}, found {_describe(actual)}."
 
 
-def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFinding]:
+def _chart_findings(
+    roots: dict[str, etree._Element],
+    expected: list[block.ChartBlock],
+    config: RenderConfig,
+    package: bytes,
+) -> list[VerificationFinding]:
     charts = roots[BODY].xpath(".//c:chart", namespaces={"c": C})
     chart_targets = {
         relation.get("Id"): relation.get("Target", "")
@@ -665,7 +677,7 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
         if relation.get("Type") == CHART_REL
     }
     findings = []
-    for chart in charts:
+    for index, chart in enumerate(charts):
         rid = chart.get(f"{{{R}}}id")
         target = chart_targets.get(rid, "")
         target = target.lstrip("/") if target.startswith("/") else "word/" + target
@@ -683,13 +695,40 @@ def _chart_findings(roots: dict[str, etree._Element]) -> list[VerificationFindin
             chart_rels is None
             or not external_id
             or not any(
-                relation.get("Id") == external_id and relation.get("Type") == PACKAGE_REL
+                relation.get("Id") == external_id
+                and relation.get("Type") == PACKAGE_REL
+                and (relation.get("TargetMode") or "").lower() != "external"
                 for relation in chart_rels
             )
         ):
             findings.append(
                 VerificationFinding("VERIFY303", "Missing chart workbook binding.", target)
             )
+            continue
+        if index >= len(expected):
+            continue
+        node = expected[index]
+        entry = prepare_chart_entry(node, config, DiagnosticReporter())
+        issue = chart_data_issue(chart_root, entry)
+        if issue:
+            findings.append(_finding("VERIFY303", issue, node, part=target))
+        relation = next(relation for relation in chart_rels if relation.get("Id") == external_id)
+        workbook_target = relation.get("Target", "")
+        workbook_part = posixpath.normpath(
+            workbook_target.lstrip("/")
+            if workbook_target.startswith("/")
+            else str(path.parent / workbook_target)
+        )
+        with ZipFile(BytesIO(package)) as archive:
+            if workbook_part not in archive.namelist():
+                findings.append(
+                    _finding("VERIFY303", "Chart workbook is missing.", node, part=workbook_part)
+                )
+                continue
+            workbook_blob = archive.read(workbook_part)
+        issue = workbook_data_issue(workbook_blob, entry, config.validation)
+        if issue:
+            findings.append(_finding("VERIFY303", issue, node, part=workbook_part))
     return findings
 
 

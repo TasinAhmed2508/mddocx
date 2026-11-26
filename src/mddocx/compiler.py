@@ -267,7 +267,7 @@ class Compiler:
         enforce_ast_limits(normalized, config.limits)
         blob = output if isinstance(output, bytes) else Path(output).read_bytes()
         roots = validated_docx_parts(blob, config.validation)
-        result = compare_document(normalized, roots, config)
+        result = compare_document(normalized, roots, config, blob)
         return VerificationResult(
             result.checked_units, result.findings, parsed.diagnostics + tuple(reporter.diagnostics)
         )

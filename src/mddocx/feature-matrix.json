@@ -123,9 +123,11 @@
       "tests": [
         "tests/test_diagnostic_locations.py",
         "tests/test_technical_report.py",
-        "tests/test_verification.py"
+        "tests/test_verification.py",
+        "tests/test_caption_numbering.py",
+        "tests/test_template_bookmarks.py"
       ],
-      "verify": "Native numbered equations, caption text and numbering fields, chapter counter resets, paired bookmarks, and cross-reference targets and switches"
+      "verify": "Native numbered equations, caption text, numbering fields and cached numbers, chapter counter resets, paired bookmarks, and cross-reference targets, switches and cached values"
     },
     {
       "id": "citations-bibliography",

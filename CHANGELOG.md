@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refetch and atomically repair invalid or oversized persistent image-cache entries.
+  Keep cached SVG and WebP conversions separate when conversion settings or SVG
+  resolution change.
 - Align the compatibility and resource-policy documentation with the default behavior
   for bounded public image downloads, the domain allow-list, and the explicit network block.
 

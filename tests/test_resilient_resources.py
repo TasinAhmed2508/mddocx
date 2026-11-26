@@ -125,6 +125,105 @@ def test_extensionless_mislabeled_image_is_validated_and_cached(tmp_path):
     assert counts["/asset"] == 1
 
 
+@pytest.mark.parametrize("damage", ["invalid", "oversized"])
+def test_persistent_image_cache_repairs_invalid_entries(tmp_path, damage):
+    data = _gif_bytes()
+    policy = ResourcePolicy(
+        allow_private_hosts=True, cache_directory=tmp_path / "cache", max_resource_size=1000
+    )
+    with _server({"/asset.gif": (200, "image/gif", data)}) as (origin, counts):
+        request = ResourceRequest(origin + "/asset.gif")
+        first = ResourceResolver(tmp_path, policy)
+        try:
+            initial = first.resolve_image(request)
+            assert isinstance(initial, ResolvedImage)
+            cached = initial.path
+            cached.write_bytes(b"broken" if damage == "invalid" else data + b"x" * 1000)
+        finally:
+            first.close()
+        for expected_cache in (False, True):
+            resolver = ResourceResolver(tmp_path, policy)
+            try:
+                result = resolver.resolve_image(request)
+                assert isinstance(result, ResolvedImage)
+                assert result.from_cache is expected_cache
+                assert result.path.read_bytes() == data
+            finally:
+                resolver.close()
+    assert counts == {"/asset.gif": 2}
+
+
+@pytest.mark.parametrize("format", ["svg", "webp"])
+def test_persistent_image_cache_honors_disabled_conversion(tmp_path, format):
+    if format == "svg":
+        data = b'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8"/>'
+    else:
+        image = BytesIO()
+        Image.new("RGB", (12, 8), "navy").save(image, format="WEBP")
+        data = image.getvalue()
+    route = "/asset." + format
+    policy = ResourcePolicy(allow_private_hosts=True, cache_directory=tmp_path / "cache")
+    with _server({route: (200, "image/" + format, data)}) as (origin, counts):
+        request = ResourceRequest(origin + route)
+        first = ResourceResolver(tmp_path, policy)
+        try:
+            assert isinstance(first.resolve_image(request), ResolvedImage)
+        finally:
+            first.close()
+        images = ImageConfig(**{format + "_conversion": False})
+        second = ResourceResolver(tmp_path, policy, images)
+        try:
+            result = second.resolve_image(request)
+            assert isinstance(result, ResourceFallback)
+            assert result.diagnostic.code == {"svg": "IMAGE203", "webp": "IMAGE202"}[format]
+        finally:
+            second.close()
+    assert counts == {route: 2}
+
+
+def test_persistent_svg_cache_uses_current_resolution(tmp_path):
+    data = b'<svg xmlns="http://www.w3.org/2000/svg" width="1in" height="0.5in"/>'
+    policy = ResourcePolicy(allow_private_hosts=True, cache_directory=tmp_path / "cache")
+    with _server({"/asset.svg": (200, "image/svg+xml", data)}) as (origin, counts):
+        for dpi in (72, 144):
+            resolver = ResourceResolver(tmp_path, policy, ImageConfig(svg_dpi=dpi))
+            try:
+                result = resolver.resolve_image(ResourceRequest(origin + "/asset.svg"))
+                assert isinstance(result, ResolvedImage)
+                assert (result.width_px, result.height_px) == (dpi, dpi // 2)
+            finally:
+                resolver.close()
+    assert counts == {"/asset.svg": 2}
+
+
+def test_compilation_repairs_cached_picture_in_body_and_table(tmp_path):
+    data = _gif_bytes(1)
+    cache = tmp_path / "cache"
+    compiler = Compiler(
+        RenderConfig(resources=ResourcePolicy(allow_private_hosts=True, cache_directory=cache))
+    )
+    source = tmp_path / "report.md"
+    with _server({"/plate.gif": (200, "image/gif", data)}) as (origin, counts):
+        url = origin + "/plate.gif"
+        source.write_text(
+            f"# Inspection\n\n![Plate]({url})\n\n"
+            f"| Evidence |\n| --- |\n| [Plate]({url}) |\n\nAfter the figures.\n",
+            encoding="utf-8",
+        )
+        original = compiler.compile_file(source, source.with_suffix(".docx"))
+        (cached,) = cache.iterdir()
+        cached.write_bytes(b"truncated image")
+        repaired = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert counts == {"/plate.gif": 2}
+    assert not repaired.diagnostics
+    assert compiler.verify(source, repaired.output_bytes).ok
+    assert repaired.output_bytes == original.output_bytes
+    parts = read_parts(repaired.output_bytes)
+    body = etree.fromstring(parts["word/document.xml"])
+    assert len(list(body.iter(qn("w:drawing")))) == 2
+    assert any(blob == data for name, blob in parts.items() if name.startswith("word/media/"))
+
+
 def test_animated_gif_is_preserved_in_docx_package(tmp_path):
     data = _gif_bytes(3)
     (tmp_path / "motion.gif").write_bytes(data)

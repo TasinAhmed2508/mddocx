@@ -209,11 +209,24 @@ class ResourceResolver:
                 )
             )
         self._validate_remote_url(source)
-        cache_key = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        # Prepared images depend on conversion settings as well as the source URL.
+        cache_signature = (
+            f"v2:{self.images.svg_conversion}:{self.images.svg_dpi}:"
+            f"{self.images.webp_conversion}:{source}"
+        )
+        cache_key = hashlib.sha256(cache_signature.encode("utf-8")).hexdigest()
         if self.cache_dir and self.policy.cache_remote_resources:
-            matches = list(self.cache_dir.glob(f"{cache_key}.*"))
-            if matches:
-                prepared, info = self._prepare_image(matches[0])
+            for cached in sorted(self.cache_dir.glob(f"{cache_key}.*")):
+                try:
+                    if (
+                        not cached.is_file()
+                        or cached.stat().st_size > self.policy.max_resource_size
+                    ):
+                        continue
+                    prepared, info = self._prepare_image(cached)
+                except (OSError, MddocxError):
+                    # A damaged or concurrently removed entry must not poison the URL.
+                    continue
                 return prepared, info, source, True
 
         handler = _SafeRedirectHandler(self)
@@ -268,8 +281,7 @@ class ResourceResolver:
             )
             validated_key = hashlib.sha256(validators.encode("utf-8")).hexdigest()[:16]
             cached = self.cache_dir / f"{cache_key}.{validated_key}{info.suffix}"
-            if not cached.exists():
-                atomic_write_bytes(cached, prepared.read_bytes())
+            atomic_write_bytes(cached, prepared.read_bytes())
             prepared = cached
         return prepared, info, final_url, False
 

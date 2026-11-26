@@ -41,8 +41,6 @@ def _points(series, path, expected, formula, *, numeric=False) -> bool:
     if count is None or count.get("val") != str(len(expected)):
         return False
     points = cache.findall(_C + "pt")
-    if len(points) != len(expected):
-        return False
     actual = {}
     for point in points:
         index = int(point.get("idx", "-1"))
@@ -50,7 +48,14 @@ def _points(series, path, expected, formula, *, numeric=False) -> bool:
             return False
         actual[index] = point.findtext(_C + "v", "")
     normalize = _numeric if numeric else lambda value: "" if value is None else str(value)
-    return all(normalize(actual[index]) == normalize(value) for index, value in enumerate(expected))
+    for index, value in enumerate(expected):
+        found = actual.get(index, "")
+        if value is None:
+            if found != "":
+                return False
+        elif normalize(found) != normalize(value):
+            return False
+    return True
 
 
 def chart_data_issue(root: etree._Element, entry: ChartEntry) -> str | None:

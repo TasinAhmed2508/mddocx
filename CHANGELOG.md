@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Extend native chart ranges to retain values beyond the supplied category labels.
+  Preserve nulls and short series as blank points in ChartML and the embedded workbook.
 - Compare native chart types, series names, categories, cached values and workbook
   data with inline or local CSV/JSON declarations during offline verification.
 - Verify caption and equation numbering instructions, chapter counter resets, and

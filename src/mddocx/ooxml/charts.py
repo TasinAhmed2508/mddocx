@@ -404,6 +404,8 @@ def _num_ref(parent, formula: str, values: list[object]) -> None:
     etree.SubElement(cache, f"{{{C}}}formatCode").text = "General"
     etree.SubElement(cache, f"{{{C}}}ptCount").set("val", str(len(values)))
     for idx, value in enumerate(values):
+        if value is None:
+            continue
         pt = etree.SubElement(cache, f"{{{C}}}pt")
         pt.set("idx", str(idx))
         try:

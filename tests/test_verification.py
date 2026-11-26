@@ -18,6 +18,7 @@ from mddocx import (
 from mddocx.cli import main
 from mddocx.inspection import NS
 from mddocx.ooxml import bangla
+from mddocx.ooxml.charts import C
 from mddocx.ooxml.package import read_parts, write_parts
 from mddocx.ooxml.sequence import get_or_add
 
@@ -518,6 +519,45 @@ def test_verify_chart_values_from_local_data(tmp_path, kind):
     result = compiler.verify(source, output.output_bytes)
     assert not result.ok
     assert any("values changed" in finding.message for finding in result.findings)
+
+
+@pytest.mark.parametrize("kind", ["column", "bar", "line", "pie", "scatter"])
+def test_chart_retains_values_with_short_categories_and_blank_points(tmp_path, kind):
+    source = tmp_path / "unequal-chart.md"
+    source.write_text(
+        f"~~~chart\ntype: {kind}\ncategories: [1, 2]\n"
+        "series: {Count: [5, null, 7], Other: [3]}\n~~~\n",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    blob = compiler.compile_file(source, source.with_suffix(".docx")).output_bytes
+    assert compiler.verify(source, blob).ok
+    parts = read_parts(blob)
+    root = etree.fromstring(parts["word/charts/chart1.xml"])
+    value_tag = "yVal" if kind == "scatter" else "val"
+    caches = root.findall(f".//{{*}}{value_tag}/{{*}}numRef")
+    assert caches[0].findtext("{*}f") == "Sheet1!$B$2:$B$4"
+    assert caches[0].find("{*}numCache/{*}ptCount").get("val") == "3"
+    points = caches[0].findall("{*}numCache/{*}pt")
+    assert [(point.get("idx"), point.findtext("{*}v")) for point in points] == [
+        ("0", "5.0"),
+        ("2", "7.0"),
+    ]
+    workbook = load_workbook(BytesIO(parts["word/embeddings/Microsoft_Excel_Worksheet1.xlsx"]))
+    try:
+        assert workbook.active["A4"].value is None
+        assert workbook.active["B3"].value is None
+        assert workbook.active["B4"].value == 7
+        if kind != "pie":
+            assert workbook.active["C3"].value is None
+            assert workbook.active["C4"].value is None
+    finally:
+        workbook.close()
+    point = etree.SubElement(caches[0].find("{*}numCache"), f"{{{C}}}pt", idx="1")
+    etree.SubElement(point, f"{{{C}}}v").text = "0"
+    parts["word/charts/chart1.xml"] = etree.tostring(root)
+    (finding,) = compiler.verify(source, write_parts(parts)).findings
+    assert finding.code == "VERIFY303" and "values changed" in finding.message
 
 
 @pytest.mark.parametrize(

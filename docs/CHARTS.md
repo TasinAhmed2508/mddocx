@@ -2,6 +2,12 @@
 
 Chart fences generate editable ChartML backed by an embedded deterministic XLSX workbook.
 
+Category labels and series share a range long enough to include every supplied value.
+Missing labels remain blank. Missing values, including explicit YAML `null` entries,
+remain blank workbook cells and chart gaps. When categories are omitted entirely,
+the compiler generates sequential category values. Scatter charts keep missing
+coordinates blank and require numeric values for coordinates that are present.
+
 ````markdown
 ```chart {#fig-sales caption="Quarterly performance"}
 type: column

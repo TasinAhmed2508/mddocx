@@ -80,6 +80,9 @@ def prepare_chart_entry(
             )
         numeric: list[object] = []
         for value in values:
+            if value is None:
+                numeric.append(None)
+                continue
             number = coerce_number(value)
             numeric.append(number if number is not None else 0.0)
         max_points = max(max_points, len(numeric))
@@ -97,6 +100,10 @@ def prepare_chart_entry(
         )
     if not categories:
         categories = list(range(1, max_points + 1))
+    else:
+        categories.extend([None] * (max_points - len(categories)))
+    for _, values in series:
+        values.extend([None] * (max_points - len(values)))
     if node.chart_type.lower() == "pie" and len(series) > 1:
         reporter.warn(
             "CHART207",
@@ -109,7 +116,7 @@ def prepare_chart_entry(
         converted: list[object] = []
         for value in categories:
             number = coerce_number(value)
-            if number is None:
+            if number is None and value is not None:
                 raise MddocxError(
                     Diagnostic(
                         "error",

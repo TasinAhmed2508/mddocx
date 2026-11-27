@@ -27,12 +27,13 @@ def test_shell_completion_uses_cli_options(shell, flag, capsys):
     assert flag in output and "mddocx-native" in output and "verify" in output
 
 
-def test_single_file_watch_recovers_and_monitors_local_images(tmp_path, monkeypatch):
+@pytest.mark.parametrize("filename", ["tile.png", "tile image.png"])
+def test_single_file_watch_recovers_and_monitors_local_images(tmp_path, monkeypatch, filename):
     source = tmp_path / "doc.md"
     output = source.with_suffix(".docx")
-    asset = tmp_path / "tile.png"
+    asset = tmp_path / filename
     Image.new("RGB", (8, 8), "red").save(asset)
-    source.write_text("![Tile](tile.png)\n\n# First")
+    source.write_text(f"![Tile](<{filename}>)\n\n# First")
     builds = []
     errors = []
 
@@ -49,7 +50,7 @@ def test_single_file_watch_recovers_and_monitors_local_images(tmp_path, monkeypa
     def on_error(exc):
         errors.append(str(exc))
         assert output.read_bytes() == builds[0]
-        source.write_text("![Tile](tile.png)\n\n# Fixed")
+        source.write_text(f"![Tile](<{filename}>)\n\n# Fixed")
 
     monkeypatch.setattr("mddocx.watch.sleep", lambda _: None)
     with pytest.raises(KeyboardInterrupt):
@@ -58,11 +59,12 @@ def test_single_file_watch_recovers_and_monitors_local_images(tmp_path, monkeypa
     assert len(set(builds)) == 3
 
 
-def test_diagnostic_output_cannot_overwrite_implicit_local_dependency(tmp_path):
+@pytest.mark.parametrize("filename", ["tile.png", "tile image.png"])
+def test_diagnostic_output_cannot_overwrite_implicit_local_dependency(tmp_path, filename):
     source = tmp_path / "doc.md"
-    resource = tmp_path / "tile.png"
+    resource = tmp_path / filename
     Image.new("RGB", (8, 8), "red").save(resource)
-    source.write_text("![Tile](tile.png)\n\n# First")
+    source.write_text(f"![Tile](<{filename}>)\n\n# First")
     original = resource.read_bytes()
     assert main([str(source), "--diagnostics-json", str(resource)]) == 2
     assert resource.read_bytes() == original

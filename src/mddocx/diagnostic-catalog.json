@@ -764,6 +764,13 @@
     "remediations": []
   },
   {
+    "code": "PROJECT806",
+    "severities": [
+      "error"
+    ],
+    "remediations": []
+  },
+  {
     "code": "PROJECT807",
     "severities": [
       "error"

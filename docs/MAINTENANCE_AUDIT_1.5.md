@@ -14,6 +14,7 @@ and publication. The completed 1.4.3 review is recorded separately in
 | Report appearance | The Report theme and its heading and table behavior are covered in `tests/test_table_and_setup_rc2.py`. Optional page rendering remains separate from structural verification. |
 | Editable equations | `tests/test_equation_conformance_corpus.py` checks 250 deterministic cases across ten families through the Python converter without an external math engine. It checks native OMML structure and semantic validation. This is evidence for the corpus, not unrestricted TeX compatibility. |
 | Direct image links | `tests/test_resilient_resources.py` covers body, table, note, and linked images, repeated URLs, failures, and links that must not trigger a download. |
+| Local image URI paths | A shared decoder handles spaces, Bangla filenames, and literal escaped percent signs once. Tests check embedded bytes, decoded dependencies, watch rebuilds, project include rebasing, cache invalidation, output collision protection, containment, and invalid-path diagnostics. Project AST paths are re-encoded after rebasing so a second stage does not decode percent signs twice. |
 | Persistent image cache | Invalid and oversized entries are refetched and atomically repaired. SVG/WebP settings and SVG resolution participate in cache keys. The repaired body-and-table fixture produces identical DOCX bytes and verifies offline. |
 | Malformed HTML tables | Non-whitespace text outside cells or captions is preserved as source text with `TABLE202`. Six previously silent losses and a valid whitespace case have regression coverage. |
 | Template bookmarks | `tests/test_template_bookmarks.py` covers reserved names and IDs in bodies, headers, footers, footnotes, and endnotes, with output validation enabled and disabled. It checks generated REF instructions, internal links, and start/end IDs. |
@@ -95,6 +96,15 @@ widths, and nine additional normalizer/nested-target cases. Ruff, formatting, th
 Word drawing of nested table/equation list items was inspected and reports one page;
 its source and generated DOCX verify across nine units. Empty items, nested-only
 lists, and equations followed by explanatory text were also checked independently.
+
+The imported-table follow-up passed all 13 hosted CI jobs on `b98727a`, including
+the Windows/Linux/macOS quality matrix, wheel and source-archive smoke checks, and
+the optional LibreOffice visual job in
+[run 46026661748](https://github.com/TasinAhmed2508/mddocx/actions/runs/46026661748).
+After the local-image URI fix, the local suite passed 1,000 nonvisual tests with
+two optional visual tests deselected. Ruff, formatting, the 11-file mypy gate,
+diagnostic-catalog synchronization, and whitespace checks passed. This newer image
+change still requires its own hosted candidate and archive qualification.
 
 ## Qualification still required
 

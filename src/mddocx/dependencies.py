@@ -7,6 +7,8 @@ from .ast.base import Document, iter_nodes
 from .ast.block import ChartBlock, DataTableBlock, ImageBlock
 from .ast.inline import Image
 from .config import RenderConfig
+from .diagnostics import MddocxError
+from .resources.paths import local_image_path
 
 
 def local_dependencies(document: Document, config: RenderConfig, base: Path) -> set[Path]:
@@ -31,7 +33,14 @@ def local_dependencies(document: Document, config: RenderConfig, base: Path) -> 
             # The resource resolver reports malformed URLs with their source location.
             continue
         if not url.scheme and not url.netloc:
-            path = (base / raw).resolve()
+            try:
+                path = (
+                    local_image_path(base, raw)
+                    if isinstance(node, (Image, ImageBlock))
+                    else (base / raw).resolve()
+                )
+            except MddocxError:
+                continue
             if path.is_relative_to(base):
                 paths.add(path)
     return paths

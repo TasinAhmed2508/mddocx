@@ -16,6 +16,7 @@ from mddocx.output import atomic_write_bytes
 from .media import MediaInfo
 from .models import ResourceFallback, ResourceRequest, ResourceResolution, ResolvedImage
 from .network import validate_remote_url
+from .paths import local_image_path
 from .preparation import prepare_image
 
 
@@ -180,7 +181,7 @@ class ResourceResolver:
         return target
 
     def _resolve_local(self, source: str) -> Path:
-        candidate = (self.base_dir / source).resolve()
+        candidate = local_image_path(self.base_dir, source)
         try:
             candidate.relative_to(self.base_dir)
         except ValueError as exc:

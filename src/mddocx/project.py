@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any, Callable, Iterable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from .api import _apply_front_matter
 from .compiler import Compiler
@@ -26,9 +26,10 @@ from .parser import MarkdownParser
 from .parser.frontmatter import split_front_matter
 from .metadata import sanitize_markdown_metadata
 from .source import acquire_markdown_source
+from .resources.paths import local_image_path
 
 _PROJECT_SCHEMA_VERSION = 1
-_PROJECT_ENGINE_VERSION = "mddocx-project-v24"
+_PROJECT_ENGINE_VERSION = "mddocx-project-v25"
 _INCLUDE_RE = re.compile(
     r"^[ \t]{0,3}@include[ \t]+(?:\"(?P<double>[^\"]+)\"|'(?P<single>[^']+)'|(?P<bare>[^\s#]+))[ \t]*$"
 )
@@ -236,7 +237,15 @@ class ProjectCompiler:
                 parsed = urlparse(source)
                 if parsed.scheme or parsed.netloc or source.startswith("#"):
                     continue
-                target = (source_dir / source).resolve()
+                try:
+                    target = local_image_path(source_dir, source)
+                except MddocxError as exc:
+                    raise _project_error(
+                        "PROJECT806",
+                        exc.diagnostic.message,
+                        Path(getattr(node.source, "file", None) or self.manifest.path),
+                        getattr(node.source, "line", None),
+                    ) from exc
                 self._dependencies.add(target)
                 _ensure_within(
                     self.manifest.root,
@@ -244,7 +253,7 @@ class ProjectCompiler:
                     "PROJECT806",
                     f"Resource referenced by project source escapes the project root: {source}",
                 )
-                node.src = target.relative_to(self.manifest.root).as_posix()
+                node.src = quote(target.relative_to(self.manifest.root).as_posix())
             elif isinstance(node, ChartBlock) and node.source_path:
                 source = node.source_path
                 parsed = urlparse(source)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
+from zipfile import ZipFile
 
+from PIL import Image
 import pytest
 
 from mddocx import RenderConfig, build_project, compile_project, init_project, load_project
@@ -30,6 +33,19 @@ def test_project_cache_does_not_reuse_explicit_config_output(tmp_path: Path):
 
     assert custom.built and custom.output_sha256 != default.output_sha256
     assert restored.built
+    assert build_project(manifest).skipped
+
+
+def test_project_rebuilds_cache_from_before_decoded_image_paths(tmp_path, monkeypatch):
+    import mddocx.project as project
+
+    manifest = load_project(init_project(tmp_path / "report"))
+    with monkeypatch.context() as legacy:
+        legacy.setattr(project, "_PROJECT_ENGINE_VERSION", "mddocx-project-v24")
+        old = build_project(manifest)
+        assert build_project(manifest).skipped
+    updated = build_project(manifest)
+    assert updated.built and updated.fingerprint != old.fingerprint
     assert build_project(manifest).skipped
 
 
@@ -69,6 +85,48 @@ variables:
         "main.md",
         "math.md",
     }
+
+
+@pytest.mark.parametrize("filename", ["chart example.png", "বাংলা %20 ছবি.png"])
+def test_project_includes_rebase_encoded_images_and_rebuild_when_they_change(tmp_path, filename):
+    chapter = tmp_path / "chapters"
+    chapter.mkdir()
+    asset = chapter / filename
+    Image.new("RGB", (12, 8), "navy").save(asset)
+    (chapter / "part.md").write_text(f"![Chart]({quote(filename)})", encoding="utf-8")
+    (tmp_path / "main.md").write_text("@include chapters/part.md", encoding="utf-8")
+    (tmp_path / "mddocx.yml").write_text("version: 1\nsources: [main.md]\n", encoding="utf-8")
+    compiled = compile_project(tmp_path)
+    assert compiled.document.children[0].src == quote("chapters/" + filename)
+    assert asset in compiled.dependencies
+    first = build_project(tmp_path)
+    assert first.built and not first.diagnostics
+    with ZipFile(first.output_path) as package:
+        media = [name for name in package.namelist() if name.startswith("word/media/")]
+        assert len(media) == 1
+        assert package.read(media[0]) == asset.read_bytes()
+    assert build_project(tmp_path).skipped
+    Image.new("RGB", (12, 8), "red").save(asset)
+    updated = build_project(tmp_path)
+    assert updated.built and updated.output_sha256 != first.output_sha256
+    assert asset in updated.dependencies
+    assert build_project(tmp_path).skipped
+
+
+def test_project_rejects_invalid_decoded_image_paths_without_replacing_output(tmp_path):
+    source = tmp_path / "main.md"
+    source.write_text("Before.\n\n![Bad](bad%00.png)", encoding="utf-8")
+    (tmp_path / "mddocx.yml").write_text(
+        "version: 1\nsources: [main.md]\noutput: previous.docx\n", encoding="utf-8"
+    )
+    output = tmp_path / "previous.docx"
+    output.write_bytes(b"previous document")
+    with pytest.raises(MddocxError) as caught:
+        build_project(tmp_path)
+    assert caught.value.diagnostic.code == "PROJECT806"
+    assert caught.value.diagnostic.source_file == str(source)
+    assert caught.value.diagnostic.line == 3
+    assert output.read_bytes() == b"previous document"
 
 
 def test_project_rejects_source_and_include_path_traversal(tmp_path: Path):

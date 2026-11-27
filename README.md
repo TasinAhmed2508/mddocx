@@ -369,6 +369,11 @@ updates them.
 
 ### Linked images
 
+For a local filename with spaces, use angle brackets such as
+`![Chart](<figures/chart example.png>)`, or URI encoding such as
+`![Chart](figures/chart%20example.png)`. Image URI paths are decoded once; encode a
+literal percent sign as `%25`. Project includes and watch track the decoded file.
+
 Use `![Description](https://example.org/chart.jpg)` to embed a remote figure. A direct
 HTTP(S) image URL on its own line or a standalone link such as
 `[Chart description](https://example.org/chart.jpg)` also embeds the referenced image.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Decode local image URI paths once so spaces, Bangla names, and escaped percent signs
+  embed correctly in the body, tables, and notes. Track the decoded files for watch,
+  overwrite checks, and project includes; rebuild older project-cache entries.
+  Invalid decoded paths produce source-located diagnostics.
 - Include imported data-table identifiers in the semantic index so staged checks
   resolve their table cross-references consistently with rendering and verification.
 - Keep section-scoped caption and equation numbers correct after Word updates fields,

@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from threading import Thread
 from zipfile import ZipFile
+from urllib.parse import quote
 
 import pytest
 from docx import Document
@@ -68,6 +69,52 @@ def test_content_detection_ignores_misleading_local_extension(tmp_path):
         2,
     )
     assert result.frame_count == 2
+
+
+@pytest.mark.parametrize("filename", ["chart example.png", "বাংলা ছবি.png", "literal%20value.png"])
+@pytest.mark.parametrize("container", ["body", "inline", "table", "note"])
+def test_encoded_local_image_paths_embed_and_track_the_actual_file(tmp_path, filename, container):
+    asset = tmp_path / filename
+    Image.new("RGB", (12, 8), "navy").save(asset)
+    image = f"![Chart]({quote(filename)})"
+    markdown = {
+        "body": image,
+        "inline": f"Before {image} after.",
+        "table": f"| Figure |\n| --- |\n| {image} |",
+        "note": f"Claim.[^image]\n\n[^image]: {image}",
+    }[container]
+    source = tmp_path / "report.md"
+    source.write_text(markdown, encoding="utf-8")
+    compiler = Compiler()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert not result.diagnostics
+    assert asset in result.dependencies
+    with ZipFile(BytesIO(result.output_bytes)) as package:
+        media = [name for name in package.namelist() if name.startswith("word/media/")]
+        assert len(media) == 1
+        assert package.read(media[0]) == asset.read_bytes()
+    assert compiler.verify(source, result.output_bytes).ok
+
+
+def test_encoded_local_image_traversal_stays_blocked(tmp_path):
+    base = tmp_path / "report"
+    base.mkdir()
+    Image.new("RGB", (12, 8), "navy").save(tmp_path / "private.png")
+    resolver = ResourceResolver(base, ResourcePolicy(image_failure="error"))
+    try:
+        with pytest.raises(MddocxError, match="RESOURCE203"):
+            resolver.resolve_image(ResourceRequest("%2e%2e/private.png"))
+    finally:
+        resolver.close()
+
+
+def test_invalid_decoded_local_image_path_has_a_source_located_diagnostic(tmp_path):
+    source = tmp_path / "invalid.md"
+    source.write_text("Before.\n\n![Bad](bad%00.png)", encoding="utf-8")
+    result = Compiler().compile_file(source, source.with_suffix(".docx"))
+    assert [(item.code, item.source_file, item.line) for item in result.diagnostics] == [
+        ("RESOURCE208", str(source), 3)
+    ]
 
 
 def test_invalid_image_returns_source_located_fallback(tmp_path):

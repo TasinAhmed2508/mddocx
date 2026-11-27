@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 from typing import Iterable
 
+from .api import MarkdownWord
 from .compiler import Compiler
 from .config import RenderConfig
 from .diagnostics import Diagnostic, MddocxError
@@ -48,6 +49,7 @@ def render_many(
     fail_fast: bool = False,
     jobs: int = 1,
 ) -> list[BatchResult]:
+    """Reserve known input dependencies before converting any selected document."""
     if not isinstance(jobs, int) or isinstance(jobs, bool) or jobs < 1:
         raise ValueError("jobs must be a positive integer")
     source_paths = collect_markdown_inputs(inputs, recursive=recursive)
@@ -68,11 +70,27 @@ def render_many(
         names[candidate.casefold()] = source
         plans.append((source, target_root / candidate))
 
+    protected_paths = set(source_paths)
+    preflight_errors: dict[Path, Exception] = {}
+    for source in source_paths:
+        try:
+            service = MarkdownWord(config)
+            service.check_file(source)
+        except Exception as exc:
+            # Do not retain parsed documents through exception tracebacks.
+            preflight_errors[source] = (
+                MddocxError(exc.diagnostic) if isinstance(exc, MddocxError) else Exception(str(exc))
+            )
+        else:
+            protected_paths.update(service._dependencies)
+
     def convert(plan: tuple[Path, Path]) -> BatchResult:
         source, target = plan
         previous = target.is_file()
         try:
-            validate_output_path(target, source_paths)
+            validate_output_path(target, protected_paths)
+            if source in preflight_errors:
+                raise preflight_errors[source]
             result = Compiler(config).compile_file(source, target)
             return BatchResult(source, target, True, diagnostics=result.diagnostics)
         except MddocxError as exc:

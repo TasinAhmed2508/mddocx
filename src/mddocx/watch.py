@@ -33,18 +33,25 @@ def watch_file(
 
     pending = None
     previous = snapshot()
+
+    def track_dependencies(paths):
+        nonlocal dependencies, previous
+        new_dependencies = set(paths) - {output.resolve()}
+        dependencies = {source.resolve(), *new_dependencies}
+        current = snapshot()
+        previous = {path: previous.get(path, value) for path, value in current.items()}
+
     while True:
         try:
             result = compiler.compile_file(source, output)
         except (MddocxError, OSError, ValueError) as exc:
             if once:
                 raise
+            if compiler._dependencies:
+                track_dependencies(compiler._dependencies)
             on_error(exc)
         else:
-            new_dependencies = set(result.dependencies) - {output.resolve()}
-            dependencies = {source.resolve(), *new_dependencies}
-            current = snapshot()
-            previous = {path: previous.get(path, value) for path, value in current.items()}
+            track_dependencies(result.dependencies)
             on_build(result)
         if once:
             return

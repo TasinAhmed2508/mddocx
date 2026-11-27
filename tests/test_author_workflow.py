@@ -69,3 +69,45 @@ def test_diagnostic_output_cannot_overwrite_implicit_local_dependency(tmp_path, 
     assert main([str(source), "--diagnostics-json", str(resource)]) == 2
     assert resource.read_bytes() == original
     assert not source.with_suffix(".docx").exists()
+
+
+@pytest.mark.parametrize("introduced_after_success", [False, True])
+def test_watch_retries_when_a_new_missing_data_file_is_created(
+    tmp_path, monkeypatch, introduced_after_success
+):
+    from docx import Document
+
+    source = tmp_path / "report.md"
+    output = source.with_suffix(".docx")
+    asset = tmp_path / "readings.csv"
+    declaration = "~~~data-table\nsource: readings.csv\n~~~"
+    source.write_text("# Initial" if introduced_after_success else declaration, encoding="utf-8")
+    output.write_bytes(b"previous output")
+    builds, errors = [], []
+    polls = 0
+
+    def on_build(result):
+        builds.append(result.output_bytes)
+        if introduced_after_success and len(builds) == 1:
+            source.write_text(declaration, encoding="utf-8")
+            return
+        assert asset in result.dependencies
+        assert Document(output).tables[0].cell(1, 0).text == "Alpha"
+        raise KeyboardInterrupt
+
+    def on_error(exc):
+        errors.append(str(exc))
+        assert "DATA201" in str(exc)
+        assert output.read_bytes() == (builds[0] if builds else b"previous output")
+        asset.write_text("Name,Value\nAlpha,10\n", encoding="utf-8")
+
+    def poll(_interval):
+        nonlocal polls
+        polls += 1
+        assert polls <= 10, "Watch did not notice the new data file"
+
+    monkeypatch.setattr("mddocx.watch.sleep", poll)
+    with pytest.raises(KeyboardInterrupt):
+        watch_file(source, output, interval=0.1, once=False, on_build=on_build, on_error=on_error)
+    assert len(errors) == 1
+    assert len(builds) == (2 if introduced_after_success else 1)

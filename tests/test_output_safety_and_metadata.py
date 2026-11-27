@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 from docx import Document
+from PIL import Image
 import pytest
 
 from mddocx import Compiler, MarkdownWord, RenderConfig, build_project, render_many
@@ -117,6 +119,114 @@ def test_batch_does_not_overwrite_inputs(tmp_path: Path):
     assert any(not result.ok and "OUTPUT401" in result.error for result in results)
     assert source.read_text(encoding="utf-8") == "# Source\n"
     assert other_source.read_text(encoding="utf-8") == "# Other source\n"
+
+
+@pytest.mark.parametrize("jobs", [1, 2])
+@pytest.mark.parametrize("reference_first", [False, True])
+def test_batch_does_not_overwrite_another_documents_image(tmp_path, jobs, reference_first):
+    asset = tmp_path / "middle.docx"
+    Image.new("RGB", (12, 8), "navy").save(asset, format="PNG")
+    original = asset.read_bytes()
+    producer = tmp_path / "middle.md"
+    producer.write_text("# Report\n\nText.", encoding="utf-8")
+    consumer = tmp_path / ("a.md" if reference_first else "z.md")
+    consumer.write_text("![Keep the image](middle.docx)", encoding="utf-8")
+    results = render_many([producer, consumer], tmp_path, jobs=jobs)
+    by_input = {item.input_path: item for item in results}
+    assert not by_input[producer].ok
+    assert [item.code for item in by_input[producer].diagnostics] == ["OUTPUT401"]
+    assert asset.read_bytes() == original
+    assert by_input[consumer].ok and not by_input[consumer].diagnostics
+    assert len(Document(by_input[consumer].output_path).inline_shapes) == 1
+
+
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_batch_protects_dependencies_added_by_document_transforms(tmp_path, jobs):
+    from mddocx.ast.block import ImageBlock
+
+    class AddImage:
+        def transform_document(self, document):
+            if document.children[0].children[0].text == "Consumer":
+                document.children.append(ImageBlock(src="a.docx", alt="Protected image"))
+
+    asset = tmp_path / "a.docx"
+    Image.new("RGB", (12, 8), "navy").save(asset, format="PNG")
+    original = asset.read_bytes()
+    producer, consumer = tmp_path / "a.md", tmp_path / "b.md"
+    producer.write_text("# Producer", encoding="utf-8")
+    consumer.write_text("# Consumer", encoding="utf-8")
+    results = render_many(
+        [producer, consumer], tmp_path, RenderConfig(extensions=(AddImage(),)), jobs=jobs
+    )
+    assert not results[0].ok and results[0].diagnostics[0].code == "OUTPUT401"
+    assert results[1].ok
+    assert asset.read_bytes() == original
+    assert len(Document(results[1].output_path).inline_shapes) == 1
+
+
+def test_batch_fail_fast_checks_future_assets_before_rendering(tmp_path):
+    asset = tmp_path / "a.docx"
+    Image.new("RGB", (12, 8), "navy").save(asset, format="PNG")
+    original = asset.read_bytes()
+    producer, consumer = tmp_path / "a.md", tmp_path / "b.md"
+    producer.write_text("# Producer", encoding="utf-8")
+    consumer.write_text("![Protected](a.docx)", encoding="utf-8")
+    results = render_many([producer, consumer], tmp_path, fail_fast=True, jobs=4)
+    assert len(results) == 1 and not results[0].ok
+    assert results[0].diagnostics[0].code == "OUTPUT401"
+    assert asset.read_bytes() == original
+    assert not consumer.with_suffix(".docx").exists()
+
+
+def test_batch_reports_invalid_configuration_per_file(tmp_path):
+    source = tmp_path / "report.md"
+    source.write_text("# Report", encoding="utf-8")
+    config = RenderConfig()
+    config.page.orientation = "invalid"
+    results = render_many([source], tmp_path, config)
+    assert len(results) == 1 and not results[0].ok
+    assert results[0].diagnostics[0].code == "CONFIG401"
+
+
+def test_cli_parallel_batch_protects_encoded_image_paths(tmp_path, capsys):
+    asset = tmp_path / "a report.docx"
+    Image.new("RGB", (12, 8), "navy").save(asset, format="PNG")
+    original = asset.read_bytes()
+    producer, consumer = tmp_path / "a report.md", tmp_path / "b.md"
+    producer.write_text("# Producer", encoding="utf-8")
+    consumer.write_text("![Protected](a%20report.docx)", encoding="utf-8")
+    assert (
+        main([str(producer), str(consumer), "--output-dir", str(tmp_path), "--jobs", "2", "--json"])
+        == 2
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert [item["status"] for item in report["results"]] == ["failed", "ok"]
+    assert report["results"][0]["diagnostics"][0]["code"] == "OUTPUT401"
+    assert asset.read_bytes() == original
+    assert len(Document(consumer.with_suffix(".docx")).inline_shapes) == 1
+
+
+@pytest.mark.parametrize("alias", ["hardlink", "symlink"])
+def test_batch_protects_output_aliases_of_another_documents_image(tmp_path, alias):
+    asset = tmp_path / "photo.png"
+    Image.new("RGB", (12, 8), "navy").save(asset)
+    original = asset.read_bytes()
+    target = tmp_path / "a.docx"
+    try:
+        if alias == "hardlink":
+            os.link(asset, target)
+        else:
+            target.symlink_to(asset)
+    except OSError:
+        pytest.skip(f"{alias} is not available on this filesystem")
+    producer, consumer = tmp_path / "a.md", tmp_path / "b.md"
+    producer.write_text("# Producer", encoding="utf-8")
+    consumer.write_text("![Protected](photo.png)", encoding="utf-8")
+    results = render_many([producer, consumer], tmp_path, jobs=2)
+    assert not results[0].ok and results[0].diagnostics[0].code == "OUTPUT401"
+    assert results[1].ok
+    assert asset.read_bytes() == original
+    assert target.samefile(asset)
 
 
 def test_interactive_render_reports_fallback_warnings(tmp_path: Path, monkeypatch):

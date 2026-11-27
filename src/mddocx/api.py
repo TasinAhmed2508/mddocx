@@ -128,6 +128,7 @@ class MarkdownWord:
         return blob
 
     def check_file(self, input_path: str | Path) -> None:
+        """Validate source and collect its local dependencies without rendering."""
         self.reporter.diagnostics.clear()
         self._dependencies.clear()
         input_path = Path(input_path)
@@ -144,6 +145,9 @@ class MarkdownWord:
             cfg = self._config_for_document(input_path.parent, ast.metadata)
             ast = call_transform_document(cfg.extensions, ast)
             enforce_ast_limits(ast, cfg.limits)
+            self._dependencies = local_dependencies(
+                ast, cfg, Path(cfg.base_dir or input_path.parent)
+            )
         except MddocxError as exc:
             self._record_error(exc)
             raise

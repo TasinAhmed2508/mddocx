@@ -18,6 +18,13 @@ versioned canonical AST and `LAYOUT_SCHEMA_VERSION`. Returned values are validat
 rendering; transform failures use stable `PLUGIN405`–`PLUGIN408` diagnostics, while an
 incompatible returned layout schema uses `PLUGIN409`.
 
+Batch conversion runs parsing and document transforms during a dependency check before
+rendering. Keep those hooks deterministic and safe to repeat. Represent file-backed
+images, charts, and tables with their canonical AST nodes so dependency inspection can
+reserve their paths across the batch. Renderer hooks run during conversion; fail-fast
+stops rendering after the first failed input even though the initial dependency check
+examines all selected inputs.
+
 The renderer hooks remain available for v1 compatibility, but they expose implementation details
 and are not the preferred v2 integration boundary. Extensions that still require custom OOXML
 should keep it localized and must not place `python-docx` objects inside the canonical AST.

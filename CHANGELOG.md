@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reserve known local dependencies across an entire batch before writing any output.
+  A document cannot overwrite another selected document's image or other declared
+  resource. Conflicts report `OUTPUT401` in serial, parallel, and fail-fast conversion.
+- Keep dependencies discovered by failed file conversions available to single-file
+  watch. Creating a newly referenced missing CSV now triggers a retry without requiring
+  another Markdown edit, while the previous DOCX remains in place during the failure.
+
 ## 1.5.0rc5
 
 - Decode local image URI paths once so spaces, Bangla names, and escaped percent signs

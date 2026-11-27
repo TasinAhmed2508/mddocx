@@ -146,6 +146,41 @@ The final 64-second video now links to the GitHub releases page. Eleven timeline
 snapshots and the encoded closing frame were inspected. Playback, seeking, looping,
 and full MP4 decoding passed, and its compressed narration is unchanged.
 
+## Post-rc5 dependency handling
+
+The review reproduced a batch overwrite: an earlier output could replace an image
+referenced by another selected document. Batch preparation now inspects each source
+and its effective configuration through the existing file-check service, collecting
+known local dependencies before serial or parallel conversion begins. Output checks
+reserve the complete set, including paths introduced by document transforms and
+encoded local image paths. Preflight failures retain diagnostics without retaining
+parsed documents through exception tracebacks. Fail-fast conversion remains serial;
+the initial dependency check still examines every selected input.
+
+Single-file watch also missed newly introduced dependencies after a failed build.
+The compiler now retains the dependencies discovered during each file attempt,
+including failed rendering/publication. Watch records those paths before reporting
+the error, so creating a missing CSV triggers another build. Tests cover a missing
+file on the first attempt and one introduced after a successful conversion; the
+last good output is preserved throughout the failed attempt.
+
+The combined local nonvisual suite passed 1,013 tests with two optional visual tests
+deselected. Ruff, formatting, the existing 11-file mypy gate, and the diagnostic
+catalog check passed. An additional output-alias regression passes for hardlinks;
+the symlink case is skipped on this workstation because symlink creation is not
+available. It remains enabled on filesystems that support it. These dependency
+fixes are on the integration branch and are not part of the unchanged published
+rc5 archives. Hosted checks are pending for this follow-up.
+
+Five alternating paired comparisons with the published rc5 source used 20 reports
+per run with the Report theme, headings, a native table, nested lists, and code.
+The serial median changed from 2.656 to 2.687 seconds (+1.16%); two-worker conversion
+changed from 2.117 to 2.197 seconds (+3.76%). Median peak traced Python memory changed
+from 8.05 to 8.15 MiB and from 8.76 to 9.16 MiB, respectively. Each document matched
+byte for byte across all ten runs for each worker count. This is a measured cost
+of the new dependency protection, not a speedup. The runner and raw samples are
+retained under `D:\Project\.mddocx-active-work\batch-dependency-review`.
+
 ## Qualification still required
 
 - Optional Word SaveAs/PDF export qualification remains incomplete on this workstation.

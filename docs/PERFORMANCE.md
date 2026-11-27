@@ -201,3 +201,23 @@ document contains 6,000 level-two headings, each followed by a short paragraph.
 | 20-section mixed report | 0.572 s | 0.550 s |
 
 Each workload produced identical DOCX bytes across all ten runs.
+
+## Batch dependency protection
+
+Five alternating paired runs on Windows/Python 3.12 compared the dependency
+preflight with published rc5 commit `4d1033d`. Each fresh process converted 20
+reports using the Report theme, headings, a native table, nested lists, and a code
+block. No external math engine or remote resources were used. Timings exclude
+interpreter startup; a separate conversion measured peak traced Python memory.
+
+| Workers | rc5 median | With preflight | Peak Python memory before/after |
+| --- | ---: | ---: | ---: |
+| 1 | 2.656 s | 2.687 s | 8.05 / 8.15 MiB |
+| 2 | 2.117 s | 2.197 s | 8.76 / 9.16 MiB |
+
+Each report produced identical DOCX bytes across all ten samples at each worker
+count. The measured increases of 1.16% and 3.76% are the cost of reserving known
+dependencies across the batch before publication. This comparison does not
+establish a speedup. The exact runner and samples are retained in
+`D:\Project\.mddocx-active-work\batch-dependency-review\benchmark_batch.py` and
+`benchmark.json`.

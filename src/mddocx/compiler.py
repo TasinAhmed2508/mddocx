@@ -85,6 +85,7 @@ class Compiler:
         self.config = validate_render_config(
             deepcopy(config) if config is not None else RenderConfig()
         )
+        self._dependencies: tuple[Path, ...] = ()
 
     def parse_string(
         self,
@@ -225,17 +226,22 @@ class Compiler:
         *,
         report_paths: tuple[Path, ...] = (),
     ) -> CompilationResult:
+        self._dependencies = ()
         source = Path(input_path)
         target = Path(output_path)
         compiler = MarkdownWord(self.config)
-        output = compiler._render_file(source, target, report_paths=report_paths)
+        try:
+            output = compiler._render_file(source, target, report_paths=report_paths)
+        finally:
+            dependencies = tuple(sorted(compiler._dependencies))
+            self._dependencies = dependencies
         return CompilationResult(
             output,
             compiler.diagnostics,
             compiler.last_stats,
             target,
             compiler.last_layout_plan,
-            tuple(sorted(compiler._dependencies)),
+            dependencies,
         )
 
     def check_file(self, input_path: str | Path) -> DocumentStageResult:

@@ -117,6 +117,18 @@ def test_invalid_decoded_local_image_path_has_a_source_located_diagnostic(tmp_pa
     ]
 
 
+def test_null_image_path_is_rejected_before_platform_resolution(tmp_path, monkeypatch):
+    from pathlib import Path
+    from mddocx.resources.paths import local_image_path
+
+    def unexpected_resolution(path):
+        raise AssertionError("A null filename must not reach platform path resolution")
+
+    monkeypatch.setattr(Path, "resolve", unexpected_resolution)
+    with pytest.raises(MddocxError, match="RESOURCE208"):
+        local_image_path(tmp_path, "bad%00.png")
+
+
 def test_invalid_image_returns_source_located_fallback(tmp_path):
     (tmp_path / "fake.png").write_text("<html>not an image</html>", encoding="utf-8")
     resolver = ResourceResolver(tmp_path, ResourcePolicy(), ImageConfig())

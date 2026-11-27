@@ -9,7 +9,10 @@ from mddocx.diagnostics import Diagnostic, MddocxError
 def local_image_path(base_dir: Path, source: str) -> Path:
     """Decode a local image URI once, before each caller's containment check."""
     try:
-        return (base_dir / unquote(source)).resolve()
+        decoded = unquote(source)
+        if "\x00" in decoded:
+            raise ValueError("Null character in image path")
+        return (base_dir / decoded).resolve()
     except ValueError as exc:
         raise MddocxError(
             Diagnostic("error", "RESOURCE208", "Malformed local image path.")

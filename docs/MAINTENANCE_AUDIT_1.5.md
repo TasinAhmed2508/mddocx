@@ -106,6 +106,14 @@ two optional visual tests deselected. Ruff, formatting, the 11-file mypy gate,
 diagnostic-catalog synchronization, and whitespace checks passed. This newer image
 change still requires its own hosted candidate and archive qualification.
 
+The first rc5 candidate's Windows/Python 3.13 job exposed a platform difference:
+resolving a decoded null character no longer raised the `ValueError` caught on
+Python 3.12. It reported a missing image and allowed the project build to continue.
+The shared decoder now rejects nulls explicitly before filesystem resolution.
+The 77 resource/project/watch checks pass on Python 3.12, and 15 focused image-path
+checks pass on Python 3.13. The first candidate qualification was cancelled and
+must be replaced by a run of the corrected commit before release.
+
 ## Qualification still required
 
 - Optional Word SaveAs/PDF export qualification remains incomplete on this workstation.

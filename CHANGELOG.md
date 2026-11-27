@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Identify SARIF reports with the running mddocx version and the `mddocx-native`
+  distribution URL, preserving explicit caller version overrides.
 - Reserve known local dependencies across an entire batch before writing any output.
   A document cannot overwrite another selected document's image or other declared
   resource. Conflicts report `OUTPUT401` in serial, parallel, and fail-fast conversion.

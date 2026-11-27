@@ -48,7 +48,11 @@ class DiagnosticReporter:
             [d.to_dict() for d in self.diagnostics], ensure_ascii=False, indent=indent
         )
 
-    def to_sarif(self, indent: int | None = 2, tool_version: str = "0.8.0") -> str:
+    def to_sarif(self, indent: int | None = 2, tool_version: str | None = None) -> str:
+        if tool_version is None:
+            from mddocx import __version__
+
+            tool_version = __version__
         results = []
         rules: dict[str, dict[str, object]] = {}
         level_map = {"error": "error", "warning": "warning", "info": "note"}
@@ -86,7 +90,7 @@ class DiagnosticReporter:
                         "driver": {
                             "name": "mddocx",
                             "version": tool_version,
-                            "informationUri": "https://pypi.org/project/mddocx/",
+                            "informationUri": "https://pypi.org/project/mddocx-native/",
                             "rules": list(rules.values()),
                         }
                     },

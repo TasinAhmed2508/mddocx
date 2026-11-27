@@ -183,6 +183,10 @@ retained under `D:\Project\.mddocx-active-work\batch-dependency-review`.
 
 ## Qualification still required
 
+- SARIF now uses the running module version and the correct `mddocx-native` URL;
+  explicit version overrides remain supported. Its focused diagnostic/output suite
+  passed 35 tests with the unavailable symlink case skipped on this workstation.
+  Hosted qualification is pending for this reporting correction.
 - Optional Word SaveAs/PDF export qualification remains incomplete on this workstation.
 - Continue the review across the remaining paths; the whole-code review is not
   certified complete by the private-name scan.

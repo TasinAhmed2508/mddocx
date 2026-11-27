@@ -16,7 +16,8 @@
 - Reserve explicit document identifiers before generating heading identifiers, including
   targets inside quotes and lists. Preserve nested captions and attributes inside
   quotes, callouts, and list items. Put a list marker before an item that starts with
-  a table, equation, or nested list and verify that structure offline.
+  a table, equation, or nested list and verify that structure offline. Rebuild older
+  normalized AST-cache entries so they cannot bypass these parser and identifier fixes.
 - Number every emitted figure, table, and listing caption, including captions without
   identifiers. Refresh cached cross-reference text after rendering so forward references
   and recovered blocks use the final numbers. Offline verification now checks cached

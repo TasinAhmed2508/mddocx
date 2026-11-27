@@ -7,7 +7,7 @@ from zipfile import ZipFile
 from docx import Document as WordDocument
 import pytest
 
-from mddocx import Compiler, LayoutStageResult, RenderConfig
+from mddocx import Compiler, LayoutStageResult, MarkdownWord, RenderConfig
 from mddocx.ast.base import Document, SourcePosition
 from mddocx.ast.block import Heading, MathBlock, Paragraph, Table, TableCell, TableRow
 from mddocx.ast.inline import Text
@@ -230,3 +230,33 @@ def test_ast_serialization_is_versioned_and_rejects_incompatible_cache():
         document_from_json(encoded.replace(f'"version":{AST_SCHEMA_VERSION}', '"version":999'))
     with pytest.raises(ValueError, match="schema identifier"):
         document_from_json('{"__node__":"Document","children":[]}')
+
+
+def test_normalized_ast_cache_rebuilds_pre_identifier_reservation_entries(tmp_path, monkeypatch):
+    import mddocx.cache as cache_module
+    from mddocx.ast.codec import AST_SCHEMA_NAME
+    from mddocx.config import CacheConfig
+    from mddocx.parser import MarkdownParser
+
+    source = tmp_path / "report.md"
+    markdown = "# First\n\n| Value |\n| --- |\n| 1 |\n\nTable: Results {#first}"
+    source.write_text(markdown, encoding="utf-8")
+    stored_markdown = source.read_bytes().decode("utf-8")
+    config = RenderConfig(cache=CacheConfig(ast_enabled=True, directory=tmp_path / "cache"))
+    old_ast = MarkdownParser().parse(markdown, source_file=str(source))
+    old_ast.children[0].identifier = "first"
+    with monkeypatch.context() as legacy:
+        legacy.setattr(
+            cache_module, "_AST_CACHE_SCHEMA", f"{AST_SCHEMA_NAME}-v{AST_SCHEMA_VERSION}-parser11"
+        )
+        old_cache = cache_module.AstCache(config.cache, tmp_path)
+        old_cache.save(old_cache.key(stored_markdown, str(source)), old_ast)
+    renderer = MarkdownWord(config)
+    output = source.with_suffix(".docx")
+    renderer.render_file(source, output)
+    assert not renderer.last_stats.ast_cache_hit
+    assert Compiler(config).verify(source, output).ok
+    original = output.read_bytes()
+    renderer.render_file(source, output)
+    assert renderer.last_stats.ast_cache_hit
+    assert output.read_bytes() == original

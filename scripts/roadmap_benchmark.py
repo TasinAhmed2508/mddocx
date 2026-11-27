@@ -13,7 +13,7 @@ from time import perf_counter
 import tracemalloc
 from unittest.mock import patch
 
-from mddocx import MarkdownWord, build_project
+from mddocx import MarkdownWord, RenderConfig, build_project, render_many
 from mddocx.benchmark import build_benchmark_markdown
 from mddocx.math.converter import DefaultMathConverter
 
@@ -66,7 +66,25 @@ def main() -> None:
         (root / "main.md").write_text("# Project\n\n" + "\n\n".join(includes), encoding="utf-8")
         (root / "mddocx.yml").write_text("version: 1\nsources: [main.md]\n", encoding="utf-8")
 
-        for name in (*workloads, "project_includes"):
+        batch_input = root / "batch-inputs"
+        batch_input.mkdir()
+        batch_sources = []
+        for index in range(20):
+            source = batch_input / f"report-{index:02}.md"
+            source.write_text(
+                f"# Report {index}\n\n## Measurements\n\nTechnical **notes** and *observations*.\n\n"
+                "| Item | Value |\n| --- | --- |\n| Alpha | 10 |\n| Beta | 20 |\n\n"
+                "- First\n  - Nested\n- Last\n\n```python\nvalue = 10\n```",
+                encoding="utf-8",
+            )
+            batch_sources.append(source)
+        batch_jobs = {"batch_serial": 1, "batch_parallel": 2}
+
+        names = (*workloads, "project_includes", *batch_jobs)
+        unknown = set(args.only or ()) - set(names)
+        if unknown:
+            parser.error("Unknown workload(s): " + ", ".join(sorted(unknown)))
+        for name in names:
             if args.only and name not in args.only:
                 continue
             engines: Counter[str] = Counter()
@@ -85,6 +103,13 @@ def main() -> None:
                 with patch("mddocx.render.renderer.DefaultMathConverter", Converter):
                     if name == "project_includes":
                         blob = build_project(root, force=True).output_path.read_bytes()
+                    elif name in batch_jobs:
+                        results = render_many(
+                            batch_sources,
+                            root / "batch-output",
+                            RenderConfig(theme="report"),
+                            jobs=batch_jobs[name],
+                        )
                     else:
                         blob = MarkdownWord().render_string(workloads[name])
                 elapsed = perf_counter() - start
@@ -93,6 +118,9 @@ def main() -> None:
                     tracemalloc.stop()
                 else:
                     timings.append(elapsed)
+                if name in batch_jobs:
+                    assert all(result.ok for result in results), results
+                    blob = b"".join(result.output_path.read_bytes() for result in results)
                 hashes.add(sha256(blob).hexdigest())
             assert len(hashes) == 1, f"Nondeterministic output for {name}"
             report[name] = {

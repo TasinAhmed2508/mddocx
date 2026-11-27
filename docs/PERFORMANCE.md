@@ -221,3 +221,10 @@ dependencies across the batch before publication. This comparison does not
 establish a speedup. The exact runner and samples are retained in
 `D:\Project\.mddocx-active-work\batch-dependency-review\benchmark_batch.py` and
 `benchmark.json`.
+
+The same 20-report inputs are maintained as the `batch_serial` and `batch_parallel`
+workloads in `scripts/roadmap_benchmark.py`. Point `PYTHONPATH` at either candidate's
+`src` directory and run `python scripts/roadmap_benchmark.py --runs 1 --only batch_serial
+--only batch_parallel` for each fresh process in an alternating comparison. For batch
+workloads, `output_bytes` and `sha256` cover the concatenated DOCX files in result order;
+file reading and hashing are outside the measured conversion time and memory sample.

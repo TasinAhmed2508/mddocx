@@ -170,7 +170,8 @@ catalog check passed. An additional output-alias regression passes for hardlinks
 the symlink case is skipped on this workstation because symlink creation is not
 available. It remains enabled on filesystems that support it. These dependency
 fixes are on the integration branch and are not part of the unchanged published
-rc5 archives. Hosted checks are pending for this follow-up.
+rc5 archives. All 13 hosted jobs passed on `d51497c` in
+[run 46036103375](https://github.com/TasinAhmed2508/mddocx/actions/runs/46036103375).
 
 Five alternating paired comparisons with the published rc5 source used 20 reports
 per run with the Report theme, headings, a native table, nested lists, and code.
@@ -183,6 +184,11 @@ retained under `D:\Project\.mddocx-active-work\batch-dependency-review`.
 
 ## Qualification still required
 
+- Batch CLI diagnostic-file flags are accepted but ignored: a two-file conversion
+  with both `--diagnostics-json diagnostics.json` and
+  `--diagnostics-sarif diagnostics.sarif` returns 0 without creating either report.
+  Aggregate report publication needs the same protection against source, resource,
+  output, and other report paths before any document is written.
 - SARIF now uses the running module version and the correct `mddocx-native` URL;
   explicit version overrides remain supported. Its focused diagnostic/output suite
   passed 35 tests with the unavailable symlink case skipped on this workstation.

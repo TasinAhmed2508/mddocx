@@ -24,11 +24,12 @@ is a wish list.
   instructions and native chart data, and preservation of chart ranges and missing points.
   Invalid numeric chart inputs produce source-located diagnostics. See the
   [changelog](../CHANGELOG.md#150rc4).
-- **1.5.0rc5 candidate:** repaired image-cache entries, decoded local image paths,
+- **Included in 1.5.0rc5:** repaired image-cache entries, decoded local image paths,
   preserved malformed-table text, template bookmark reservation, correct cached references,
-  native Word section
-  counters, equation cell widths, and nested caption/list handling. These changes require
-  a new release; the rc4 archives are unchanged. Qualification evidence and limits are in
+  native Word section counters, equation cell widths, and nested caption/list handling.
+  Older normalized AST caches rebuild once. These fixes are published in the
+  [GitHub prerelease](https://github.com/TasinAhmed2508/mddocx/releases/tag/1.5.0rc5);
+  the rc4 archives are unchanged. Qualification evidence and limits are in
   [the maintenance review](MAINTENANCE_AUDIT_1.5.md).
 - **Planned:** broader verification coverage, an expanded optional visual corpus, and the
   compatibility work for 2.x. Strict conversion remains the default with opt-in recovery.

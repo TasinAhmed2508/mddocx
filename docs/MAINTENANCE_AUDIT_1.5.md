@@ -105,7 +105,7 @@ the optional LibreOffice visual job in
 After the local-image URI fix, the local suite passed 1,000 nonvisual tests with
 two optional visual tests deselected. Ruff, formatting, the 11-file mypy gate,
 diagnostic-catalog synchronization, and whitespace checks passed. This newer image
-change still requires its own hosted candidate and archive qualification.
+change received final candidate and archive qualification as recorded below.
 
 The first rc5 candidate's Windows/Python 3.13 job exposed a platform difference:
 resolving a decoded null character no longer raised the `ValueError` caught on
@@ -113,17 +113,45 @@ Python 3.12. It reported a missing image and allowed the project build to contin
 The shared decoder now rejects nulls explicitly before filesystem resolution.
 The 77 resource/project/watch checks pass on Python 3.12, and 15 focused image-path
 checks pass on Python 3.13. The first candidate qualification was cancelled and
-must be replaced by a run of the corrected commit before release.
+replaced by the final corrected candidate recorded below.
+
+## Published 1.5.0rc5 qualification
+
+The [GitHub prerelease](https://github.com/TasinAhmed2508/mddocx/releases/tag/1.5.0rc5)
+is published at commit `4d1033dda7c583b21c4612258ef48bfdaf690936`. All 13 jobs in
+[CI run 46030878163](https://github.com/TasinAhmed2508/mddocx/actions/runs/46030878163)
+passed, including the Python 3.11–3.13 quality matrix on Windows, Linux, and macOS,
+three-platform package smoke checks, and the optional LibreOffice visual job.
+The nonvisual suite passed 1,002 tests with two visual cases deselected in that run.
+
+[Release run 46030887281](https://github.com/TasinAhmed2508/mddocx/actions/runs/46030887281)
+passed its nine platform qualification jobs, built the wheel and source archive,
+and tested both exact archives in clean environments. Checks included matching
+module/package versions, both console commands, `python -m mddocx`, `doctor`,
+conversion, and offline verification. All 129 packaged source/resource files match
+the qualified Git commit after normalizing text line endings. Public downloads
+match the qualified SHA-256 hashes:
+
+- Wheel: `57b4d4ca7fac12c2e2a0c82e5d18c41888c01f055a3c3f5918aa96f8801fca58`
+- Source archive: `53187460045ea2c7b7c07b30e464cca3e66dafcbf2791da11a83bf1d5174780f`
+
+Five paired local comparisons with rc4 measured 0.6152 to 0.6181 seconds for the
+20-section mixed report and 0.8987 to 0.9152 seconds for the 60 by 24 table. Both
+workloads produced byte-identical DOCX output across all ten runs. This comparison
+does not establish a speedup. It used the same Python 3.12 environment and runner;
+peak traced Python memory and engine choices are retained with the samples under
+`D:\Project\.mddocx-active-work\release-1.5.0rc5\rc4-rc5-benchmark.json`.
+
+The final 64-second video now links to the GitHub releases page. Eleven timeline
+snapshots and the encoded closing frame were inspected. Playback, seeking, looping,
+and full MP4 decoding passed, and its compressed narration is unchanged.
 
 ## Qualification still required
 
 - Optional Word SaveAs/PDF export qualification remains incomplete on this workstation.
 - Continue the review across the remaining paths; the whole-code review is not
   certified complete by the private-name scan.
-- Qualify the final candidate on the platform matrix and clean release archives.
 - Keep Word/LibreOffice layout evidence separate from in-process fidelity results.
-- Publish a new release for post-rc4 fixes. The existing 1.5.0rc4 archives remain
-  unchanged.
 
 The machine-readable construct scope remains
 [`feature-matrix.json`](../src/mddocx/feature-matrix.json). Broader 2.x interface and

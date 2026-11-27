@@ -10,12 +10,12 @@ Deterministic Markdown-to-DOCX compilation for professional, editable Microsoft 
 
 mddocx converts Markdown into native Word structures instead of screenshots or flattened pages. Headings, lists, tables, equations, charts, links, references, footnotes, headers, footers, and other document elements remain editable in Microsoft Word.
 
-**Nothing else to install.** It writes OOXML directly, so a conversion needs no office suite,
-no Microsoft Word, no LibreOffice, no Java, no browser, and no network. It also verifies its
-own output before writing it: package structure, relationships, XML safety, and the ECMA-376
-content-model element order of every part, which is what makes a file Word would refuse to
-open fail here instead. A document is the only artifact a conversion produces, and mddocx can
-prove it is correct on any machine Python runs on.
+**Runtime dependencies install with the package.** Core conversion writes OOXML directly
+and needs no office suite, Java, or browser. Local reports convert without network access;
+remote image downloads follow the configured resource policy. Output validation checks
+package structure, relationships, XML safety, and supported OOXML element ordering before
+publication. Offline source-to-DOCX verification checks the content covered by the feature
+matrix. Word or LibreOffice can provide separate evidence for visual layout and pagination.
 
 ## What it does
 
@@ -42,7 +42,17 @@ prove it is correct on any machine Python runs on.
 
 mddocx requires Python 3.11 or newer.
 
-### Install from PyPI
+### Install the 1.5 prerelease from GitHub
+
+The Report theme, offline fidelity verification, recovery, and other 1.5 improvements
+described on this branch are available in the qualified
+[1.5.0rc5 GitHub prerelease](https://github.com/TasinAhmed2508/mddocx/releases/tag/1.5.0rc5):
+
+```bash
+python -m pip install --upgrade "https://github.com/TasinAhmed2508/mddocx/releases/download/1.5.0rc5/mddocx_native-1.5.0rc5-py3-none-any.whl"
+```
+
+### Install the stable release from PyPI
 
 The distribution is published as `mddocx-native`; the Python import and command remain `mddocx`:
 

@@ -103,6 +103,8 @@ def test_section_scoped_counter_fields_use_word_switches():
     # restarts section-scoped figure, table, or listing numbering.
     assert instructions
     assert all(field_instruction_issue(instruction) is None for instruction in instructions)
+    assert any(instruction.strip() == r"SEQ Section \c" for instruction in instructions)
+    assert any(instruction.strip() == r"SEQ Section \r 1" for instruction in instructions)
     for label in ("Figure", "Table", "Listing"):
         assert any(instruction.strip() == f"SEQ {label} \\r 0" for instruction in instructions)
     # Word field switches start with a backslash; chr(92) keeps this assertion

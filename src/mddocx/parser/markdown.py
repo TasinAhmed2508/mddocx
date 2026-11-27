@@ -671,6 +671,11 @@ class MarkdownParser:
     def _postprocess_blocks(self, nodes: list) -> list:
         out: list = []
         for node in nodes:
+            if isinstance(node, (BlockQuote, Callout)):
+                node.children = self._postprocess_blocks(node.children)
+            elif isinstance(node, (BulletList, OrderedList)):
+                for item in node.items:
+                    item.children = self._postprocess_blocks(item.children)
             if isinstance(node, Paragraph):
                 text = self._plain_text(node.children).strip()
                 identifier, attrs = self._parse_attrs_text(text)

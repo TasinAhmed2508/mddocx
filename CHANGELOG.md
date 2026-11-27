@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Keep section-scoped caption and equation numbers correct after Word updates fields,
+  whether headings show numbers or not. Initialize the section counter lazily so a
+  first landscape table does not introduce a blank portrait page.
+- Match numbered-equation cell widths to their table grid so Word centers formulas
+  in the intended formula region and keeps equation numbers at the right margin.
+- Reserve explicit document identifiers before generating heading identifiers, including
+  targets inside quotes and lists. Preserve nested captions and attributes inside
+  quotes, callouts, and list items. Put a list marker before an item that starts with
+  a table, equation, or nested list and verify that structure offline.
 - Number every emitted figure, table, and listing caption, including captions without
   identifiers. Refresh cached cross-reference text after rendering so forward references
   and recovered blocks use the final numbers. Offline verification now checks cached

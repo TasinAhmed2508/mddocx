@@ -24,6 +24,11 @@ is a wish list.
   instructions and native chart data, and preservation of chart ranges and missing points.
   Invalid numeric chart inputs produce source-located diagnostics. See the
   [changelog](../CHANGELOG.md#150rc4).
+- **Post-rc4 integration fixes:** repaired image-cache entries, preserved malformed-table
+  text, template bookmark reservation, correct cached references, native Word section
+  counters, equation cell widths, and nested caption/list handling. These changes require
+  a new release; the rc4 archives are unchanged. Qualification evidence and limits are in
+  [the maintenance review](MAINTENANCE_AUDIT_1.5.md).
 - **Planned:** broader verification coverage, an expanded optional visual corpus, and the
   compatibility work for 2.x. Strict conversion remains the default with opt-in recovery.
 

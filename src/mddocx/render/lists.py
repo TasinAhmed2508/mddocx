@@ -16,7 +16,10 @@ def render_list(renderer: DocxRenderer, node, level: int = 0) -> None:
     num_id = renderer.numbering.create(kind, getattr(node, "start", 1))
     for item in node.items:
         numbered = False
-        for child in item.children:
+        children = item.children
+        if not children or not isinstance(children[0], Paragraph):
+            children = [Paragraph(), *children]
+        for child in children:
             if isinstance(child, Paragraph) and not numbered:
                 p = renderer._add_paragraph("MD Normal")
                 if item.task_checked is None:
@@ -39,16 +42,3 @@ def render_list(renderer: DocxRenderer, node, level: int = 0) -> None:
                 render_list(renderer, child, level + 1)
             else:
                 renderer._render_block(child, list_level=level)
-        if not numbered:
-            p = renderer._add_paragraph("MD Normal")
-            if item.task_checked is None:
-                renderer.numbering.apply(p, num_id, level)
-            else:
-                set_task_indent(
-                    p,
-                    level,
-                    renderer.config.lists.indent_twips_per_level,
-                    renderer.config.lists.hanging_twips,
-                )
-                append_checkbox(p, item.task_checked, renderer._task_control_id)
-                renderer._task_control_id += 1

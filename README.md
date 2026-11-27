@@ -362,6 +362,11 @@ orientation afterward. For a deliberate section boundary, put
 `<!-- sectionbreak orientation=landscape -->` or `<!-- sectionbreak orientation=portrait -->`
 on its own line.
 
+Section-scoped captions (`--caption-numbering section`) and equations
+(`--equation-numbering section`) follow top-level source headings. They do not require
+visible heading numbering, and their native fields retain those numbers after Word
+updates them.
+
 ### Linked images
 
 Use `![Description](https://example.org/chart.jpg)` to embed a remote figure. A direct

@@ -4,9 +4,10 @@ from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
+from docx import Document as WordDocument
 import pytest
 
-from mddocx import Compiler, LayoutStageResult
+from mddocx import Compiler, LayoutStageResult, RenderConfig
 from mddocx.ast.base import Document, SourcePosition
 from mddocx.ast.block import Heading, MathBlock, Paragraph, Table, TableCell, TableRow
 from mddocx.ast.inline import Text
@@ -69,6 +70,62 @@ def test_normalizer_reports_duplicate_ids_and_irregular_tables():
     Normalizer(reporter).normalize(document)
 
     assert {item.code for item in reporter.diagnostics} == {"NORM201", "NORM202"}
+
+
+def test_generated_heading_ids_reserve_later_explicit_ids_and_suffixes():
+    document = Document(
+        children=[
+            Heading(level=1, children=[Text(text="First")]),
+            Heading(level=2, children=[Text(text="First")]),
+            Table(identifier="first"),
+            MathBlock(identifier="first-2", source_text="x"),
+        ]
+    )
+    normalizer = Normalizer()
+    normalizer.normalize(document)
+    assert [node.identifier for node in document.children] == [
+        "first-3",
+        "first-4",
+        "first",
+        "first-2",
+    ]
+    assert not normalizer.reporter.diagnostics
+    normalizer.normalize(document)
+    assert document.children[0].identifier == "first-3"
+    fresh = Document(children=[Heading(level=1, children=[Text(text="First")])])
+    normalizer.normalize(fresh)
+    assert fresh.children[0].identifier == "first"
+
+
+@pytest.mark.parametrize("container", ["body", "quote", "list", "callout"])
+@pytest.mark.parametrize("kind", ["table", "equation"])
+def test_explicit_targets_after_matching_headings_compile_and_verify(tmp_path, kind, container):
+    block = (
+        "| Value |\n| --- |\n| 1 |\n\nTable: Results {#first}"
+        if kind == "table"
+        else "$$\nx^2+1\n$$ {#first}"
+    )
+    if container == "quote":
+        block = "\n".join("> " + line for line in block.splitlines())
+    elif container == "list":
+        block = "- " + block.replace("\n", "\n  ")
+    elif container == "callout":
+        block = ":::note\n" + block + "\n:::"
+    label = kind.title()
+    source = tmp_path / "collision.md"
+    source.write_text(f"# First\n\nSee [{label} @first].\n\n{block}", encoding="utf-8")
+    config = RenderConfig()
+    config.references.caption_number_format = "section"
+    config.references.equation_number_format = "section"
+    compiler = Compiler(config)
+    checked = compiler.check_file(source)
+    assert checked.semantic_index.heading_ids == ("first-2",)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert not result.diagnostics
+    assert compiler.verify(source, result.output_bytes).ok
+    assert f"See {label} 1.1." in [
+        p.text for p in WordDocument(BytesIO(result.output_bytes)).paragraphs
+    ]
 
 
 def test_normalizer_rejects_invalid_heading_level():

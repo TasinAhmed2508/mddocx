@@ -391,13 +391,13 @@ def add_chapter_seq_field(
     bookmark: str | None = None,
     bookmark_id: int | None = None,
 ) -> None:
-    """Emit Word-standard chapter-scoped caption numbering using STYLEREF + SEQ."""
+    """Emit chapter-scoped numbering from the source-heading sequence."""
     if bookmark and bookmark_id is not None:
         start = OxmlElement("w:bookmarkStart")
         start.set(qn("w:id"), str(bookmark_id))
         start.set(qn("w:name"), bookmark)
         paragraph._p.append(start)
-    add_field(paragraph, ' STYLEREF "MD Heading 1" \\n ', chapter_placeholder)
+    add_field(paragraph, r" SEQ Section \c ", chapter_placeholder)
     paragraph.add_run(".")
     switch = r"\r 1 \s 1" if str(item_placeholder) == "1" else r"\s 1"
     add_field(paragraph, f" SEQ {label} \\* ARABIC {switch} ", item_placeholder)

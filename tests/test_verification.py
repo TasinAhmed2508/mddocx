@@ -436,7 +436,7 @@ def section_reference_report(tmp_path):
         (rb"SEQ Table \* ARABIC", rb"SEQ Table \* ROMAN", 3),
         (rb"SEQ Equation \* ARABIC", rb"SEQ Equation \* ROMAN", 9),
         (rb"SEQ Table \r 0", rb"SEQ Table \r 8", 1),
-        (rb'STYLEREF "MD Heading 1" \n', rb'STYLEREF "MD Heading 2" \n', 3),
+        (rb"SEQ Section \c", rb"SEQ Section \s 1", 3),
     ],
 )
 def test_verify_reports_changed_numbering_and_reference_instructions(

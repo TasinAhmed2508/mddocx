@@ -21,6 +21,8 @@ from mddocx.ooxml.fields import (
 from mddocx.ooxml.text import clean_xml_text
 from mddocx.references import ReferenceRegistry
 
+from . import text_blocks
+
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
 
@@ -42,6 +44,10 @@ def render_caption(
     *,
     keep_with_next: bool = True,
 ) -> None:
+    if renderer.config.references.caption_number_format == "section" and (
+        label != "Listing" or renderer.config.references.listing_numbering
+    ):
+        text_blocks.initialize_section_counter(renderer)
     p = renderer._add_paragraph("MD Caption")
     p.paragraph_format.keep_together = True
     p.paragraph_format.keep_with_next = keep_with_next

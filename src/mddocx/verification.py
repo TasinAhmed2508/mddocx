@@ -70,7 +70,7 @@ def _sequence_fields(label: str, number, section_scoped: bool) -> tuple[tuple[st
     sequence = ("SEQ", label, r"\*", "ARABIC")
     if section_scoped and isinstance(number, str) and "." in number:
         reset = (r"\r", "1") if number.split(".", 1)[1] == "1" else ()
-        return (("STYLEREF", "MD Heading 1", r"\n"), sequence + reset + (r"\s", "1"))
+        return (("SEQ", "Section", r"\c"), sequence + reset + (r"\s", "1"))
     return (sequence,)
 
 
@@ -123,6 +123,7 @@ def compare_document(
     findings: list[VerificationFinding] = []
     caption_counts: dict[str, int] = {}
     caption_section = 0
+    section_initialized = False
     sections = [_SectionStart(0, config.page.orientation)]
     layout = LayoutPlanner(config)
     references = ReferenceRegistry.from_document(
@@ -228,12 +229,14 @@ def compare_document(
             return
         target = references.get(node.identifier) if node.identifier else None
         fields: tuple[tuple[str, ...], ...] = ()
+        initial_counter: tuple[_Unit, ...] = ()
         visible = clean_xml_text(text)
         if label != "Listing" or config.references.listing_numbering:
             count = caption_counts.get(label, 0) + 1
             caption_counts[label] = count
             number: int | str = count
             if config.references.caption_number_format == "section":
+                initial_counter = initialize_section_counter(node)
                 number = f"{max(1, caption_section)}.{count}"
             fields = _sequence_fields(
                 label,
@@ -248,12 +251,19 @@ def compare_document(
             node,
         )
         if getattr(config.references, f"{label.lower()}_caption_position") == "above":
-            expected.extend((caption, *units))
+            expected.extend((*initial_counter, caption, *units))
         else:
-            expected.extend((*units, caption))
+            expected.extend((*units, *initial_counter, caption))
+
+    def initialize_section_counter(node: Node) -> tuple[_Unit, ...]:
+        nonlocal section_initialized
+        if section_initialized:
+            return ()
+        section_initialized = True
+        return (_Unit("section counters", (("SEQ", "Section", r"\r", "1"),), node),)
 
     def blocks(nodes, level: int = 0) -> None:
-        nonlocal caption_section
+        nonlocal caption_section, section_initialized
         for node in nodes:
             if isinstance(node, block.Heading):
                 if node.level == 1:
@@ -265,14 +275,23 @@ def compare_document(
                 expected.append(
                     _Unit("heading", (node.level, bookmark, expected_inlines(node.children)), node)
                 )
-                if node.level == 1 and config.references.enabled:
+                if node.level == 1:
                     resets = []
-                    if config.references.equation_number_format == "section":
+                    if (
+                        config.references.enabled
+                        and config.references.equation_number_format == "section"
+                    ):
                         resets.append("Equation")
                     if config.references.caption_number_format == "section":
                         resets.extend(("Figure", "Table", "Listing"))
                     if resets:
-                        reset_fields = (("SEQ", "Section", r"\*", "ARABIC"),) + tuple(
+                        section_initialized = True
+                        section_field = (
+                            ("SEQ", "Section", r"\r", "1")
+                            if caption_section == 1
+                            else ("SEQ", "Section", r"\*", "ARABIC")
+                        )
+                        reset_fields = (section_field,) + tuple(
                             ("SEQ", label, r"\r", "0") for label in resets
                         )
                         expected.append(_Unit("section counters", reset_fields, node))
@@ -281,18 +300,19 @@ def compare_document(
             elif isinstance(node, (block.BulletList, block.OrderedList)):
                 for item in node.items:
                     numbered = False
+                    kind = "task" if item.task_checked is not None else "list"
+                    marker = item.task_checked if kind == "task" else level
+                    if not item.children or not isinstance(item.children[0], block.Paragraph):
+                        expected.append(_Unit(kind, (marker, ()), item))
+                        numbered = True
                     for child in item.children:
                         if isinstance(child, block.Paragraph) and not numbered:
-                            kind = "task" if item.task_checked is not None else "list"
-                            marker = item.task_checked if kind == "task" else level
                             expected.append(
                                 _Unit(kind, (marker, expected_inlines(child.children)), child)
                             )
                             numbered = True
                         else:
                             blocks([child], level + 1)
-                    if not numbered:
-                        incomplete("List item without an opening paragraph.", item)
             elif isinstance(node, block.BlockQuote):
                 blocks(node.children, level)
             elif isinstance(node, block.Callout):
@@ -392,6 +412,8 @@ def compare_document(
                     and config.references.equation_numbering
                 ):
                     target = references.get(node.identifier)
+                    if config.references.equation_number_format == "section":
+                        expected.extend(initialize_section_counter(node))
                     fields = _sequence_fields(
                         "Equation",
                         target.number if target else None,

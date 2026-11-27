@@ -30,6 +30,21 @@ if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
 
 
+def _counter_paragraph(renderer: DocxRenderer):
+    paragraph = renderer._add_paragraph("MD Normal")
+    paragraph.paragraph_format.space_before = 0
+    paragraph.paragraph_format.space_after = 0
+    paragraph.paragraph_format.line_spacing = 0.01
+    paragraph.paragraph_format.keep_with_next = True
+    return paragraph
+
+
+def initialize_section_counter(renderer: DocxRenderer) -> None:
+    if not renderer._section_counter_initialized:
+        add_hidden_field(_counter_paragraph(renderer), r" SEQ Section \r 1 ", "1")
+        renderer._section_counter_initialized = True
+
+
 def render_heading(renderer: DocxRenderer, node: Heading) -> None:
     if node.level == 1:
         renderer._caption_section += 1
@@ -62,21 +77,23 @@ def render_heading(renderer: DocxRenderer, node: Heading) -> None:
         renderer._bookmark_names.add(name)
         add_bookmark(p, name, renderer._bookmark_id)
         renderer._bookmark_id += 1
-    if (
-        renderer.config.references.enabled
-        and node.level == 1
-        and (
-            renderer.config.references.equation_number_format == "section"
-            or renderer.config.references.caption_number_format == "section"
+    if node.level == 1 and (
+        (
+            renderer.config.references.enabled
+            and renderer.config.references.equation_number_format == "section"
         )
+        or renderer.config.references.caption_number_format == "section"
     ):
-        counter_p = renderer._add_paragraph("MD Normal")
-        counter_p.paragraph_format.space_before = 0
-        counter_p.paragraph_format.space_after = 0
-        counter_p.paragraph_format.line_spacing = 0.01
-        counter_p.paragraph_format.keep_with_next = True
-        add_hidden_field(counter_p, r" SEQ Section \* ARABIC ", "1")
-        if renderer.config.references.equation_number_format == "section":
+        counter_p = _counter_paragraph(renderer)
+        renderer._section_counter_initialized = True
+        section_instruction = (
+            r" SEQ Section \r 1 " if renderer._caption_section == 1 else r" SEQ Section \* ARABIC "
+        )
+        add_hidden_field(counter_p, section_instruction, str(renderer._caption_section))
+        if (
+            renderer.config.references.enabled
+            and renderer.config.references.equation_number_format == "section"
+        ):
             add_hidden_field(counter_p, r" SEQ Equation \r 0 ", "0")
         if renderer.config.references.caption_number_format == "section":
             for label in ("Figure", "Table", "Listing"):

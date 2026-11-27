@@ -9,6 +9,7 @@ import pytest
 from mddocx import Compiler, RenderConfig
 from mddocx.layout import _plain_text
 from mddocx.ooxml.package import read_parts, write_parts
+from mddocx.ooxml.fields import read_field_instructions
 from mddocx.references import ReferenceRegistry
 
 
@@ -191,4 +192,90 @@ def test_disabled_mermaid_uses_listing_reference_title(tmp_path):
     compiler = Compiler(config)
     result = compiler.compile_file(source, source.with_suffix(".docx"))
     assert Document(BytesIO(result.output_bytes)).paragraphs[0].text == "Forward Listing Diagram."
+    assert compiler.verify(source, result.output_bytes).ok
+
+
+@pytest.mark.parametrize("numbered_headings", [False, True])
+@pytest.mark.parametrize("kind", ["table", "equation"])
+def test_section_fields_use_a_source_counter_without_heading_number_dependency(
+    tmp_path, numbered_headings, kind
+):
+    def content(identifier):
+        if kind == "equation":
+            return f"$$\nx^2\n$$ {{#{identifier}}}"
+        return _caption_block("table", identifier.title(), identifier)
+
+    source = tmp_path / "sections.md"
+    source.write_text(
+        "# Chapter one\n\n" + content("first") + "\n\n# Chapter two\n\n" + content("second"),
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.heading_numbering.enabled = numbered_headings
+    config.references.caption_number_format = "section"
+    config.references.equation_number_format = "section"
+    compiler = Compiler(config)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    root = etree.fromstring(read_parts(result.output_bytes)["word/document.xml"])
+    fields = list(read_field_instructions(root))
+    assert fields.count(("SEQ", "Section", r"\c")) == 2
+    assert ("SEQ", "Section", r"\r", "1") in fields
+    assert ("SEQ", "Section", r"\*", "ARABIC") in fields
+    assert not any(field[0] == "STYLEREF" for field in fields)
+    assert compiler.verify(source, result.output_bytes).ok
+
+
+@pytest.mark.parametrize("kind", ["table", "equation"])
+def test_section_counter_is_initialized_without_a_heading(tmp_path, kind):
+    source = tmp_path / "without-heading.md"
+    source.write_text(
+        _caption_block("table", "First", "first") if kind == "table" else "$$\nx^2\n$$ {#first}",
+        encoding="utf-8",
+    )
+    config = RenderConfig()
+    config.references.caption_number_format = "section"
+    config.references.equation_number_format = "section"
+    compiler = Compiler(config)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    root = etree.fromstring(read_parts(result.output_bytes)["word/document.xml"])
+    fields = list(read_field_instructions(root))
+    assert fields[0] == ("SEQ", "Section", r"\r", "1")
+    assert fields[1] == ("SEQ", "Section", r"\c")
+    assert compiler.verify(source, result.output_bytes).ok
+
+
+def test_numbered_equation_cell_widths_match_the_grid(tmp_path):
+    source = tmp_path / "equation.md"
+    source.write_text("$$\nx^2+1\n$$ {#energy}", encoding="utf-8")
+    result = Compiler().compile_file(source, source.with_suffix(".docx"))
+    document = Document(BytesIO(result.output_bytes))
+    table = document.tables[0]
+    grid_widths = [column.width.twips for column in table.columns]
+    cell_widths = [cell.width.twips for cell in table.rows[0].cells]
+    section = document.sections[0]
+    usable = section.page_width - section.left_margin - section.right_margin
+    assert cell_widths == grid_widths
+    assert sum(grid_widths) == round(usable / 635)
+    assert grid_widths[0] / sum(grid_widths) == pytest.approx(0.88, abs=0.001)
+
+
+@pytest.mark.parametrize("position", ["above", "below"])
+def test_section_counter_does_not_create_a_blank_page_before_first_landscape_table(
+    tmp_path, position
+):
+    row = "|" + "|".join(["Value"] * 10) + "|"
+    separator = "|" + "|".join(["---"] * 10) + "|"
+    source = tmp_path / "wide.md"
+    source.write_text(
+        f"{row}\n{separator}\n{row}\n\nTable: Measurements {{#wide}}", encoding="utf-8"
+    )
+    config = RenderConfig()
+    config.table.auto_landscape = True
+    config.references.caption_number_format = "section"
+    config.references.table_caption_position = position
+    compiler = Compiler(config)
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    document = Document(BytesIO(result.output_bytes))
+    assert len(document.sections) == 1
+    assert document.sections[0].page_width > document.sections[0].page_height
     assert compiler.verify(source, result.output_bytes).ok

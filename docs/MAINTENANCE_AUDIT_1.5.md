@@ -18,6 +18,10 @@ and publication. The completed 1.4.3 review is recorded separately in
 | Malformed HTML tables | Non-whitespace text outside cells or captions is preserved as source text with `TABLE202`. Six previously silent losses and a valid whitespace case have regression coverage. |
 | Template bookmarks | `tests/test_template_bookmarks.py` covers reserved names and IDs in bodies, headers, footers, footnotes, and endnotes, with output validation enabled and disabled. It checks generated REF instructions, internal links, and start/end IDs. |
 | Cached caption numbers | `tests/test_caption_numbering.py` covers anonymous captions, five block types, both caption positions, document/section numbering, native/static references, title policy, and recovery. Captions count actual emissions. Forward reference caches are refreshed before serialization. Offline verification detects edited cached caption and reference values. |
+| Native Word section numbers | Source heading counters replace a dependency on visible heading numbering. Word 16.0 updates controlled table and equation documents to 1.1 and 2.1 with correct forward references, with heading numbering enabled and disabled. Hidden counters initialize lazily, preserving the first wide table's landscape section. |
+| Equation alignment | Numbered equation cell preferred widths now match their 88/12 table grid. Native Word drawings were inspected with heading numbering enabled and disabled; formulas occupy the intended formula region and numbers remain at the right margin. |
+| Explicit document identifiers | The normalizer reserves explicit IDs before allocating automatic heading IDs, using the shared AST walker instead of a second traversal implementation. Focused cases cover later targets, suffix collisions, repeat normalization, and reuse for a different document. |
+| Nested captions and list markers | Captions and attributes are associated inside quotes, callouts, and list items. Table/equation items without an opening paragraph receive a native list marker before their content. The independent verifier checks that marker and the surrounding content in order. |
 | Package inspection | Header/footer bookmarks participate in duplicate-name and reference checks. Inspection uses the XML already parsed by validation. |
 | Dead-code screening | Ruff checks unused imports and local variables. A reference-name scan across Python source, tests, and scripts found no private function name appearing only at its definition. This screening does not establish reachability for every dynamic hook or public API. |
 
@@ -68,17 +72,36 @@ Known recovery placeholders do not consume caption numbers. There are 49 targete
 caption cases. The combined nonvisual suite passed 961 tests, with two optional visual
 tests deselected. Ruff, formatting, the 11-file mypy gate, and diagnostic checks passed.
 
-An optional Word field-update check did not produce a saved result within its time
-budget. The identified review automation process was stopped after 226 seconds, and
-its client was terminated. The generated review inputs are retained outside the
-checkout. This is a **not completed** result, not evidence that Word updated the fields
-correctly or incorrectly. Diagnose that automation before repeating the qualification.
+Follow-up Word automation isolated the earlier timeout to save/export operations.
+Field updates pass in Word 16.0 for four controlled documents: tables and equations,
+each with visible heading numbering enabled and disabled. Word recognizes the two
+native equations in each equation document. Captured live Word XML was repackaged
+for QA and verifies without findings (nine checked units for each table document,
+seven for each equation document). These are live XML captures, not successful Word
+SaveAs round trips.
+
+Native Word body drawings were inspected for these cases; each reports one page.
+The equation drawings were repeated after matching cell preferred widths to their
+table grid. SaveAs2 and PDF export remain unqualified: export also stalled on a plain
+one-paragraph baseline. Identified automation processes were stopped, and no user
+documents were altered. Inputs, XML captures, and drawings remain outside the checkout
+under `D:\Project\.mddocx-active-work\caption-review`.
+
+The combined follow-up passed 979 local nonvisual tests with two optional visual
+tests deselected. There are now 58 targeted caption cases, including equation cell
+widths, and nine additional normalizer/nested-target cases. Ruff, formatting, the
+11-file mypy gate, the diagnostic catalog, and `git diff --check` passed. A separate
+Word drawing of nested table/equation list items was inspected and reports one page;
+its source and generated DOCX verify across nine units. Empty items, nested-only
+lists, and equations followed by explanatory text were also checked independently.
 
 ## Qualification still required
 
-- Diagnose and finish the Word field-update check for section-scoped caption numbering.
+- Optional Word SaveAs/PDF export qualification remains incomplete on this workstation.
 - Continue the review across the remaining paths; the whole-code review is not
   certified complete by the private-name scan.
+- Correct the semantic index for `DataTableBlock` targets: `check_string` currently
+  omits their identifiers and reports declared table cross-references as unresolved.
 - Qualify the final candidate on the platform matrix and clean release archives.
 - Keep Word/LibreOffice layout evidence separate from in-process fidelity results.
 - Publish a new release for post-rc4 fixes. The existing 1.5.0rc4 archives remain

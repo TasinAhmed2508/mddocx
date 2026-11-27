@@ -11,7 +11,7 @@ from mddocx.ooxml.fields import add_chapter_seq_field, add_seq_field
 from mddocx.ooxml.text import clean_xml_text
 from mddocx.ooxml.utils import set_row_cant_split
 
-from . import tables
+from . import tables, text_blocks
 
 if TYPE_CHECKING:
     from mddocx.render.renderer import DocxRenderer
@@ -36,19 +36,24 @@ def render_math_block(renderer: DocxRenderer, node: MathBlock) -> None:
 
 
 def render_numbered_equation(renderer: DocxRenderer, node: MathBlock) -> None:
+    if renderer.config.references.equation_number_format == "section":
+        text_blocks.initialize_section_counter(renderer)
     table = renderer.document.add_table(rows=1, cols=2)
     table.autofit = False
     sec = renderer.document.sections[-1]
     usable = sec.page_width - sec.left_margin - sec.right_margin
-    table.columns[0].width = int(usable * 0.88)
-    table.columns[1].width = int(usable * 0.12)
+    formula_width = int(usable * 0.88)
+    number_width = usable - formula_width
+    formula_cell, number_cell = table.rows[0].cells
+    table.columns[0].width = formula_cell.width = formula_width
+    table.columns[1].width = number_cell.width = number_width
     tables.remove_table_borders(table)
-    p = table.cell(0, 0).paragraphs[0]
+    p = formula_cell.paragraphs[0]
     p._p.style = renderer._paragraph_style_id("MD Equation")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_together = True
     renderer._append_math(p, node.source_text, display=True, source=node.source)
-    np = table.cell(0, 1).paragraphs[0]
+    np = number_cell.paragraphs[0]
     np.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     target = renderer.references.get(node.identifier) if renderer.references else None
     np.add_run("(")

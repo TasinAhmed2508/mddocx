@@ -125,6 +125,7 @@ class DocxRenderer:
         self.references = None
         self._caption_counts: dict[str, int] = {}
         self._caption_section = 0
+        self._section_counter_initialized = False
         self._cross_reference_results: list[tuple[Run, ReferenceTarget, str | None]] = []
         self.bibliography = BibliographyDatabase()
         self._cited_keys: list[str] = []
@@ -154,6 +155,7 @@ class DocxRenderer:
         self._bookmark_id = 1
         self._caption_counts.clear()
         self._caption_section = 0
+        self._section_counter_initialized = False
         self._cross_reference_results.clear()
         if self.config.template:
             document_setup.reserve_template_bookmarks(self)

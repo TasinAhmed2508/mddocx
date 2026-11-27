@@ -24,8 +24,9 @@ is a wish list.
   instructions and native chart data, and preservation of chart ranges and missing points.
   Invalid numeric chart inputs produce source-located diagnostics. See the
   [changelog](../CHANGELOG.md#150rc4).
-- **Post-rc4 integration fixes:** repaired image-cache entries, preserved malformed-table
-  text, template bookmark reservation, correct cached references, native Word section
+- **1.5.0rc5 candidate:** repaired image-cache entries, decoded local image paths,
+  preserved malformed-table text, template bookmark reservation, correct cached references,
+  native Word section
   counters, equation cell widths, and nested caption/list handling. These changes require
   a new release; the rc4 archives are unchanged. Qualification evidence and limits are in
   [the maintenance review](MAINTENANCE_AUDIT_1.5.md).

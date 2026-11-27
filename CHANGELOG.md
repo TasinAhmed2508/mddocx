@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0rc5
 
 - Decode local image URI paths once so spaces, Bangla names, and escaped percent signs
   embed correctly in the body, tables, and notes. Track the decoded files for watch,

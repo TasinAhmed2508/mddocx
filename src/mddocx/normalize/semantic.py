@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mddocx.ast.base import Document, iter_nodes
-from mddocx.ast.block import ChartBlock, CodeBlock, Heading, ImageBlock, MathBlock, Table
+from mddocx.ast.block import (
+    ChartBlock,
+    CodeBlock,
+    DataTableBlock,
+    Heading,
+    ImageBlock,
+    MathBlock,
+    Table,
+)
 from mddocx.ast.inline import Citation, CrossReference, FootnoteReference
 
 
@@ -38,7 +46,7 @@ def build_semantic_index(document: Document) -> SemanticIndex:
             headings.append(identifier)
         elif isinstance(node, (ImageBlock, ChartBlock)) and identifier:
             figures.append(identifier)
-        elif isinstance(node, Table) and identifier:
+        elif isinstance(node, (Table, DataTableBlock)) and identifier:
             tables.append(identifier)
         elif isinstance(node, MathBlock) and identifier:
             equations.append(identifier)

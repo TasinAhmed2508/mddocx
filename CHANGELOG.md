@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Include imported data-table identifiers in the semantic index so staged checks
+  resolve their table cross-references consistently with rendering and verification.
 - Keep section-scoped caption and equation numbers correct after Word updates fields,
   whether headings show numbers or not. Initialize the section counter lazily so a
   first landscape table does not introduce a blank portrait page.

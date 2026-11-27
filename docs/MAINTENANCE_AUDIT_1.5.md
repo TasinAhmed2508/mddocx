@@ -21,6 +21,7 @@ and publication. The completed 1.4.3 review is recorded separately in
 | Native Word section numbers | Source heading counters replace a dependency on visible heading numbering. Word 16.0 updates controlled table and equation documents to 1.1 and 2.1 with correct forward references, with heading numbering enabled and disabled. Hidden counters initialize lazily, preserving the first wide table's landscape section. |
 | Equation alignment | Numbered equation cell preferred widths now match their 88/12 table grid. Native Word drawings were inspected with heading numbering enabled and disabled; formulas occupy the intended formula region and numbers remain at the right margin. |
 | Explicit document identifiers | The normalizer reserves explicit IDs before allocating automatic heading IDs, using the shared AST walker instead of a second traversal implementation. Focused cases cover later targets, suffix collisions, repeat normalization, and reuse for a different document. |
+| Imported table targets | The semantic index now includes `DataTableBlock` identifiers. A local CSV fixture checks staged resolution, native caption/reference output, and offline verification together. |
 | Nested captions and list markers | Captions and attributes are associated inside quotes, callouts, and list items. Table/equation items without an opening paragraph receive a native list marker before their content. The independent verifier checks that marker and the surrounding content in order. |
 | Package inspection | Header/footer bookmarks participate in duplicate-name and reference checks. Inspection uses the XML already parsed by validation. |
 | Dead-code screening | Ruff checks unused imports and local variables. A reference-name scan across Python source, tests, and scripts found no private function name appearing only at its definition. This screening does not establish reachability for every dynamic hook or public API. |
@@ -100,8 +101,6 @@ lists, and equations followed by explanatory text were also checked independentl
 - Optional Word SaveAs/PDF export qualification remains incomplete on this workstation.
 - Continue the review across the remaining paths; the whole-code review is not
   certified complete by the private-name scan.
-- Correct the semantic index for `DataTableBlock` targets: `check_string` currently
-  omits their identifiers and reports declared table cross-references as unresolved.
 - Qualify the final candidate on the platform matrix and clean release archives.
 - Keep Word/LibreOffice layout evidence separate from in-process fidelity results.
 - Publish a new release for post-rc4 fixes. The existing 1.5.0rc4 archives remain

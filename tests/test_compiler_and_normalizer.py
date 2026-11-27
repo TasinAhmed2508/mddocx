@@ -182,6 +182,24 @@ See @sec-target and @sec-missing [@source]. A note.[^known] Missing.[^absent]
     assert index.unresolved_notes == ("absent",)
 
 
+def test_semantic_index_resolves_imported_table_targets(tmp_path):
+    (tmp_path / "values.csv").write_text("Name,Value\nAlpha,10\n", encoding="utf-8")
+    source = tmp_path / "tables.md"
+    source.write_text(
+        'See [Table @measurements].\n\n~~~data-table {#measurements caption="Results"}\n'
+        "source: values.csv\n~~~",
+        encoding="utf-8",
+    )
+    compiler = Compiler()
+    checked = compiler.check_file(source)
+    assert checked.semantic_index.target_ids == ("measurements",)
+    assert checked.semantic_index.table_ids == ("measurements",)
+    assert checked.semantic_index.unresolved_crossrefs == ()
+    result = compiler.compile_file(source, source.with_suffix(".docx"))
+    assert compiler.verify(source, result.output_bytes).ok
+    assert WordDocument(BytesIO(result.output_bytes)).paragraphs[0].text == "See Table 1."
+
+
 def test_compiler_file_result_includes_output_path(tmp_path: Path):
     source = tmp_path / "source.md"
     output = tmp_path / "output.docx"
